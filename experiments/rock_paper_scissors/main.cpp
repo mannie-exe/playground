@@ -1,23 +1,25 @@
-#include <cmath>
 #include <format>
 #include <iostream>
 #include <print>
-#include <string>
+#include <string_view>
 
-#include "random.h"
-#include "readchar.h"
+#include <random.hpp>
+
+#include "readchar.hpp"
 
 using namespace std;
 
-const int MAX_ROUNDS = 5;
-const int WIN_SCORE = MAX_ROUNDS / 2 + 1;
+constexpr int MAX_ROUNDS = 5;
+constexpr int WIN_SCORE = MAX_ROUNDS / 2 + 1;
 
-const string ROCK_INPUTS = "Rr";
-const string PAPER_INPUTS = "Pp";
-const string SCISSOR_INPUTS = "Ss";
-const string EXIT_INPUTS = "Qq";
+constexpr string_view ROCK_INPUTS = "Rr";
+constexpr string_view PAPER_INPUTS = "Pp";
+constexpr string_view SCISSOR_INPUTS = "Ss";
+constexpr string_view EXIT_INPUTS = "Qq";
 
-bool isInput(char match, const string &inputs) {
+Random random;
+
+bool isInput(char match, string_view inputs) {
   for (char input : inputs) {
     if (match == input)
       return true;
@@ -25,50 +27,36 @@ bool isInput(char match, const string &inputs) {
   return false;
 }
 
-struct GameMove {
-  GameMove() { _value = 0; }
+class GameMove {
+public:
+  enum class Value { NONE = 0, ROCK = 1, PAPER = 2, SCISSOR = 3 };
 
-  // Default constructors
-  static GameMove ROCK() { return GameMove{_ROCK}; }
-  static GameMove PAPER() { return GameMove{_PAPER}; }
-  static GameMove SCISSOR() { return GameMove{_SCISSOR}; }
-  static GameMove RANDOM() { return GameMove{Random::Int(1, 3)}; }
+  constexpr GameMove() = default;
 
-  int getIndex() { return _value; }
-
-  bool isSame(GameMove otherMove) {
-    if (_value == otherMove._value)
-      return true;
-    return false;
+  static constexpr GameMove Rock() { return GameMove{Value::ROCK}; }
+  static constexpr GameMove Paper() { return GameMove{Value::PAPER}; }
+  static constexpr GameMove Scissor() { return GameMove{Value::SCISSOR}; }
+  static GameMove Random() {
+    return GameMove{static_cast<Value>(random.get(1, 3))};
   }
 
-  bool beats(GameMove otherMove) {
-    if (isSame(otherMove))
-      return false;
+  constexpr bool isInitialized() const { return _value != Value::NONE; }
 
-    if (_value == _ROCK && otherMove._value == _PAPER)
-      return false;
-    if (_value == _PAPER && otherMove._value == _SCISSOR)
-      return false;
-    if (_value == _SCISSOR && otherMove._value == _ROCK)
-      return false;
+  constexpr bool isSame(GameMove other) const { return _value == other._value; }
 
-    return true;
+  constexpr bool beats(GameMove other) const {
+    return (_value == Value::ROCK && other._value == Value::SCISSOR) ||
+           (_value == Value::PAPER && other._value == Value::ROCK) ||
+           (_value == Value::SCISSOR && other._value == Value::PAPER);
   }
 
-  bool isInitialized() {
-    if (_value == 0)
-      return false;
-    return true;
-  }
-
-  string asString() const {
+  constexpr string_view asString() const {
     switch (_value) {
-    case 1:
+    case Value::ROCK:
       return "ROCK";
-    case 2:
+    case Value::PAPER:
       return "PAPER";
-    case 3:
+    case Value::SCISSOR:
       return "SCISSOR";
     default:
       return "ERROR";
@@ -76,14 +64,9 @@ struct GameMove {
   }
 
 private:
-  static const int _INIT = 0;
-  static const int _ROCK = 1;
-  static const int _PAPER = 2;
-  static const int _SCISSOR = 3;
+  constexpr explicit GameMove(Value value) : _value(value) {}
 
-  int _value = _INIT;
-
-  GameMove(int value) { _value = value; }
+  Value _value = Value::NONE;
 };
 
 ostream &operator<<(ostream &stream, const GameMove &move) {
@@ -91,9 +74,9 @@ ostream &operator<<(ostream &stream, const GameMove &move) {
   return stream;
 }
 
-template <> struct formatter<GameMove> : formatter<string> {
+template <> struct formatter<GameMove> : formatter<string_view> {
   auto format(const GameMove &move, format_context &ctx) const {
-    return formatter<string>::format(move.asString(), ctx);
+    return formatter<string_view>::format(move.asString(), ctx);
   }
 };
 
@@ -125,20 +108,20 @@ GAME_START:
 
     // Handle game input
     if (isInput(playerInput, ROCK_INPUTS))
-      playerMove = GameMove::ROCK();
+      playerMove = GameMove::Rock();
     if (isInput(playerInput, PAPER_INPUTS))
-      playerMove = GameMove::PAPER();
+      playerMove = GameMove::Paper();
     if (isInput(playerInput, SCISSOR_INPUTS))
-      playerMove = GameMove::SCISSOR();
+      playerMove = GameMove::Scissor();
 
     // Handle non-move-input
     if (!playerMove.isInitialized())
       continue;
 
     // Pick computer move
-    computerMove = GameMove::RANDOM();
+    computerMove = GameMove::Random();
 
-    println("You: {} | VERSUS | {} :Computer ", playerMove, computerMove);
+    println("You | {} vs {} | Computer ", playerMove, computerMove);
 
     // Resolve score
     if (playerMove.isSame(computerMove)) {
@@ -168,7 +151,7 @@ GAME_START:
     }
 
     // Print score
-    println("Round {} {}! Score: {} | Remaining Rounds: {} | Draws: {}",
+    println("Round {} {}! Score: {} | Remaining Rounds: {} | Draws: {}\n",
             currentRound,
             roundWon    ? "won"
             : roundDraw ? "is a draw"
@@ -197,6 +180,7 @@ GAME_START:
       playerMove = GameMove{};
       computerMove = GameMove{};
       playerScore = 0;
+      currentRound = 1;
       draws = 0;
       roundWon = false;
       roundDraw = false;
