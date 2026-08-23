@@ -2,11 +2,6 @@ cmake_minimum_required(VERSION 4.4)
 
 project(tetrass LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-include_directories(SYSTEM include)
-
 include(GNUInstallDirs)
 
 #[[
@@ -33,7 +28,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-link_directories(${CMAKE_BINARY_DIR}/libs)
 
 file(
     DOWNLOAD
@@ -65,11 +59,58 @@ if(CMAKE_EXPORT_COMPILE_COMMANDS)
     )
 endif()
 
-add_executable(cpp_easy studyplan_dev/cpp_easy/main.cpp)
+function(tetrass_register_install_target target_name)
+    set_property(GLOBAL APPEND PROPERTY tetrass_install_targets ${target_name})
+endfunction()
 
-add_executable(rock_paper_scissors experiments/rock_paper_scissors/main.cpp)
-target_include_directories(rock_paper_scissors PRIVATE
-    experiments/rock_paper_scissors/include)
+function(tetrass_configure_cpp_target target_name)
+    target_compile_features(${target_name} PRIVATE cxx_std_23)
+    target_compile_options(${target_name} PRIVATE
+        "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+    target_include_directories(${target_name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endfunction()
+
+function(tetrass_add_console_target target_name)
+    cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
+
+    add_executable(${target_name} ${target_SOURCES})
+    tetrass_configure_cpp_target(${target_name})
+
+    if(target_INCLUDES)
+        target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
+    endif()
+
+    tetrass_register_install_target(${target_name})
+endfunction()
+
+function(tetrass_add_sdl_target target_name)
+    cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
+
+    add_executable(${target_name} ${target_SOURCES})
+    tetrass_configure_cpp_target(${target_name})
+
+    if(target_INCLUDES)
+        target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
+    endif()
+
+    target_link_libraries(${target_name} PRIVATE
+        SDL3::SDL3
+        SDL3_image::SDL3_image
+        SDL3_ttf::SDL3_ttf)
+
+    tetrass_register_install_target(${target_name})
+endfunction()
+
+tetrass_add_console_target(study_cpp_easy
+    SOURCES
+    studyplan_dev/cpp_easy/main.cpp)
+
+tetrass_add_console_target(experiment_rock_paper_scissors
+    SOURCES
+    experiments/rock_paper_scissors/main.cpp
+    INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/experiments/rock_paper_scissors/include)
 
 CPMAddPackage(
     URI "gh:libsdl-org/SDL#147a8ee@3.4.14"
@@ -128,13 +169,18 @@ CPMAddPackage(
     "SDLTTF_WERROR OFF"
 )
 
-add_executable(sdl3_study studyplan_dev/sdl3/src/main.cpp)
-target_include_directories(sdl3_study PRIVATE
-    studyplan_dev/sdl3/include)
-target_link_libraries(sdl3_study PRIVATE
-    SDL3::SDL3
-    SDL3_image::SDL3_image
-    SDL3_ttf::SDL3_ttf)
+tetrass_add_sdl_target(experiment_sdl3
+    SOURCES
+    experiments/sdl3/src/main.cpp
+    INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/experiments/sdl3/include)
+
+tetrass_add_sdl_target(study_sdl3
+    SOURCES
+    studyplan_dev/sdl3/src/main.cpp
+    studyplan_dev/sdl3/src/IInteractable.cpp
+    INCLUDES
+    ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/include)
 
 #[[
 Install means "assemble the runnable/exportable form of this project."
@@ -150,7 +196,7 @@ install prefix from CMakePresets.json points at dist/<config>, so install means:
 - copy import/static libraries into dist/<config>/lib when CMake has them
 
 Targets are CMake's named build products. `rock_paper_scissors` and
-`sdl3_study` are executable targets created by add_executable(). SDL's CMake
+`experiment_sdl3` are executable targets created by add_executable(). SDL's CMake
 build may also create shared-library targets such as SDL3-shared,
 SDL3_image-shared, and SDL3_ttf-shared. If those targets exist, appending them
 to tetrass_install_targets tells CMake to install those built SDL libraries
@@ -162,11 +208,7 @@ runtime libraries into a layout that can run without changing PATH, DYLD paths,
 or Linux loader configuration during normal local experimentation.
 ]]
 
-set(tetrass_install_targets
-    rock_paper_scissors
-    cpp_easy
-    sdl3_study
-)
+get_property(tetrass_install_targets GLOBAL PROPERTY tetrass_install_targets)
 
 foreach(shared_target IN ITEMS
     SDL3-shared
