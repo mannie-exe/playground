@@ -8,7 +8,7 @@ public:
   IDrawable() = default;
   virtual ~IDrawable() = default;
 
-  virtual void render(SDL_Surface &surface) const = 0;
+  virtual void render(SDL_Surface &targetSurface) = 0;
 
   IDrawable(const IDrawable &) = delete;
   IDrawable &operator=(const IDrawable &) = delete;

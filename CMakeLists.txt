@@ -178,7 +178,6 @@ tetrass_add_sdl_target(experiment_sdl3
 tetrass_add_sdl_target(study_sdl3
     SOURCES
     studyplan_dev/sdl3/src/main.cpp
-    studyplan_dev/sdl3/src/IInteractable.cpp
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/include)
 

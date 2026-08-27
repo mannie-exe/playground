@@ -6,10 +6,12 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_rect.h>
 
-#include <DisplayObject.hpp>
-#include <Rectangle.hpp>
+#include <study_sdl3/ui/Button.hpp>
+#include <study_sdl3/ui/DisplayObject.hpp>
 
 class UI : public DisplayObject {
+  std::vector<std::unique_ptr<DisplayObject>> _drawables;
+
 public:
   UI() {
     int row{15}, col{15};
@@ -18,19 +20,16 @@ public:
     for (int i{0}; i < row; i++) {
       for (int j{0}; j < col; j++) {
         _drawables.emplace_back(
-            std::make_unique<Rectangle>(SDL_Rect{65 * i, 65 * j, 50, 50}));
+            std::make_unique<Button>(SDL_Rect{65 * i, 65 * j, 50, 50}, *this));
       }
     }
   }
 
-  bool isPointInObject(int x, int y) const override {
-    // TODO
-    return true;
-  }
+  bool isPointInObject(float x, float y) const override { return true; }
 
-  void render(SDL_Surface &surface) const override {
+  void render(SDL_Surface &targetSurface) override {
     for (const std::unique_ptr<DisplayObject> &item : _drawables) {
-      item->render(surface);
+      item->render(targetSurface);
     }
   }
 
@@ -41,7 +40,4 @@ public:
       item->handleEvent(event);
     }
   }
-
-private:
-  std::vector<std::unique_ptr<DisplayObject>> _drawables;
 };

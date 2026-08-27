@@ -1,18 +1,29 @@
 // std
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_timer.h>
 #include <format>
+#include <memory>
 
 // dependency includes
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 // project-local includes
-#include <UI.hpp>
-#include <Window.hpp>
+#include <study_sdl3/app/SDLGuard.hpp>
+#include <study_sdl3/app/TTFGuard.hpp>
+#include <study_sdl3/platform/Window.hpp>
+#include <study_sdl3/surface/Font.hpp>
+#include <study_sdl3/surface/Image.hpp>
+#include <study_sdl3/surface/Text.hpp>
+#include <study_sdl3/ui/UI.hpp>
+
+#ifndef PERFORMANCE
+// #define PERFORMANCE
+#endif
 
 void handleSDLEvent(SDL_Event &event) {
   // handle keyboard events
@@ -81,62 +92,93 @@ int main(int, char **) {
   int image_version = IMG_Version();
   int ttf_version = TTF_Version();
 
-  bool didSdlFail = sdl_version == 0 || image_version == 0 || ttf_version == 0;
-  if (didSdlFail)
-    return SDL_APP_FAILURE;
-
   SDL_Log("%s", std::format("SDL loaded: SDL v{}, SDL_image v{}, SDL_ttf v{}",
                             sdl_version, image_version, ttf_version)
                     .c_str());
 
-  std::string err;
-  Window *window{nullptr};
-
-  SDL_Init(SDL_INIT_VIDEO);
-  err = std::string{SDL_GetError()};
-  if (!err.empty()) {
-    SDL_Log("Failed to initialize SDL3:\n  %s", err.c_str());
-    SDL_ClearError();
-    return 1;
-  }
-
   try {
-    window = new Window{"Sup"};
-  } catch (std::string) {
-  }
-  if (!window) {
-    return 1;
-  }
+    SDLGuard sdl{SDL_INIT_VIDEO};
+    TTFGuard ttf;
 
-  // App state
-  UI uiManager;
+    std::unique_ptr<Window> window = std::make_unique<Window>("Sup", 750, 930);
+    std::unique_ptr<Image> image = std::make_unique<Image>(
+        "C:\\Users\\intrn\\Downloads\\IMG_6239.PNG", true);
+    std::unique_ptr<Font> font =
+        std::make_unique<Font>("C:\\WINDOWS\\FONTS\\LBRITE.TTF", 42.0F);
+    std::unique_ptr<Text> text = std::make_unique<Text>("Wow!", *font);
+    std::unique_ptr<UI> uiManager = std::make_unique<UI>();
 
-  // Loop state
-  bool isRunning = true;
-  SDL_Event event;
-  while (isRunning) {
-    // SDL_PumpEvents(); // NOT NEEDED with SDL_PollEvent explicit event handle
+    // Loop state
+    bool isRunning = true;
+    SDL_Event event;
+    uint64_t pollStart, pollDelta, drawStart, drawDelta, renderStart,
+        renderDelta, offsetStart, offsetDelta, totalStart, totalDelta;
+    while (isRunning) {
 
-    while (SDL_PollEvent(&event)) {
-      isRunning = !(event.type == SDL_EVENT_QUIT);
+#ifdef PERFORMANCE
+      offsetStart = uint64_t{SDL_GetPerformanceCounter()};
+      offsetDelta = uint64_t{SDL_GetPerformanceCounter()} - offsetStart;
 
-      if (!isRunning) {
-        break;
+      totalStart = uint64_t{SDL_GetPerformanceCounter()};
+
+      pollStart = uint64_t{SDL_GetPerformanceCounter()};
+#endif
+      // handle events
+      while (SDL_PollEvent(&event)) {
+        isRunning = !(event.type == SDL_EVENT_QUIT);
+
+        if (!isRunning) {
+          break;
+        }
+
+        // handleSDLEvent(event);
+        // uiManager->handleEvent(event);
       }
+#ifdef PERFORMANCE
+      pollDelta =
+          uint64_t{SDL_GetPerformanceCounter()} - pollStart - offsetDelta;
 
-      // iterate
-      // handleSDLEvent(event);
-      uiManager.handleEvent(event);
+      drawStart = uint64_t{SDL_GetPerformanceCounter()};
+#endif
+      window->clear(true);
+
+#ifdef PERFORMANCE
+      renderStart = uint64_t{SDL_GetPerformanceCounter()};
+      // render
+      // uiManager.render(*window->getSurface());
+#endif
+      if (image) {
+        image->render(*window->getSurface());
+      }
+      // if (uiManager) {
+      //   uiManager->render(*window->getSurface());
+      // }
+      if (text) {
+        text->render(*window->getSurface());
+      }
+#ifdef PERFORMANCE
+      renderDelta =
+          uint64_t{SDL_GetPerformanceCounter()} - renderStart - offsetDelta;
+#endif
+
+      window->update();
+#ifdef PERFORMANCE
+      drawDelta =
+          uint64_t{SDL_GetPerformanceCounter()} - drawStart - offsetDelta;
+
+      totalDelta = uint64_t{SDL_GetPerformanceCounter()} - offsetStart;
+
+      SDL_Log("%s",
+              std::format(
+                  "POLL: {} | RENDER: {} | DRAW: {} | TOTAL: {} | OFFSET: {}",
+                  pollDelta, renderDelta, drawDelta, totalDelta, offsetDelta)
+                  .c_str());
+#endif
     }
 
-    // Render
-    window->clear(true);
-    uiManager.render(*window->getSurface());
-    window->update();
+    return 0;
+  } catch (const std::string &err) {
+    SDL_Log("%s", err.c_str());
+    return 1;
   }
-
-  delete window;
-
-  SDL_Quit();
-  return 0;
 }
