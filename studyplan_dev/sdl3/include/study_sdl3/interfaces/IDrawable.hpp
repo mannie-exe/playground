@@ -4,12 +4,10 @@
 #include <SDL3/SDL_events.h>
 
 class IDrawable {
-public:
+protected:
   IDrawable() = default;
+
+public:
   virtual ~IDrawable() = default;
-
   virtual void render(SDL_Surface &targetSurface) = 0;
-
-  IDrawable(const IDrawable &) = delete;
-  IDrawable &operator=(const IDrawable &) = delete;
 };

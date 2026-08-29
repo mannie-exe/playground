@@ -7,71 +7,55 @@
 #include <SDL3/SDL_video.h>
 
 #include <format>
-#include <string>
+
+#include <study_sdl3/support/SDLError.hpp>
+#include <study_sdl3/support/SDLResource.hpp>
 
 class Window {
-  SDL_Window *_windowPrimary;
+  SDLResource<SDL_Window, SDL_DestroyWindow> _window;
 
 public:
   Window(const char *title, int width = 800, int height = 600,
          SDL_WindowFlags windowFlags = 0)
-      : _windowPrimary{SDL_CreateWindow(title, width, height, windowFlags)} {
-    if (!_windowPrimary) {
-      std::string err{SDL_GetError()};
-
-      if (!err.empty()) {
-        err = std::format("Window@{} Failed to construct SDL_Window@{}\n  {}",
-                          (void *)this, (void *)_windowPrimary, err);
-        SDL_ClearError();
-        throw err;
-      }
-
-      throw std::format("Window@{} Failed to construct", (void *)this);
+      : _window{SDL_CreateWindow(title, width, height, windowFlags)} {
+    if (!_window) {
+      throwSDLError(
+          std::format("Window@{} failed to create SDL_Window", (void *)this));
     }
 
     getSurface();
-    update();
-  }
-
-  ~Window() {
-    SDL_Log("~Window() fired");
-    if (_windowPrimary && SDL_WasInit(SDL_INIT_VIDEO)) {
-      SDL_DestroyWindow(_windowPrimary);
-    }
+    updateSurface();
   }
 
   SDL_Surface *getSurface() const {
-    SDL_Surface *surface = SDL_GetWindowSurface(_windowPrimary);
+    SDL_Surface *surface = SDL_GetWindowSurface(_window.get());
 
     if (!surface) {
-      std::string err{SDL_GetError()};
-      if (!err.empty()) {
-        err = std::format("Window@{} Failed to get SDL_Window surface:\n  {}",
-                          (void *)this, err);
-        SDL_ClearError();
-        throw err;
-      }
-
-      throw std::format("Window@{} Failed to get SDL_Window surface",
-                        (void *)this);
+      throwSDLError(std::format("Window@{} failed to get SDL_Window surface",
+                                (void *)this));
     }
 
     return surface;
   }
 
-  bool update() { return SDL_UpdateWindowSurface(_windowPrimary); }
+  bool updateSurface() { return SDL_UpdateWindowSurface(_window.get()); }
 
-  void clear(bool skipUpdate = false) {
+  void clearSurface(bool skipUpdate = false,
+                    SDL_Color clearColor = SDL_Color{50, 50, 50, 255}) {
     SDL_Surface *surface = getSurface();
 
     const SDL_PixelFormatDetails *pixelFormat{
         SDL_GetPixelFormatDetails(surface->format)};
     SDL_FillSurfaceRect(surface, nullptr,
-                        SDL_MapRGB(pixelFormat, nullptr, 50, 50, 50));
+                        SDL_MapRGBA(pixelFormat, nullptr, clearColor.r,
+                                    clearColor.g, clearColor.b, clearColor.a));
     if (skipUpdate)
       return;
-    update();
+    updateSurface();
   }
+
+  Window(Window &&) noexcept = default;
+  Window &operator=(Window &&) noexcept = default;
 
   Window(const Window &) = delete;
   Window &operator=(const Window &) = delete;

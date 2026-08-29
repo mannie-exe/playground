@@ -1,9 +1,8 @@
 #pragma once
 
-#include <string>
-
-#include <SDL3/SDL_error.h>
 #include <SDL3/SDL_init.h>
+
+#include <study_sdl3/support/SDLError.hpp>
 
 class SDLGuard {
   bool _initialized{false};
@@ -11,7 +10,7 @@ class SDLGuard {
 public:
   SDLGuard(SDL_InitFlags flags) {
     if (!SDL_Init(flags)) {
-      throw std::string{SDL_GetError()};
+      throwSDLError("Failed to initialize SDL");
     }
 
     _initialized = true;

@@ -4,8 +4,10 @@
 #include <SDL3/SDL_events.h>
 
 class IInteractable {
-public:
+protected:
   IInteractable() = default;
+
+public:
   virtual ~IInteractable() = default;
 
   virtual void handleEvent(const SDL_Event &event) {
@@ -41,7 +43,4 @@ public:
   virtual void onMouseMove(const SDL_MouseMotionEvent &mMotionEvent) {};
   virtual void onMouseClick(const SDL_MouseButtonEvent &mButtonEvent) {};
   virtual void onMouseWheel(const SDL_MouseWheelEvent &mWheelEvent) {};
-
-  IInteractable(const IInteractable &) = delete;
-  IInteractable &operator=(const IInteractable &) = delete;
 };

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <string>
-
-#include <SDL3/SDL_error.h>
 #include <SDL3_ttf/SDL_ttf.h>
+
+#include <study_sdl3/support/SDLError.hpp>
 
 class TTFGuard {
   bool _initialized{false};
@@ -11,7 +10,7 @@ class TTFGuard {
 public:
   TTFGuard() {
     if (!TTF_Init()) {
-      throw std::string{SDL_GetError()};
+      throwSDLError("Failed to initialize SDL_ttf");
     }
 
     _initialized = true;
