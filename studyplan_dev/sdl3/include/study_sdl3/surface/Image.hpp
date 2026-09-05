@@ -9,11 +9,14 @@
 
 class Image : public DrawableSurface {
 public:
-  Image(const std::string &filePath, bool autoConvert = false)
+  explicit Image(const std::string &filePath, bool autoConvert = true)
       : DrawableSurface(IMG_Load(filePath.c_str()), autoConvert) {
     SDL_Log("%s",
             std::format("Image@{} loaded: {}", (void *)this, filePath).c_str());
   }
+
+  Image(Image &&) noexcept = default;
+  Image &operator=(Image &&) noexcept = default;
 
   Image(const Image &) = delete;
   Image &operator=(const Image &) = delete;

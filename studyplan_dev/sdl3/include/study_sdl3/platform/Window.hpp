@@ -1,5 +1,6 @@
 #pragma once
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_pixels.h>
@@ -7,35 +8,42 @@
 #include <SDL3/SDL_video.h>
 
 #include <format>
+#include <string>
 
 #include <study_sdl3/support/SDLError.hpp>
 #include <study_sdl3/support/SDLResource.hpp>
 
+using WindowResource = SDLResource<SDL_Window, SDL_DestroyWindow>;
+
 class Window {
-  SDLResource<SDL_Window, SDL_DestroyWindow> _window;
+  WindowResource _window;
+  SDL_Point size;
 
 public:
-  Window(const char *title, int width = 800, int height = 600,
+  Window(std::string title, SDL_Point initializeSize = SDL_Point{800, 600},
          SDL_WindowFlags windowFlags = 0)
-      : _window{SDL_CreateWindow(title, width, height, windowFlags)} {
+      : _window{createWindow(this, title, initializeSize, windowFlags)},
+        size{initializeSize} {
     if (!_window) {
       throwSDLError(
           std::format("Window@{} failed to create SDL_Window", (void *)this));
     }
-
     getSurface();
     updateSurface();
   }
 
   SDL_Surface *getSurface() const {
     SDL_Surface *surface = SDL_GetWindowSurface(_window.get());
-
     if (!surface) {
       throwSDLError(std::format("Window@{} failed to get SDL_Window surface",
                                 (void *)this));
     }
-
     return surface;
+  }
+
+  SDL_Point getSurfaceSize() const {
+    SDL_Surface *surface = getSurface();
+    return SDL_Point{surface->w, surface->h};
   }
 
   bool updateSurface() { return SDL_UpdateWindowSurface(_window.get()); }
@@ -43,7 +51,6 @@ public:
   void clearSurface(bool skipUpdate = false,
                     SDL_Color clearColor = SDL_Color{50, 50, 50, 255}) {
     SDL_Surface *surface = getSurface();
-
     const SDL_PixelFormatDetails *pixelFormat{
         SDL_GetPixelFormatDetails(surface->format)};
     SDL_FillSurfaceRect(surface, nullptr,
@@ -59,4 +66,19 @@ public:
 
   Window(const Window &) = delete;
   Window &operator=(const Window &) = delete;
+
+private:
+  WindowResource createWindow(void *owner, const std::string &title,
+                              SDL_Point size, SDL_WindowFlags flags = 0) {
+    if (!SDL_WasInit(SDL_INIT_VIDEO))
+      throwSDLError(std::format(
+          "Window@{} Failed to create window: SDL video not initialized",
+          owner));
+
+    WindowResource window{
+        SDL_CreateWindow(title.c_str(), size.x, size.y, flags)};
+    if (!window)
+      throwSDLError(std::format("Window@{} Failed to create window", owner));
+    return window;
+  }
 };

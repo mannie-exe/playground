@@ -181,6 +181,9 @@ tetrass_add_sdl_target(study_sdl3
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/include)
 
+set(tetrass_study_sdl3_assets_dir
+    ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/assets)
+
 #[[
 Install means "assemble the runnable/exportable form of this project."
 
@@ -259,3 +262,10 @@ install(
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+if(EXISTS ${tetrass_study_sdl3_assets_dir})
+    install(
+        DIRECTORY ${tetrass_study_sdl3_assets_dir}/
+        DESTINATION ${CMAKE_INSTALL_BINDIR}/assets
+    )
+endif()

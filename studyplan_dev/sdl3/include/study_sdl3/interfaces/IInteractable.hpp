@@ -1,7 +1,48 @@
 #pragma once
 
+#include <format>
+#include <string_view>
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
+
+// keyboard
+// mouse move
+// mouse button
+// mouse wheel
+// window resize / pixel size changed
+// window focus gained/lost
+// mouse enter/leave
+// text input
+// gamepad/controller
+// drop file
+// touch/finger
+
+enum class EventResult {
+  Ignored,
+  Handled,
+  Consumed,
+};
+
+constexpr std::string_view toString(EventResult method) {
+  switch (method) {
+  case EventResult::Ignored:
+    return "Ignored";
+  case EventResult::Handled:
+    return "Handled";
+  case EventResult::Consumed:
+    return "Consumed";
+  default:
+    return "Unknown";
+  }
+}
+
+template <>
+struct std::formatter<EventResult> : std::formatter<std::string_view> {
+  auto format(EventResult method, format_context &ctx) const {
+    return std::formatter<std::string_view>::format(toString(method), ctx);
+  }
+};
 
 class IInteractable {
 protected:
@@ -10,37 +51,11 @@ protected:
 public:
   virtual ~IInteractable() = default;
 
-  virtual void handleEvent(const SDL_Event &event) {
-    if (event.type == SDL_EVENT_KEY_UP || event.type == SDL_EVENT_KEY_DOWN) {
-      const SDL_KeyboardEvent &kbEvent = event.key;
-      onKey(kbEvent);
-    }
+  virtual EventResult handleEvent(const SDL_Event &event) = 0;
 
-    if (event.type == SDL_EVENT_MOUSE_MOTION ||
-        event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
-        event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-        event.type == SDL_EVENT_MOUSE_WHEEL) {
-      if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        const SDL_MouseMotionEvent &mMotionEvent = event.motion;
-        onMouseMove(mMotionEvent);
-      }
+  IInteractable(IInteractable &&) noexcept = default;
+  IInteractable &operator=(IInteractable &&) noexcept = default;
 
-      if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
-          event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-        const SDL_MouseButtonEvent &mButtonEvent = event.button;
-        onMouseClick(mButtonEvent);
-      }
-
-      if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        const SDL_MouseWheelEvent &mWheelEvent = event.wheel;
-        onMouseWheel(mWheelEvent);
-      }
-    }
-  }
-
-  virtual void onKey(const SDL_KeyboardEvent &kbEvent) {};
-
-  virtual void onMouseMove(const SDL_MouseMotionEvent &mMotionEvent) {};
-  virtual void onMouseClick(const SDL_MouseButtonEvent &mButtonEvent) {};
-  virtual void onMouseWheel(const SDL_MouseWheelEvent &mWheelEvent) {};
+  IInteractable(const IInteractable &) = delete;
+  IInteractable &operator=(const IInteractable &) = delete;
 };

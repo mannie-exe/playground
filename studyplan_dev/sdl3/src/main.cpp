@@ -1,5 +1,7 @@
 // std
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_video.h>
 #include <format>
 
 // dependency includes
@@ -24,6 +26,10 @@
 // #define PERFORMANCE
 #endif
 
+#ifndef DEMO
+#define DEMO
+#endif
+
 int main(int, char **) {
   int sdl_version = SDL_GetVersion();
   int image_version = IMG_Version();
@@ -37,17 +43,29 @@ int main(int, char **) {
     SDLGuard sdl{SDL_INIT_VIDEO};
     TTFGuard ttf;
 
-    Window window = Window{"Sup", 750, 930};
-    Image image{"C:\\Users\\intrn\\Downloads\\IMG_6239.PNG", true};
-    Text text{"Wow!", Font("C:\\WINDOWS\\FONTS\\LBRITE.TTF", 42.0F),
-              SDL_Color{255, 255, 0, 255}};
+#ifdef DEMO
+    Window window = Window{"Sup", SDL_Point{750, 930}, SDL_WINDOW_RESIZABLE};
+    Image image{std::string(SDL_GetBasePath()) +
+                    "assets/images/demo/IMG_6239.PNG",
+                true};
+    Text text{{.value = "Wow!",
+               .style = {.fgColor = SDL_Color{255, 255, 0, 255}},
+               .layout = {.scaleWidth = window.getSurfaceSize().x}},
+              Font(FontProps{.path = std::string(SDL_GetBasePath()) +
+                                     "assets/fonts/LBRITE.TTF",
+                             .style = {.size = 42.0f}})};
     UI ui{};
+#else
+    Window window = Window{"Sup", SDL_Point{750, 930}, SDL_WINDOW_RESIZABLE};
+#endif
 
     // Loop state
     bool isRunning = true;
     SDL_Event event;
+#ifdef PERFORMANCE
     uint64_t pollStart, pollDelta, drawStart, drawDelta, renderStart,
         renderDelta, offsetStart, offsetDelta, totalStart, totalDelta;
+#endif
     while (isRunning) {
 
 #ifdef PERFORMANCE
@@ -66,8 +84,16 @@ int main(int, char **) {
           break;
         }
 
-        // handleSDLEvent(event);
-        // ui.handleEvent(event);
+#ifdef DEMO
+        ui.handleEvent(event);
+#endif
+
+        if (event.type == SDL_EVENT_WINDOW_RESIZED ||
+            event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+#ifdef DEMO
+          text.setScaleWidth(window.getSurfaceSize().x);
+#endif
+        }
       }
 #ifdef PERFORMANCE
       pollDelta =
@@ -80,11 +106,12 @@ int main(int, char **) {
 #ifdef PERFORMANCE
       renderStart = uint64_t{SDL_GetPerformanceCounter()};
 #endif
-      // render
-      // ui.render(*window.getSurface());
+// render
+#ifdef DEMO
       image.render(*window.getSurface());
-      // ui.render(*window.getSurface());
       text.render(*window.getSurface());
+      ui.render(*window.getSurface());
+#endif
 #ifdef PERFORMANCE
       renderDelta =
           uint64_t{SDL_GetPerformanceCounter()} - renderStart - offsetDelta;
