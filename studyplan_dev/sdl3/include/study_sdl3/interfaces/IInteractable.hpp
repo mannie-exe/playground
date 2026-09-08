@@ -24,6 +24,18 @@ enum class EventResult {
   Consumed,
 };
 
+constexpr bool isTerminal(EventResult result) {
+  return result == EventResult::Consumed;
+}
+
+constexpr EventResult combine(EventResult previous, EventResult next) {
+  if (previous == EventResult::Consumed || next == EventResult::Consumed)
+    return EventResult::Consumed;
+  if (previous == EventResult::Handled || next == EventResult::Handled)
+    return EventResult::Handled;
+  return EventResult::Ignored;
+}
+
 constexpr std::string_view toString(EventResult method) {
   switch (method) {
   case EventResult::Ignored:

@@ -46,6 +46,38 @@ public:
     return SDL_Point{surface->w, surface->h};
   }
 
+  void setTitle(const std::string &title) {
+    if (!SDL_SetWindowTitle(_window.get(), title.c_str()))
+      throwSDLError(
+          std::format("Window@{} failed to set window title", (void *)this));
+  }
+
+  void setSize(SDL_Point newSize) {
+    if (newSize.x <= 0 || newSize.y <= 0)
+      return;
+
+    if (newSize.x == size.x && newSize.y == size.y)
+      return;
+
+    if (!SDL_SetWindowSize(_window.get(), newSize.x, newSize.y))
+      throwSDLError(
+          std::format("Window@{} failed to set window size", (void *)this));
+
+    size = newSize;
+  }
+
+  void setResizable(bool resizable) {
+    if (!SDL_SetWindowResizable(_window.get(), resizable))
+      throwSDLError(std::format("Window@{} failed to set window resizable",
+                                (void *)this));
+  }
+
+  void setFullscreen(bool fullscreen) {
+    if (!SDL_SetWindowFullscreen(_window.get(), fullscreen))
+      throwSDLError(std::format("Window@{} failed to set window fullscreen",
+                                (void *)this));
+  }
+
   bool updateSurface() { return SDL_UpdateWindowSurface(_window.get()); }
 
   void clearSurface(bool skipUpdate = false,

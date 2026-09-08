@@ -24,6 +24,9 @@ public:
 
   bool initialized() const { return _initialized; }
 
+  TTFGuard(TTFGuard &&) = delete;
+  TTFGuard &operator=(TTFGuard &&) = delete;
+
   TTFGuard(const TTFGuard &) = delete;
   TTFGuard &operator=(const TTFGuard &) = delete;
 };

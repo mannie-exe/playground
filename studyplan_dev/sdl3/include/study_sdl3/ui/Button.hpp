@@ -5,7 +5,7 @@
 #include <SDL3/SDL_mouse.h>
 
 #include <study_sdl3/interfaces/IInteractable.hpp>
-#include <study_sdl3/ui/DisplayObject.hpp>
+#include <study_sdl3/ui/IDisplayObject.hpp>
 #include <study_sdl3/ui/InteractionState.hpp>
 #include <study_sdl3/ui/Rectangle.hpp>
 
@@ -15,7 +15,7 @@ struct ButtonStyle {
   SDL_Color activeColor{117, 133, 120, 255};
 };
 
-class Button : public DisplayObject, public IInteractable {
+class Button : public IDisplayObject {
   Rectangle _background;
   IInteractable &_parent;
   ButtonStyle _style;
@@ -24,10 +24,15 @@ class Button : public DisplayObject, public IInteractable {
 public:
   Button(const RectTransform transform, IInteractable &parent,
          const ButtonStyle style = {})
-      : DisplayObject{transform}, _background{transform}, _parent{parent},
+      : IDisplayObject{transform}, _background{transform}, _parent{parent},
         _style{style} {}
 
-  EventResult handleEvent(const SDL_Event &event) override {
+  ButtonStyle getStyle() const { return _style; }
+  InteractionState getState() const { return _state; }
+
+  void setStyle(const ButtonStyle &style) { _style = style; }
+
+  virtual EventResult handleEvent(const SDL_Event &event) override {
     if (_state == InteractionState::Disabled)
       return EventResult::Ignored;
 
@@ -96,6 +101,16 @@ public:
     return EventResult::Ignored;
   }
 
+  virtual void render(SDL_Surface &targetSurface) override {
+    const SDL_Color &color = (_state == InteractionState::Pressed ||
+                              _state == InteractionState::PressedOutside)
+                                 ? _style.activeColor
+                             : _state == InteractionState::Hovered
+                                 ? _style.hoverColor
+                                 : _style.baseColor;
+    _background.render(targetSurface, color);
+  }
+
   EventResult onKey(const SDL_KeyboardEvent &) { return EventResult::Ignored; }
 
   EventResult onMouseMove(const SDL_MouseMotionEvent &) {
@@ -139,15 +154,5 @@ public:
   EventResult resetInteraction() {
     _state = InteractionState::Normal;
     return EventResult::Handled;
-  }
-
-  void render(SDL_Surface &targetSurface) override {
-    const SDL_Color &color = (_state == InteractionState::Pressed ||
-                              _state == InteractionState::PressedOutside)
-                                 ? _style.activeColor
-                             : _state == InteractionState::Hovered
-                                 ? _style.hoverColor
-                                 : _style.baseColor;
-    _background.render(targetSurface, color);
   }
 };

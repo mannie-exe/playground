@@ -1,82 +1,198 @@
 #pragma once
 
+#include <algorithm>
 #include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <SDL3/SDL_surface.h>
 
-#include <study_sdl3/interfaces/IDrawable.hpp>
 #include <study_sdl3/support/SDLError.hpp>
+#include <study_sdl3/support/SDLPrimitives.hpp>
 #include <study_sdl3/support/SDLResource.hpp>
 
 using SurfaceResource = SDLResource<SDL_Surface, SDL_DestroySurface>;
 
-struct SurfaceRenderProps {
-  std::optional<SDL_Rect> srcRect;
-  std::optional<SDL_Rect> dstRect;
-  std::optional<SDL_ScaleMode> scaleMode;
+enum class SurfaceFitMode {
+  Stretch,
+  Contain,
+  Cover,
+  Shrink,
 };
 
-class DrawableSurface : public IDrawable {
+constexpr std::string_view toString(SurfaceFitMode method) {
+  switch (method) {
+  case SurfaceFitMode::Stretch:
+    return "Stretch";
+  case SurfaceFitMode::Contain:
+    return "Contain";
+  case SurfaceFitMode::Cover:
+    return "Cover";
+  case SurfaceFitMode::Shrink:
+    return "Shrink";
+  default:
+    return "Unknown";
+  }
+}
+
+template <>
+struct std::formatter<SurfaceFitMode> : std::formatter<std::string_view> {
+  auto format(SurfaceFitMode method, format_context &ctx) const {
+    return std::formatter<std::string_view>::format(toString(method), ctx);
+  }
+};
+
+struct SurfaceBlitProps {
+  std::optional<SDL_Rect> srcRect;
+  SurfaceFitMode fitMode{SurfaceFitMode::Stretch};
+};
+
+struct SurfaceResolvedBlit {
+  SDL_Rect srcRect;
+  SDL_Rect dstRect;
+};
+
+struct SurfaceRenderProps {
+  SurfaceBlitProps blit;
+  SDL_ScaleMode samplingMode{SDL_SCALEMODE_LINEAR};
+};
+
+class DrawableSurface {
   SurfaceResource _surface;
 
 protected:
-  bool _autoConvert{false};
+  bool _autoConvert;
+  SurfaceRenderProps _render;
 
-  SurfaceRenderProps _render{};
+  static SurfaceResolvedBlit resolveBlit(const SDL_Rect surfaceRect,
+                                         const RectTransform destination,
+                                         const SurfaceBlitProps blit) {
+    const SDL_Rect srcRect = blit.srcRect.value_or(surfaceRect);
+    const SDL_Rect dstRect = destination.toSDL();
+
+    SurfaceResolvedBlit resolved{.srcRect = srcRect, .dstRect = dstRect};
+
+    if (blit.fitMode == SurfaceFitMode::Stretch)
+      return resolved;
+
+    if (srcRect.w <= 0 || srcRect.h <= 0 || dstRect.w <= 0 || dstRect.h <= 0)
+      return resolved;
+
+    if (blit.fitMode == SurfaceFitMode::Contain) {
+      float scale = std::min(dstRect.w / static_cast<float>(srcRect.w),
+                             dstRect.h / static_cast<float>(srcRect.h));
+
+      int w = srcRect.w * scale;
+      int h = srcRect.h * scale;
+
+      resolved.dstRect.x = dstRect.x + (dstRect.w - w) / 2;
+      resolved.dstRect.y = dstRect.y + (dstRect.h - h) / 2;
+      resolved.dstRect.w = w;
+      resolved.dstRect.h = h;
+
+      return resolved;
+    }
+
+    if (blit.fitMode == SurfaceFitMode::Cover) {
+      const float srcRatio{srcRect.w / static_cast<float>(srcRect.h)};
+      const float dstRatio{dstRect.w / static_cast<float>(dstRect.h)};
+
+      if (srcRatio > dstRatio) {
+        int newW = srcRect.h * dstRatio;
+        resolved.srcRect.x = srcRect.x + (srcRect.w - newW) / 2;
+        resolved.srcRect.w = newW;
+      } else {
+        int newH = srcRect.w / dstRatio;
+        resolved.srcRect.y = srcRect.y + (srcRect.h - newH) / 2;
+        resolved.srcRect.h = newH;
+      }
+
+      return resolved;
+    }
+
+    if (blit.fitMode == SurfaceFitMode::Shrink) {
+      float containScale = std::min(dstRect.w / static_cast<float>(srcRect.w),
+                                    dstRect.h / static_cast<float>(srcRect.h));
+      float scale = std::min(containScale, 1.0f);
+
+      int w = srcRect.w * scale;
+      int h = srcRect.h * scale;
+
+      resolved.dstRect.x = dstRect.x + (dstRect.w - w) / 2;
+      resolved.dstRect.y = dstRect.y + (dstRect.h - h) / 2;
+      resolved.dstRect.w = w;
+      resolved.dstRect.h = h;
+
+      return resolved;
+    }
+
+    return resolved;
+  }
 
 public:
-  DrawableSurface() = default;
-  explicit DrawableSurface(const bool autoConvert,
-                           const SurfaceRenderProps render = {})
-      : _autoConvert{autoConvert}, _render{render} {}
+  DrawableSurface(const SurfaceRenderProps render = {},
+                  const bool autoConvert = true)
+      : _render{render}, _autoConvert{autoConvert} {}
 
-  DrawableSurface(SDL_Surface *surface, const bool autoConvert = false,
-                  const SurfaceRenderProps render = {})
-      : _surface{surface}, _autoConvert{autoConvert}, _render{render} {
+  explicit DrawableSurface(SDL_Surface *surface,
+                           const SurfaceRenderProps render = {},
+                           const bool autoConvert = true)
+      : _surface{surface}, _render{render}, _autoConvert{autoConvert} {
     if (!_surface)
       throwSDLError(std::format("DrawableSurface@{} Received null SDL_Surface",
                                 (void *)this));
   };
 
-  DrawableSurface(SurfaceResource surface, const bool autoConvert = false)
-      : _surface{std::move(surface)}, _autoConvert{autoConvert} {
+  explicit DrawableSurface(SurfaceResource surface,
+                           const SurfaceRenderProps render = {},
+                           const bool autoConvert = true)
+      : _surface{std::move(surface)}, _render{render},
+        _autoConvert{autoConvert} {
     if (!_surface)
       throwSDLError(std::format("DrawableSurface@{} Received null SDL_Surface",
                                 (void *)this));
   }
 
-  std::optional<SDL_ScaleMode> getScaleMode() { return _render.scaleMode; }
-  std::optional<SDL_Rect> getSrcRect() { return _render.srcRect; }
-  std::optional<SDL_Rect> getDstRect() { return _render.dstRect; }
+  SDL_Rect getSize() const {
+    if (!_surface)
+      return SDL_Rect{0, 0, 0, 0};
+    return SDL_Rect{0, 0, _surface->w, _surface->h};
+  }
 
-  void setScaleMode(SDL_ScaleMode scaleMode) {
-    if (scaleMode == _render.scaleMode)
-      return;
-    _render.scaleMode = scaleMode;
+  SurfaceRenderProps getRenderProps() const { return _render; }
+
+  void setRenderProps(SurfaceRenderProps render) {
+    _render = render;
+  }
+
+  void setBlitProps(SurfaceBlitProps blit) {
+    _render.blit = blit;
   }
 
   void setSrcRect(SDL_Rect rect) {
-    if (_render.srcRect) {
-      if (rect.x == _render.srcRect->x && rect.y == _render.srcRect->y &&
-          rect.w == _render.srcRect->w && rect.h == _render.srcRect->h)
+    if (_render.blit.srcRect) {
+      if (rect == *_render.blit.srcRect)
         return;
     }
-    _render.srcRect = std::make_optional(rect);
+    _render.blit.srcRect = rect;
   }
 
-  void setDstRect(SDL_Rect rect) {
-    if (_render.dstRect) {
-      if (rect.x == _render.dstRect->x && rect.y == _render.dstRect->y &&
-          rect.w == _render.dstRect->w && rect.h == _render.dstRect->h)
-        return;
-    }
-    _render.dstRect = std::make_optional(rect);
+  void setSamplingMode(SDL_ScaleMode samplingMode) {
+    if (samplingMode == _render.samplingMode)
+      return;
+    _render.samplingMode = samplingMode;
   }
 
-  virtual void renderRect(SDL_Surface &targetSurface,
+  void setFitMode(SurfaceFitMode fitMode) {
+    if (fitMode == _render.blit.fitMode)
+      return;
+    _render.blit.fitMode = fitMode;
+  }
+
+  virtual void renderInto(SDL_Surface &targetSurface,
+                          const RectTransform destination,
                           SurfaceRenderProps render) {
     if (!_surface)
       throwSDLError(std::format("DrawableSurface@{} Received null SDL_Surface",
@@ -97,30 +213,27 @@ public:
                         .c_str());
     }
 
-    if (render.scaleMode) {
-      if (!SDL_BlitSurfaceScaled(
-              _surface.get(), render.srcRect ? &*render.srcRect : nullptr,
-              &targetSurface, render.dstRect ? &*render.dstRect : nullptr,
-              *render.scaleMode)) {
-        throwSDLError(std::format("DrawableSurface@{} Failed to render "
-                                  "SDL_Surface@{} to SDL_Surface@{}",
-                                  (void *)this, (void *)_surface.get(),
-                                  (void *)&targetSurface));
-      }
-      return;
-    }
+    SurfaceResolvedBlit blit = resolveBlit(getSize(), destination, render.blit);
 
-    if (!SDL_BlitSurface(
-            _surface.get(), render.srcRect ? &*render.srcRect : nullptr,
-            &targetSurface, render.dstRect ? &*render.dstRect : nullptr))
+    if (!SDL_BlitSurfaceScaled(_surface.get(), &blit.srcRect, &targetSurface,
+                               &blit.dstRect, render.samplingMode)) {
       throwSDLError(std::format("DrawableSurface@{} Failed to render "
                                 "SDL_Surface@{} to SDL_Surface@{}",
                                 (void *)this, (void *)_surface.get(),
                                 (void *)&targetSurface));
+    }
   }
 
-  virtual void render(SDL_Surface &targetSurface) override {
-    renderRect(targetSurface, _render);
+  virtual void renderInto(SDL_Surface &targetSurface,
+                          const RectTransform destination) {
+    renderInto(targetSurface, destination, _render);
+  }
+
+  virtual void render(SDL_Surface &targetSurface) {
+    const SDL_Rect size{getSize()};
+    renderInto(targetSurface, rect(0.0f, 0.0f, static_cast<float>(size.w),
+                                   static_cast<float>(size.h)),
+               _render);
   }
 
   SDL_Surface *getSurface() const { return _surface.get(); }

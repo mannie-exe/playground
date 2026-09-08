@@ -24,6 +24,9 @@ public:
 
   bool initialized() const { return _initialized; }
 
+  SDLGuard(SDLGuard &&) = delete;
+  SDLGuard &operator=(SDLGuard &&) = delete;
+
   SDLGuard(const SDLGuard &) = delete;
   SDLGuard &operator=(const SDLGuard &) = delete;
 };
