@@ -3,7 +3,6 @@
 #include <format>
 #include <string_view>
 
-#include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 
 // keyboard

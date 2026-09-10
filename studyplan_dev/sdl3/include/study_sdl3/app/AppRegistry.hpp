@@ -1,7 +1,9 @@
 #pragma once
 
+#include <format>
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,7 +32,8 @@ public:
         return entry.factory();
     }
 
-    throw std::string{"AppRegistry failed to create requested app"};
+    throw std::string{std::format(
+        "AppRegistry failed to create requested app: {}", appId)};
   }
 
   const AppInfo &info(AppId appId) const {
@@ -39,7 +42,8 @@ public:
         return entry.info;
     }
 
-    throw std::string{"AppRegistry failed to find requested app info"};
+    throw std::string{std::format(
+        "AppRegistry failed to find requested app info: {}", appId)};
   }
 
   std::vector<AppInfo> list() const {

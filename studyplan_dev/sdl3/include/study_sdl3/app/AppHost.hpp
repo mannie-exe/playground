@@ -7,8 +7,8 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
-#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_video.h>
 
 #include <study_sdl3/app/AppConfig.hpp>
 #include <study_sdl3/app/AppContext.hpp>
@@ -39,11 +39,12 @@ public:
   explicit AppHost(WindowConfig initialWindow = WindowConfig{
                        .title =
                            std::string{study_sdl3::config::defaultWindowTitle},
-                       .size = study_sdl3::config::defaultWindowSize,
-                       .resizable = true})
-      : _sdl{SDL_INIT_VIDEO}, _ttf{}, _window{initialWindow.title,
-                                              initialWindow.size,
-                                              windowFlags(initialWindow)},
+                       .windowedSize =
+                           study_sdl3::config::defaultWindowSize,
+                       .resizable = study_sdl3::config::defaultWindowResizable,
+                       .fullscreen =
+                           study_sdl3::config::defaultWindowFullscreen})
+      : _sdl{SDL_INIT_VIDEO}, _ttf{}, _window{initialWindow},
         _clearColor{initialWindow.clearColor} {
     registerDefaultApps();
     switchTo(AppId::Menu);
@@ -54,8 +55,10 @@ public:
 
   SDL_Surface &surface() { return *_window.getSurface(); }
 
-  SDL_Point windowSize() const { return _window.getSurfaceSize(); }
-  SDL_Point drawableSize() const { return _window.getSurfaceSize(); }
+  const WindowState &windowState() const { return _window.state(); }
+
+  Vec2i windowSize() const { return _window.getSurfaceSize(); }
+  Vec2i drawableSize() const { return _window.getSurfaceSize(); }
 
   std::string assetPath(std::string_view relativePath) const {
     return study_sdl3::assets::path(relativePath);
@@ -153,6 +156,8 @@ private:
   }
 
   void handleHostEvent(const SDL_Event &event) {
+    _window.handleEvent(event);
+
     if (event.type == SDL_EVENT_QUIT)
       request(PendingAppCommand{.type = AppCommandType::Quit});
   }
@@ -184,22 +189,17 @@ private:
   }
 
   void applyWindowConfig(const WindowConfig &config) {
+    if (!config.fullscreen)
+      _window.setFullscreen(false);
+
     _window.setTitle(config.title);
-    _window.setSize(config.size);
     _window.setResizable(config.resizable);
-    _window.setFullscreen(config.fullscreen);
-    _clearColor = config.clearColor;
-  }
+    _window.setWindowedSize(config.windowedSize);
 
-  static SDL_WindowFlags windowFlags(const WindowConfig &config) {
-    SDL_WindowFlags flags{0};
-
-    if (config.resizable)
-      flags |= SDL_WINDOW_RESIZABLE;
     if (config.fullscreen)
-      flags |= SDL_WINDOW_FULLSCREEN;
+      _window.setFullscreen(true);
 
-    return flags;
+    _clearColor = config.clearColor;
   }
 };
 
@@ -207,9 +207,13 @@ inline Window &AppContext::window() { return _host.window(); }
 
 inline SDL_Surface &AppContext::surface() { return _host.surface(); }
 
-inline SDL_Point AppContext::windowSize() const { return _host.windowSize(); }
+inline const WindowState &AppContext::windowState() const {
+  return _host.windowState();
+}
 
-inline SDL_Point AppContext::drawableSize() const { return _host.drawableSize(); }
+inline Vec2i AppContext::windowSize() const { return _host.windowSize(); }
+
+inline Vec2i AppContext::drawableSize() const { return _host.drawableSize(); }
 
 inline std::string AppContext::assetPath(std::string_view relativePath) const {
   return _host.assetPath(relativePath);

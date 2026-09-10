@@ -7,10 +7,13 @@
 
 #include <study_sdl3/app/IApp.hpp>
 #include <study_sdl3/minesweeper/Config.hpp>
+#include <study_sdl3/minesweeper/MinesweeperEvents.hpp>
 #include <study_sdl3/minesweeper/MinesweeperUI.hpp>
 
 class MinesweeperApp : public IApp {
   std::optional<MinesweeperUI> _ui;
+  study_sdl3::minesweeper::MinesweeperEvents _events;
+  std::unique_ptr<Font> _font;
 
 public:
   static AppInfo staticInfo() {
@@ -19,17 +22,29 @@ public:
         .name = study_sdl3::minesweeper::config::gameName,
         .window = WindowConfig{
             .title = std::string{study_sdl3::minesweeper::config::windowTitle},
-            .size = study_sdl3::minesweeper::config::windowSize,
+            .windowedSize = study_sdl3::minesweeper::config::windowSize,
             .resizable = study_sdl3::minesweeper::config::windowResizable,
             .fullscreen = study_sdl3::minesweeper::config::windowFullscreen,
             .clearColor = study_sdl3::minesweeper::config::backgroundColor}};
   }
 
+  MinesweeperApp() : _events{study_sdl3::minesweeper::events()} {}
+
   AppInfo info() const override { return staticInfo(); }
 
   void onEnter(AppContext &ctx) override {
-    _ui.emplace(DisplayState{.windowSize = ctx.windowSize(),
-                             .drawableSize = ctx.drawableSize()});
+    _font = std::make_unique<Font>(
+        FontProps{.path = ctx.assetPath(study_sdl3::minesweeper::config::baseFontPath),
+                  .style = {.size = 32.0f}});
+    _ui.emplace(
+        DisplayState{.windowSize = ctx.windowSize(),
+                     .drawableSize = ctx.drawableSize()},
+        rect(static_cast<float>(study_sdl3::minesweeper::config::padding),
+             static_cast<float>(study_sdl3::minesweeper::config::padding),
+             static_cast<float>(study_sdl3::minesweeper::config::gridWidth),
+             static_cast<float>(study_sdl3::minesweeper::config::gridHeight)),
+        _events, ctx.assetPath(study_sdl3::minesweeper::config::bombImagePath),
+        *_font);
   }
 
   void onExit(AppContext &) override { _ui.reset(); }

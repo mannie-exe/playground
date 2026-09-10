@@ -10,7 +10,7 @@ public:
     return AppInfo{.id = AppId::Menu,
                    .name = "Menu",
                    .window = WindowConfig{.title = "study_sdl3 menu",
-                                          .size = SDL_Point{800, 600},
+                                          .windowedSize = SDL_Point{800, 600},
                                           .resizable = true,
                                           .fullscreen = false,
                                           .clearColor = SDL_Color{24, 24, 24,

@@ -12,13 +12,18 @@ class ImageSurface : public DrawableSurface {
 
 public:
   explicit ImageSurface(const std::string &filePath,
-                        const SurfaceRenderProps renderProps = {})
+                        const SurfaceRenderProps renderProps = {},
+                        const bool autoConvert = false)
       : DrawableSurface(
             requireSDL(IMG_Load(filePath.c_str()),
                        std::format("ImageSurface@{} Failed to load: {}",
                                    (void *)this, filePath)),
-            renderProps, true),
+            renderProps, autoConvert),
         _filePath{filePath} {
+    if (!SDL_SetSurfaceBlendMode(getSurface(), SDL_BLENDMODE_BLEND))
+      throwSDLError(std::format("ImageSurface@{} Failed to set blend mode: {}",
+                                (void *)this, filePath));
+
     SDL_Log("%s",
             std::format("ImageSurface@{} Loaded: {}", (void *)this, filePath)
                 .c_str());

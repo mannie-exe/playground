@@ -5,10 +5,10 @@
 
 #include <SDL3/SDL.h>
 
+#include <study_sdl3/interfaces/IDisplayObject.hpp>
 #include <study_sdl3/interfaces/IDrawable.hpp>
 #include <study_sdl3/interfaces/IInteractable.hpp>
 #include <study_sdl3/ui/Button.hpp>
-#include <study_sdl3/ui/IDisplayObject.hpp>
 
 class DemoUI : public IInteractable, public IDrawable {
   std::vector<std::unique_ptr<IDisplayObject>> _items;

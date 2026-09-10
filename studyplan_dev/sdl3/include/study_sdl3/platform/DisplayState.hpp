@@ -3,6 +3,6 @@
 #include <SDL3/SDL_rect.h>
 
 struct DisplayState {
-  SDL_Point windowSize{};
-  SDL_Point drawableSize{};
+  Vec2i windowSize{};
+  Vec2i drawableSize{};
 };

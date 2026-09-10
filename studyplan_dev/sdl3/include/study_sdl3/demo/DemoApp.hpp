@@ -24,7 +24,7 @@ public:
         .name = study_sdl3::demo::config::gameName,
         .window = WindowConfig{
             .title = std::string{study_sdl3::demo::config::windowTitle},
-            .size = study_sdl3::demo::config::windowSize,
+            .windowedSize = study_sdl3::demo::config::windowSize,
             .resizable = study_sdl3::demo::config::windowResizable,
             .fullscreen = study_sdl3::demo::config::windowFullscreen,
             .clearColor = SDL_Color{50, 50, 50, 255}}};

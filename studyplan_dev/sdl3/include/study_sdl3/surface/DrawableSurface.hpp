@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_surface.h>
 
 #include <study_sdl3/support/SDLError.hpp>
@@ -163,13 +164,9 @@ public:
 
   SurfaceRenderProps getRenderProps() const { return _render; }
 
-  void setRenderProps(SurfaceRenderProps render) {
-    _render = render;
-  }
+  void setRenderProps(SurfaceRenderProps render) { _render = render; }
 
-  void setBlitProps(SurfaceBlitProps blit) {
-    _render.blit = blit;
-  }
+  void setBlitProps(SurfaceBlitProps blit) { _render.blit = blit; }
 
   void setSrcRect(SDL_Rect rect) {
     if (_render.blit.srcRect) {
@@ -231,8 +228,9 @@ public:
 
   virtual void render(SDL_Surface &targetSurface) {
     const SDL_Rect size{getSize()};
-    renderInto(targetSurface, rect(0.0f, 0.0f, static_cast<float>(size.w),
-                                   static_cast<float>(size.h)),
+    renderInto(targetSurface,
+               rect(0.0f, 0.0f, static_cast<float>(size.w),
+                    static_cast<float>(size.h)),
                _render);
   }
 

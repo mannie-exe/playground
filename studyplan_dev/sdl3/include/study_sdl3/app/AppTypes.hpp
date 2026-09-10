@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <study_sdl3/platform/WindowTypes.hpp>
 #include <study_sdl3/support/SDLPrimitives.hpp>
 
 enum class AppId {
@@ -20,14 +21,6 @@ enum class AppCommandType {
   ReturnToMenu,
   Quit,
   ReconfigureWindow,
-};
-
-struct WindowConfig {
-  std::string title{"study_sdl3"};
-  SDL_Point size{800, 600};
-  bool resizable{true};
-  bool fullscreen{false};
-  SDL_Color clearColor{50, 50, 50, 255};
 };
 
 struct AppInfo {
@@ -85,18 +78,6 @@ template <>
 struct std::formatter<AppCommandType> : std::formatter<std::string_view> {
   auto format(AppCommandType type, format_context &ctx) const {
     return std::formatter<std::string_view>::format(toString(type), ctx);
-  }
-};
-
-template <>
-struct std::formatter<WindowConfig> : std::formatter<std::string_view> {
-  auto format(const WindowConfig &config, format_context &ctx) const {
-    return std::format_to(
-        ctx.out(),
-        "WindowConfig{{.title = \"{}\", .size = {}, .resizable = {}, "
-        ".fullscreen = {}, .clearColor = {}}}",
-        config.title, config.size, config.resizable, config.fullscreen,
-        config.clearColor);
   }
 };
 

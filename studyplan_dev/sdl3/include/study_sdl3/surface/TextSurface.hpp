@@ -306,10 +306,10 @@ public:
   }
 
   void setWrapWidth(const int wrapWidth) {
-    if (_props.layout.wrapWidth == wrapWidth)
-      return;
+    const int finalWrapWidth = std::max(0, wrapWidth);
 
-    const int finalWrapWidth = wrapWidth > 0 ? wrapWidth : 0;
+    if (_props.layout.wrapWidth == finalWrapWidth)
+      return;
 
     try {
       TextProps props = _props;
@@ -332,12 +332,14 @@ public:
   }
 
   void setFontFitWidth(const int fontFitWidth) {
-    if (_props.layout.fontFitWidth == fontFitWidth)
+    const int finalFontFitWidth = std::max(0, fontFitWidth);
+
+    if (_props.layout.fontFitWidth == finalFontFitWidth)
       return;
 
     try {
       TextProps props = _props;
-      props.layout.fontFitWidth = fontFitWidth;
+      props.layout.fontFitWidth = finalFontFitWidth;
       std::optional<TextRenderState> scaledState =
           createScaledState(this, props, _baseState);
       SurfaceResource surface{

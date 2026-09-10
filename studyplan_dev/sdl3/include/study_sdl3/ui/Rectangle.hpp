@@ -3,8 +3,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_rect.h>
 
+#include <study_sdl3/interfaces/IDisplayObject.hpp>
 #include <study_sdl3/support/SDLPrimitives.hpp>
-#include <study_sdl3/ui/IDisplayObject.hpp>
 
 struct RectangleStyle {
   SDL_Color color;
@@ -15,8 +15,9 @@ class Rectangle : public IDisplayObject {
 
 public:
   Rectangle(const RectTransform rect,
-            const RectangleStyle style = {.color = SDL_Color{192, 0, 30}})
-      : IDisplayObject{rect}, _style{style} {}
+            const RectangleStyle style = {.color = SDL_Color{192, 0, 30}},
+            const bool visible = true)
+      : IDisplayObject{rect, visible}, _style{style} {}
 
   SDL_Color getColor() const { return _style.color; }
 
@@ -44,6 +45,8 @@ public:
   }
 
   void render(SDL_Surface &targetSurface) override {
+    if (!isVisible())
+      return;
     render(targetSurface, _style.color);
   }
 };

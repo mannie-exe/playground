@@ -20,8 +20,9 @@ public:
   Window &window();
   SDL_Surface &surface();
 
-  SDL_Point windowSize() const;
-  SDL_Point drawableSize() const;
+  const WindowState &windowState() const;
+  Vec2i windowSize() const;
+  Vec2i drawableSize() const;
 
   std::string assetPath(std::string_view relativePath) const;
 

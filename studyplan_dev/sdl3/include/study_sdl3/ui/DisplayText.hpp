@@ -5,8 +5,8 @@
 #include <string>
 #include <utility>
 
+#include <study_sdl3/interfaces/IDisplayObject.hpp>
 #include <study_sdl3/surface/TextSurface.hpp>
-#include <study_sdl3/ui/IDisplayObject.hpp>
 
 struct DisplayTextProps {
   bool selectable{false};
@@ -30,11 +30,8 @@ class DisplayText : public IDisplayObject {
   void syncTextToTransform() {
     const int width{std::max(0, static_cast<int>(_transform.size.x))};
 
-    if (_props.wrapToTransform)
-      _text.setWrapWidth(width);
-
-    if (_props.fitTextWidthToTransform)
-      _text.setFontFitWidth(width);
+    _text.setWrapWidth(_props.wrapToTransform ? width : 0);
+    _text.setFontFitWidth(_props.fitTextWidthToTransform ? width : 0);
 
     const SDL_Rect textSize{_text.getSize()};
     RectTransform textTransform{.position = _transform.position,
@@ -58,9 +55,10 @@ public:
   explicit DisplayText(TextProps textProps, Font font,
                        const DisplayTextProps props = {},
                        const SurfaceRenderProps render = {},
-                       const RectTransform transform = {})
-      : IDisplayObject{transform}, _text{std::move(textProps), std::move(font), render},
-        _props{props} {
+                       const RectTransform transform = {},
+                       const bool visible = true)
+      : IDisplayObject{transform, visible},
+        _text{std::move(textProps), std::move(font), render}, _props{props} {
     syncTextToTransform();
   }
 
@@ -116,6 +114,8 @@ public:
   }
 
   void render(SDL_Surface &targetSurface) override {
+    if (!isVisible())
+      return;
     _text.renderInto(targetSurface, _textTransform);
   }
 };

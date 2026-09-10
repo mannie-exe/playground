@@ -15,7 +15,7 @@ public:
         .name = study_sdl3::snake::config::gameName,
         .window = WindowConfig{
             .title = std::string{study_sdl3::snake::config::windowTitle},
-            .size = study_sdl3::snake::config::windowSize,
+            .windowedSize = study_sdl3::snake::config::windowSize,
             .resizable = study_sdl3::snake::config::windowResizable,
             .fullscreen = study_sdl3::snake::config::windowFullscreen,
             .clearColor = SDL_Color{8, 16, 8, 255}}};

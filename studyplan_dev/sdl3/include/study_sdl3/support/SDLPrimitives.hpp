@@ -8,6 +8,7 @@
 #include <SDL3/SDL_rect.h>
 
 using Vec2f = SDL_FPoint;
+using Vec2i = SDL_Point;
 
 constexpr bool operator==(const SDL_Point &a, const SDL_Point &b) {
   return a.x == b.x && a.y == b.y;
@@ -16,6 +17,21 @@ constexpr bool operator==(const SDL_Point &a, const SDL_Point &b) {
 constexpr bool operator!=(const SDL_Point &a, const SDL_Point &b) {
   return !(a == b);
 }
+
+constexpr SDL_Point operator+(SDL_Point a, SDL_Point b) { return {a.x + b.x, a.y + b.y}; }
+constexpr SDL_Point operator-(SDL_Point a, SDL_Point b) { return {a.x - b.x, a.y - b.y}; }
+constexpr SDL_Point operator-(SDL_Point value) { return {-value.x, -value.y}; }
+constexpr SDL_Point operator*(SDL_Point value, int scalar) { return {value.x * scalar, value.y * scalar}; }
+constexpr SDL_Point operator*(int scalar, SDL_Point value) { return value * scalar; }
+constexpr SDL_Point operator/(SDL_Point value, int scalar) { return {value.x / scalar, value.y / scalar}; }
+constexpr SDL_Point operator*(SDL_Point a, SDL_Point b) { return {a.x * b.x, a.y * b.y}; }
+constexpr SDL_Point operator/(SDL_Point a, SDL_Point b) { return {a.x / b.x, a.y / b.y}; }
+constexpr SDL_Point &operator+=(SDL_Point &a, SDL_Point b) { return a = a + b; }
+constexpr SDL_Point &operator-=(SDL_Point &a, SDL_Point b) { return a = a - b; }
+constexpr SDL_Point &operator*=(SDL_Point &a, int scalar) { return a = a * scalar; }
+constexpr SDL_Point &operator/=(SDL_Point &a, int scalar) { return a = a / scalar; }
+constexpr SDL_Point &operator*=(SDL_Point &a, SDL_Point b) { return a = a * b; }
+constexpr SDL_Point &operator/=(SDL_Point &a, SDL_Point b) { return a = a / b; }
 
 constexpr bool operator==(const SDL_FPoint &a, const SDL_FPoint &b) {
   return a.x == b.x && a.y == b.y;
@@ -44,6 +60,16 @@ constexpr SDL_FPoint operator*(float scalar, const SDL_FPoint &point) {
 constexpr SDL_FPoint operator/(const SDL_FPoint &point, float scalar) {
   return SDL_FPoint{point.x / scalar, point.y / scalar};
 }
+
+constexpr SDL_FPoint operator-(const SDL_FPoint &point) { return {-point.x, -point.y}; }
+constexpr SDL_FPoint operator*(const SDL_FPoint &a, const SDL_FPoint &b) { return {a.x * b.x, a.y * b.y}; }
+constexpr SDL_FPoint operator/(const SDL_FPoint &a, const SDL_FPoint &b) { return {a.x / b.x, a.y / b.y}; }
+constexpr SDL_FPoint &operator+=(SDL_FPoint &a, const SDL_FPoint &b) { return a = a + b; }
+constexpr SDL_FPoint &operator-=(SDL_FPoint &a, const SDL_FPoint &b) { return a = a - b; }
+constexpr SDL_FPoint &operator*=(SDL_FPoint &a, float scalar) { return a = a * scalar; }
+constexpr SDL_FPoint &operator/=(SDL_FPoint &a, float scalar) { return a = a / scalar; }
+constexpr SDL_FPoint &operator*=(SDL_FPoint &a, const SDL_FPoint &b) { return a = a * b; }
+constexpr SDL_FPoint &operator/=(SDL_FPoint &a, const SDL_FPoint &b) { return a = a / b; }
 
 constexpr bool operator==(const SDL_Rect &a, const SDL_Rect &b) {
   return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
@@ -101,7 +127,22 @@ struct RectTransform {
   }
 
   SDL_Rect toSDL() const { return toRect(); }
+
+  constexpr RectTransform &operator+=(Vec2f offset) { position += offset; return *this; }
+  constexpr RectTransform &operator-=(Vec2f offset) { position -= offset; return *this; }
+  constexpr RectTransform &operator*=(float scalar) { position *= scalar; size *= scalar; return *this; }
+  constexpr RectTransform &operator/=(float scalar) { position /= scalar; size /= scalar; return *this; }
+  constexpr RectTransform &operator*=(Vec2f scale) { position *= scale; size *= scale; return *this; }
+  constexpr RectTransform &operator/=(Vec2f scale) { position /= scale; size /= scale; return *this; }
 };
+
+constexpr RectTransform operator+(RectTransform value, Vec2f offset) { return value += offset; }
+constexpr RectTransform operator-(RectTransform value, Vec2f offset) { return value -= offset; }
+constexpr RectTransform operator*(RectTransform value, float scalar) { return value *= scalar; }
+constexpr RectTransform operator*(float scalar, RectTransform value) { return value *= scalar; }
+constexpr RectTransform operator/(RectTransform value, float scalar) { return value /= scalar; }
+constexpr RectTransform operator*(RectTransform value, Vec2f scale) { return value *= scale; }
+constexpr RectTransform operator/(RectTransform value, Vec2f scale) { return value /= scale; }
 
 constexpr RectTransform rect(float x, float y, float w, float h) {
   return RectTransform{.position = Vec2f{x, y}, .size = Vec2f{w, h}};
@@ -256,14 +297,6 @@ constexpr std::string_view toString(SizePolicy policy) {
   default:
     return "Unknown";
   }
-}
-
-constexpr bool sameRect(const SDL_Rect &a, const SDL_Rect &b) {
-  return a == b;
-}
-
-constexpr bool sameColor(const SDL_Color &a, const SDL_Color &b) {
-  return a == b;
 }
 
 template <>

@@ -10,18 +10,25 @@
 class IDisplayObject : public IDrawable, public IInteractable {
 protected:
   RectTransform _transform;
+  bool _visible;
 
-  explicit IDisplayObject(const RectTransform transform)
-      : _transform{transform} {}
+  explicit IDisplayObject(const RectTransform transform,
+                          const bool visible = true)
+      : _transform{transform}, _visible{visible} {}
 
 public:
   virtual ~IDisplayObject() = default;
 
   RectTransform getTransform() const { return _transform; }
+  bool isVisible() const { return _visible; }
+  bool isShown() const { return isVisible(); }
 
   virtual void setTransform(const RectTransform &transform) {
     _transform = transform;
   }
+
+  virtual void show(const bool show = true) { _visible = show; }
+  virtual void hide(const bool hide = true) { show(!hide); }
 
   virtual bool isPointInObject(float x, float y) const {
     return _transform.contains(x, y);
@@ -31,7 +38,7 @@ public:
     return EventResult::Ignored;
   }
 
-  virtual void render(SDL_Surface &targetSurface) override = 0;
+  virtual void render(SDL_Surface &) override = 0;
 
   IDisplayObject(IDisplayObject &&) noexcept = default;
   IDisplayObject &operator=(IDisplayObject &&) noexcept = default;
