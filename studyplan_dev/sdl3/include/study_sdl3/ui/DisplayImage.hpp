@@ -16,6 +16,12 @@ public:
                         const bool visible = true)
       : IDisplayObject{transform, visible}, _image{filePath, render} {}
 
+  explicit DisplayImage(const SurfaceHandle &surface,
+                        const RectTransform transform = {},
+                        const SurfaceRenderProps render = {},
+                        const bool visible = true)
+      : IDisplayObject{transform, visible}, _image{surface, {}, render} {}
+
   void setTransform(const RectTransform &transform) override {
     IDisplayObject::setTransform(transform);
   }

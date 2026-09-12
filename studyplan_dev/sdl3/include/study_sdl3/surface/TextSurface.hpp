@@ -1,6 +1,7 @@
 #pragma once
 
 #include <format>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -76,10 +77,10 @@ struct TextProps {
 
 class TextSurface : public DrawableSurface {
   struct TextRenderState {
-    Font font;
+    FontHandle font;
     TextResource text;
 
-    TextRenderState(Font font, TextResource text)
+    TextRenderState(FontHandle font, TextResource text)
         : font{std::move(font)}, text{std::move(text)} {}
 
     TextRenderState(TextRenderState &&) noexcept = default;
@@ -101,24 +102,24 @@ class TextSurface : public DrawableSurface {
       case TextRenderMethod::Blended:
         return SurfaceResource{requireSDL(
             TTF_RenderText_Blended_Wrapped(
-                state.font.get(), props.value.c_str(), 0, props.style.fgColor,
+                state.font->get(), props.value.c_str(), 0, props.style.fgColor,
                 props.layout.wrapWidth),
             std::format("Text@{} Failed to create SDL_Surface", owner))};
       case TextRenderMethod::Shaded:
         return SurfaceResource{requireSDL(
             TTF_RenderText_Shaded_Wrapped(
-                state.font.get(), props.value.c_str(), 0, props.style.fgColor,
+                state.font->get(), props.value.c_str(), 0, props.style.fgColor,
                 props.style.bgColor, props.layout.wrapWidth),
             std::format("Text@{} Failed to create SDL_Surface", owner))};
       case TextRenderMethod::Solid:
         return SurfaceResource{requireSDL(
-            TTF_RenderText_Solid_Wrapped(state.font.get(), props.value.c_str(),
+        TTF_RenderText_Solid_Wrapped(state.font->get(), props.value.c_str(),
                                          0, props.style.fgColor,
                                          props.layout.wrapWidth),
             std::format("Text@{} Failed to create SDL_Surface", owner))};
       case TextRenderMethod::LCD:
         return SurfaceResource{requireSDL(
-            TTF_RenderText_LCD_Wrapped(state.font.get(), props.value.c_str(), 0,
+        TTF_RenderText_LCD_Wrapped(state.font->get(), props.value.c_str(), 0,
                                        props.style.fgColor, props.style.bgColor,
                                        props.layout.wrapWidth),
             std::format("Text@{} Failed to create SDL_Surface", owner))};
@@ -128,22 +129,22 @@ class TextSurface : public DrawableSurface {
     switch (props.style.renderMethod) {
     case TextRenderMethod::Blended:
       return SurfaceResource{requireSDL(
-          TTF_RenderText_Blended(state.font.get(), props.value.c_str(), 0,
+      TTF_RenderText_Blended(state.font->get(), props.value.c_str(), 0,
                                  props.style.fgColor),
           std::format("Text@{} Failed to create SDL_Surface", owner))};
     case TextRenderMethod::Shaded:
       return SurfaceResource{requireSDL(
-          TTF_RenderText_Shaded(state.font.get(), props.value.c_str(), 0,
+      TTF_RenderText_Shaded(state.font->get(), props.value.c_str(), 0,
                                 props.style.fgColor, props.style.bgColor),
           std::format("Text@{} Failed to create SDL_Surface", owner))};
     case TextRenderMethod::Solid:
       return SurfaceResource{requireSDL(
-          TTF_RenderText_Solid(state.font.get(), props.value.c_str(), 0,
+      TTF_RenderText_Solid(state.font->get(), props.value.c_str(), 0,
                                props.style.fgColor),
           std::format("Text@{} Failed to create SDL_Surface", owner))};
     case TextRenderMethod::LCD:
       return SurfaceResource{requireSDL(
-          TTF_RenderText_LCD(state.font.get(), props.value.c_str(), 0,
+      TTF_RenderText_LCD(state.font->get(), props.value.c_str(), 0,
                              props.style.fgColor, props.style.bgColor),
           std::format("Text@{} Failed to create SDL_Surface", owner))};
     };
@@ -153,14 +154,15 @@ class TextSurface : public DrawableSurface {
   }
 
   static TextResource createText(const void *owner, const std::string &value,
-                                 const Font &font) {
+                                 const FontHandle &font) {
     return TextResource{
-        requireSDL(TTF_CreateText(nullptr, font.get(), value.c_str(), 0),
+        requireSDL(TTF_CreateText(nullptr, font->get(), value.c_str(), 0),
                    std::format("Text@{} Failed to create TTF_Text", owner))};
   }
 
   static TextRenderState
-  createRenderState(const void *owner, const std::string &value, Font font) {
+  createRenderState(const void *owner, const std::string &value,
+                    FontHandle font) {
     TextResource text{createText(owner, value, font)};
     return TextRenderState{std::move(font), std::move(text)};
   }
@@ -181,17 +183,18 @@ class TextSurface : public DrawableSurface {
     SurfaceResource wrappedSurface{createSurface(owner, props, baseState)};
 
     if (props.layout.fontFitWidth > 0 && wrappedSurface->w > 0) {
-      float targetSize = baseState.font.getSize() * props.layout.fontFitWidth /
+      float targetSize = baseState.font->getSize() * props.layout.fontFitWidth /
                          wrappedSurface->w;
       scaledState = createRenderState(
-          owner, props.value, baseState.font.cloneWith({.size = targetSize}));
+          owner, props.value,
+          std::make_shared<Font>(baseState.font->cloneWith({.size = targetSize})));
     }
 
     return scaledState;
   }
 
 public:
-  TextSurface(TextProps props, Font font,
+  TextSurface(TextProps props, FontHandle font,
               const SurfaceRenderProps render = {}, bool autoConvert = false)
       : DrawableSurface{render, autoConvert}, _props{std::move(props)},
         _baseState{createRenderState(this, _props.value, std::move(font))},
@@ -206,7 +209,7 @@ public:
   SDL_Color getBGColor() const { return _props.style.bgColor; }
   int getFontFitWidth() const { return _props.layout.fontFitWidth; }
   int getWrapWidth() const { return _props.layout.wrapWidth; }
-  const Font &getFont() const {
+  FontHandle getFont() const {
     return _scaledState ? _scaledState->font : _baseState.font;
   }
 
@@ -221,7 +224,9 @@ public:
           .layout = _props.layout,
       };
       TextRenderState cache{
-          createRenderState(this, props.value, _baseState.font.cloneWith({}))};
+          createRenderState(
+              this, props.value,
+              std::make_shared<Font>(_baseState.font->cloneWith({}))) };
       std::optional<TextRenderState> scaledState =
           createScaledState(this, props, cache);
       SurfaceResource surface{
@@ -360,7 +365,7 @@ public:
 
   void setFontSize(float size) {
     try {
-      replaceFont(_baseState.font.cloneWith({.size = size}));
+      replaceFont(std::make_shared<Font>(_baseState.font->cloneWith({.size = size})));
     } catch (const std::string &err) {
       SDL_Log("%s", buildSDLErrorMessage(
                         std::format("Text@{} Failed to set font size to: {}",
@@ -385,7 +390,7 @@ public:
       setFGColor(*style.fgColor);
   }
 
-  void replaceFont(Font font) {
+  void replaceFont(FontHandle font) {
     try {
       TextRenderState cache{
           createRenderState(this, _props.value, std::move(font))};

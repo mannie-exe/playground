@@ -27,6 +27,75 @@ class DisplayText : public IDisplayObject {
   DisplayTextProps _props;
   RectTransform _textTransform;
 
+public:
+  explicit DisplayText(TextProps textProps, FontHandle font,
+                       const DisplayTextProps props = {},
+                       const SurfaceRenderProps render = {},
+                       const RectTransform transform = {},
+                       const bool visible = true)
+      : IDisplayObject{transform, visible},
+        _text{std::move(textProps), std::move(font), render}, _props{props} {
+    syncTextToTransform();
+  }
+
+  const std::string &getValue() const { return _text.getValue(); }
+  DisplayTextProps getProps() const { return _props; }
+  TextStyleProps getStyle() const { return _text.getTextProps().style; }
+  TextLayoutProps getLayout() const { return _text.getTextProps().layout; }
+  FontHandle getFont() const { return _text.getFont(); }
+
+  void setValue(const std::string &value) {
+    _text.setValue(value);
+    syncTextToTransform();
+  }
+  void setStyle(const TextStylePatch style) {
+    _text.setStyle(style);
+    syncTextToTransform();
+  }
+  void setLayout(const TextLayoutPatch layout) {
+    _text.setLayout(layout);
+    syncTextToTransform();
+  }
+  void setSelectable(const bool selectable) { _props.selectable = selectable; }
+  void setWrapToTransform(bool wrapToTransform) {
+    _props.wrapToTransform = wrapToTransform;
+    syncTextToTransform();
+  }
+  void setFitTextWidthToTransform(const bool fitTextWidthToTransform) {
+    _props.fitTextWidthToTransform = fitTextWidthToTransform;
+    syncTextToTransform();
+  }
+  void setAlignment(const DisplayAlignment alignment) {
+    _props.alignment = alignment;
+    syncTextToTransform();
+  }
+  void setProps(const DisplayTextPatch props) {
+    if (props.selectable)
+      setSelectable(*props.selectable);
+    if (props.wrapToTransform)
+      setWrapToTransform(*props.wrapToTransform);
+    if (props.fitTextWidthToTransform)
+      setFitTextWidthToTransform(*props.fitTextWidthToTransform);
+    if (props.alignment)
+      setAlignment(*props.alignment);
+  }
+  void replaceFont(FontHandle font) {
+    _text.replaceFont(std::move(font));
+    syncTextToTransform();
+  }
+
+  void setTransform(const RectTransform &transform) override {
+    IDisplayObject::setTransform(transform);
+    syncTextToTransform();
+  }
+
+  void render(SDL_Surface &targetSurface) override {
+    if (!isVisible())
+      return;
+    _text.renderInto(targetSurface, _textTransform);
+  }
+
+private:
   void syncTextToTransform() {
     const int width{std::max(0, static_cast<int>(_transform.size.x))};
 
@@ -49,73 +118,5 @@ class DisplayText : public IDisplayObject {
       textTransform.position.y += _transform.size.y - textSize.h;
 
     _textTransform = textTransform;
-  }
-
-public:
-  explicit DisplayText(TextProps textProps, Font font,
-                       const DisplayTextProps props = {},
-                       const SurfaceRenderProps render = {},
-                       const RectTransform transform = {},
-                       const bool visible = true)
-      : IDisplayObject{transform, visible},
-        _text{std::move(textProps), std::move(font), render}, _props{props} {
-    syncTextToTransform();
-  }
-
-  const std::string &getValue() const { return _text.getValue(); }
-  DisplayTextProps getProps() const { return _props; }
-  TextStyleProps getStyle() const { return _text.getTextProps().style; }
-  TextLayoutProps getLayout() const { return _text.getTextProps().layout; }
-  const Font &getFont() const { return _text.getFont(); }
-
-  void setValue(const std::string &value) {
-    _text.setValue(value);
-    syncTextToTransform();
-  }
-  void setStyle(const TextStylePatch style) {
-    _text.setStyle(style);
-    syncTextToTransform();
-  }
-  void setLayout(const TextLayoutPatch layout) {
-    _text.setLayout(layout);
-    syncTextToTransform();
-  }
-  void setSelectable(const bool selectable) { _props.selectable = selectable; }
-  void setWrapToTransform(bool wrapToTransform) {
-    _props.wrapToTransform = wrapToTransform;
-    syncTextToTransform();
-  }
-  void setFitTextWidthToTransform(bool fitTextWidthToTransform) {
-    _props.fitTextWidthToTransform = fitTextWidthToTransform;
-    syncTextToTransform();
-  }
-  void setAlignment(const DisplayAlignment alignment) {
-    _props.alignment = alignment;
-    syncTextToTransform();
-  }
-  void setProps(const DisplayTextPatch props) {
-    if (props.selectable)
-      setSelectable(*props.selectable);
-    if (props.wrapToTransform)
-      setWrapToTransform(*props.wrapToTransform);
-    if (props.fitTextWidthToTransform)
-      setFitTextWidthToTransform(*props.fitTextWidthToTransform);
-    if (props.alignment)
-      setAlignment(*props.alignment);
-  }
-  void replaceFont(Font font) {
-    _text.replaceFont(std::move(font));
-    syncTextToTransform();
-  }
-
-  void setTransform(const RectTransform &transform) override {
-    IDisplayObject::setTransform(transform);
-    syncTextToTransform();
-  }
-
-  void render(SDL_Surface &targetSurface) override {
-    if (!isVisible())
-      return;
-    _text.renderInto(targetSurface, _textTransform);
   }
 };

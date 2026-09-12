@@ -7,18 +7,19 @@
 #include <study_sdl3/app/IApp.hpp>
 #include <study_sdl3/snake/Config.hpp>
 
+namespace snake = study_sdl3::snake::config;
+
 class SnakeApp : public IApp {
 public:
   static AppInfo staticInfo() {
-    return AppInfo{
-        .id = AppId::Snake,
-        .name = study_sdl3::snake::config::gameName,
-        .window = WindowConfig{
-            .title = std::string{study_sdl3::snake::config::windowTitle},
-            .windowedSize = study_sdl3::snake::config::windowSize,
-            .resizable = study_sdl3::snake::config::windowResizable,
-            .fullscreen = study_sdl3::snake::config::windowFullscreen,
-            .clearColor = SDL_Color{8, 16, 8, 255}}};
+    return AppInfo{.id = AppId::Snake,
+                   .name = snake::gameName,
+                   .window =
+                       WindowConfig{.title = std::string{snake::windowTitle},
+                                    .windowedSize = snake::windowSize,
+                                    .resizable = snake::windowResizable,
+                                    .fullscreen = snake::windowFullscreen,
+                                    .clearColor = snake::clearColor}};
   }
 
   AppInfo info() const override { return staticInfo(); }

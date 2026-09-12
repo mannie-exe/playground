@@ -10,6 +10,42 @@
 using Vec2f = SDL_FPoint;
 using Vec2i = SDL_Point;
 
+constexpr bool isNonNegative(Vec2i value) {
+  return value.x >= 0 && value.y >= 0;
+}
+
+constexpr bool isNonNegative(Vec2f value) {
+  return value.x >= 0.0f && value.y >= 0.0f;
+}
+
+constexpr bool isPositive(Vec2i value) {
+  return value.x > 0 && value.y > 0;
+}
+
+constexpr bool isPositive(Vec2f value) {
+  return value.x > 0.0f && value.y > 0.0f;
+}
+
+constexpr bool hasArea(Vec2i value) { return isPositive(value); }
+constexpr bool hasArea(Vec2f value) { return isPositive(value); }
+
+// Inclusive on both minimum and maximum bounds.
+constexpr bool inBounds(Vec2i position, Vec2i minimum, Vec2i maximum) {
+  return position.x >= minimum.x && position.y >= minimum.y &&
+         position.x <= maximum.x && position.y <= maximum.y;
+}
+
+// Inclusive minimum, exclusive maximum; useful for array/grid indexing.
+constexpr bool inBoundsExclusive(Vec2i position, Vec2i minimum,
+                                  Vec2i maximum) {
+  return position.x >= minimum.x && position.y >= minimum.y &&
+         position.x < maximum.x && position.y < maximum.y;
+}
+
+constexpr bool inBoundsExclusive(Vec2i position, Vec2i extent) {
+  return inBoundsExclusive(position, Vec2i{}, extent);
+}
+
 constexpr bool operator==(const SDL_Point &a, const SDL_Point &b) {
   return a.x == b.x && a.y == b.y;
 }
@@ -116,6 +152,8 @@ struct RectTransform {
   bool contains(Vec2f point) const {
     return contains(point.x, point.y);
   }
+
+  bool hasArea() const { return ::hasArea(size); }
 
   SDL_FRect toFRect() const {
     return SDL_FRect{position.x, position.y, size.x, size.y};

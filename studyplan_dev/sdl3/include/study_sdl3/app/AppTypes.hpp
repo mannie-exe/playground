@@ -2,7 +2,6 @@
 
 #include <format>
 #include <optional>
-#include <string>
 #include <string_view>
 
 #include <study_sdl3/platform/WindowTypes.hpp>
@@ -67,8 +66,7 @@ constexpr std::string_view toString(AppCommandType type) {
   }
 }
 
-template <>
-struct std::formatter<AppId> : std::formatter<std::string_view> {
+template <> struct std::formatter<AppId> : std::formatter<std::string_view> {
   auto format(AppId appId, format_context &ctx) const {
     return std::formatter<std::string_view>::format(toString(appId), ctx);
   }
@@ -81,12 +79,11 @@ struct std::formatter<AppCommandType> : std::formatter<std::string_view> {
   }
 };
 
-template <>
-struct std::formatter<AppInfo> : std::formatter<std::string_view> {
+template <> struct std::formatter<AppInfo> : std::formatter<std::string_view> {
   auto format(const AppInfo &info, format_context &ctx) const {
-    return std::format_to(
-        ctx.out(), "AppInfo{{.id = {}, .name = \"{}\", .window = {}}}",
-        info.id, info.name, info.window);
+    return std::format_to(ctx.out(),
+                          "AppInfo{{.id = {}, .name = \"{}\", .window = {}}}",
+                          info.id, info.name, info.window);
   }
 };
 

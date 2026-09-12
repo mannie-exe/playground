@@ -22,8 +22,8 @@ class AppRegistry {
 
 public:
   void add(AppInfo info, AppFactory factory) {
-    _entries.emplace_back(Entry{.info = std::move(info),
-                                .factory = std::move(factory)});
+    _entries.emplace_back(
+        Entry{.info = std::move(info), .factory = std::move(factory)});
   }
 
   std::unique_ptr<IApp> create(AppId appId) const {
@@ -32,8 +32,8 @@ public:
         return entry.factory();
     }
 
-    throw std::string{std::format(
-        "AppRegistry failed to create requested app: {}", appId)};
+    throw std::string{
+        std::format("AppRegistry failed to create requested app: {}", appId)};
   }
 
   const AppInfo &info(AppId appId) const {

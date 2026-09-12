@@ -11,5 +11,6 @@ inline constexpr std::string_view windowTitle{"Snake"};
 inline constexpr Vec2i windowSize{800, 600};
 inline constexpr bool windowResizable{true};
 inline constexpr bool windowFullscreen{false};
+inline constexpr SDL_Color clearColor{8, 16, 8, 255};
 
 }

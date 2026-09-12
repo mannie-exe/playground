@@ -20,14 +20,17 @@ public:
                                    (void *)this, filePath)),
             renderProps, autoConvert),
         _filePath{filePath} {
-    if (!SDL_SetSurfaceBlendMode(getSurface(), SDL_BLENDMODE_BLEND))
-      throwSDLError(std::format("ImageSurface@{} Failed to set blend mode: {}",
-                                (void *)this, filePath));
-
     SDL_Log("%s",
             std::format("ImageSurface@{} Loaded: {}", (void *)this, filePath)
                 .c_str());
   }
+
+  explicit ImageSurface(const SurfaceHandle &surface,
+                        const std::string &filePath = {},
+                        const SurfaceRenderProps renderProps = {},
+                        const bool autoConvert = false)
+      : DrawableSurface{surface, renderProps, autoConvert},
+        _filePath{filePath} {}
 
   const std::string &getFilePath() const { return _filePath; }
 

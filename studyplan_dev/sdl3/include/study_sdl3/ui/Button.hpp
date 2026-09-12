@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 #include <SDL3/SDL_events.h>
@@ -8,7 +11,6 @@
 
 #include <study_sdl3/interfaces/IDisplayObject.hpp>
 #include <study_sdl3/interfaces/IInteractable.hpp>
-#include <study_sdl3/ui/DisplayImage.hpp>
 #include <study_sdl3/ui/DisplayText.hpp>
 #include <study_sdl3/ui/EventTypes.hpp>
 #include <study_sdl3/ui/InteractionState.hpp>
@@ -21,9 +23,16 @@ struct ButtonStyle {
   SDL_Color disabledColor{96, 96, 96, 255};
 };
 
+struct ButtonStylePatch {
+  std::optional<SDL_Color> baseColor;
+  std::optional<SDL_Color> hoverColor;
+  std::optional<SDL_Color> activeColor;
+  std::optional<SDL_Color> disabledColor;
+};
+
 struct ButtonContent {
   std::unique_ptr<DisplayText> label;
-  std::unique_ptr<DisplayImage> icon;
+  std::unique_ptr<IDisplayObject> icon;
   // TODO: positioning/alignment, sizing, and rendering options
 };
 
@@ -37,25 +46,37 @@ protected:
 
 public:
   Button(const RectTransform transform, IInteractable &parent,
-         const ButtonStyle style = {}, ButtonContent content = {})
+         const ButtonStyle style = {}, ButtonContent content = {},
+         const InteractionState state = InteractionState::Normal)
       : IDisplayObject{transform}, _background{transform}, _parent{parent},
-        _style{style}, _content{std::move(content)} {}
+        _style{style}, _state{state}, _content{std::move(content)} {}
 
   ButtonStyle getStyle() const { return _style; }
   InteractionState getState() const { return _state; }
   bool isDisabled() const { return _state == InteractionState::Disabled; }
-  DisplayImage *getIcon() { return _content.icon.get(); }
-  const DisplayImage *getIcon() const { return _content.icon.get(); }
+  IDisplayObject *getIcon() { return _content.icon.get(); }
+  const IDisplayObject *getIcon() const { return _content.icon.get(); }
   DisplayText *getLabel() { return _content.label.get(); }
   const DisplayText *getLabel() const { return _content.label.get(); }
 
   void setStyle(const ButtonStyle &style) { _style = style; }
+
+  void applyStylePatch(const ButtonStylePatch &patch) {
+    if (patch.baseColor)
+      _style.baseColor = *patch.baseColor;
+    if (patch.hoverColor)
+      _style.hoverColor = *patch.hoverColor;
+    if (patch.activeColor)
+      _style.activeColor = *patch.activeColor;
+    if (patch.disabledColor)
+      _style.disabledColor = *patch.disabledColor;
+  }
   void setDisabled(bool disabled = true) {
     _state = disabled ? InteractionState::Disabled : InteractionState::Normal;
   }
   void setEnabled(bool enabled = true) { setDisabled(!enabled); }
-  void setIcon(DisplayImage icon) {
-    _content.icon = std::make_unique<DisplayImage>(std::move(icon));
+  void setIcon(std::unique_ptr<IDisplayObject> icon) {
+    _content.icon = std::move(icon);
   }
   void setLabel(DisplayText label) {
     _content.label = std::make_unique<DisplayText>(std::move(label));
@@ -85,7 +106,9 @@ public:
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
       bool inObject = isPointInObject(event.button.x, event.button.y);
       if (event.button.button == SDL_BUTTON_LEFT && inObject)
-        return onMouseClick(event.button);
+        return onMouseLeftClick(event.button);
+      if (event.button.button == SDL_BUTTON_RIGHT && inObject)
+        return onMouseRightClick(event.button);
       return EventResult::Ignored;
     }
 
@@ -93,7 +116,8 @@ public:
       bool inObject = isPointInObject(event.button.x, event.button.y);
       if ((_state == InteractionState::Pressed ||
            _state == InteractionState::PressedOutside) &&
-          event.button.button == SDL_BUTTON_LEFT)
+          (event.button.button == SDL_BUTTON_LEFT ||
+           event.button.button == SDL_BUTTON_RIGHT))
         return onMouseRelease(event.button, inObject);
       return EventResult::Ignored;
     }
@@ -201,14 +225,15 @@ public:
     return EventResult::Handled;
   }
 
-  virtual EventResult onMouseClick(const SDL_MouseButtonEvent &mButtonEvent) {
-    if (mButtonEvent.button != SDL_BUTTON_LEFT)
-      return EventResult::Ignored;
-
+  virtual EventResult
+  onMouseLeftClick(const SDL_MouseButtonEvent &mButtonEvent) {
     _state = InteractionState::Pressed;
-    publishEventGlobal(
-        {.user = {.type = study_sdl3::ui::events::buttonPressed(),
-                  .data1 = this}});
+    return EventResult::Consumed;
+  }
+
+  virtual EventResult
+  onMouseRightClick(const SDL_MouseButtonEvent &mButtonEvent) {
+    _state = InteractionState::Pressed;
     return EventResult::Consumed;
   }
 
@@ -225,5 +250,35 @@ public:
   EventResult resetInteraction() {
     _state = InteractionState::Normal;
     return EventResult::Handled;
+  }
+
+  static FontHandle cloneFontToSize(const FontHandle &font,
+                                    std::string_view value, Vec2f targetSize,
+                                    float scale) {
+    return cloneFontToSize(font, value, targetSize, Vec2f{scale, scale});
+  }
+
+  static FontHandle cloneFontToSize(const FontHandle &font,
+                                    std::string_view value, Vec2f targetSize,
+                                    Vec2f scale) {
+    if (value.empty() || !hasArea(targetSize) || !hasArea(scale))
+      return font;
+
+    int measuredWidth{};
+    int measuredHeight{};
+    if (!TTF_GetStringSize(font->get(), value.data(), value.size(),
+                           &measuredWidth, &measuredHeight) ||
+        measuredWidth <= 0 || measuredHeight <= 0) {
+      return font;
+    }
+
+    const float widthScale{targetSize.x * scale.x /
+                           static_cast<float>(measuredWidth)};
+    const float heightScale{targetSize.y * scale.y /
+                            static_cast<float>(measuredHeight)};
+    const float size{
+        std::max(1.0f, font->getSize() * std::min(widthScale, heightScale))};
+    return std::make_shared<Font>(
+        font->cloneWith(FontPropsPatch{.size = size}));
   }
 };

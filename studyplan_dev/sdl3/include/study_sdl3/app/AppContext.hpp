@@ -7,6 +7,8 @@
 #include <SDL3/SDL_surface.h>
 
 #include <study_sdl3/app/AppTypes.hpp>
+#include <study_sdl3/support/AssetRegistry.hpp>
+#include <study_sdl3/support/PerformanceMonitor.hpp>
 
 class AppHost;
 class Window;
@@ -25,6 +27,8 @@ public:
   Vec2i drawableSize() const;
 
   std::string assetPath(std::string_view relativePath) const;
+  AssetRegistry &assets();
+  PerformanceMonitor &performance();
 
   void requestSwitch(AppId appId);
   void requestMenu();

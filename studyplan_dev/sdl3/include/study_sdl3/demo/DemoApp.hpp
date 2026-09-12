@@ -27,21 +27,24 @@ public:
             .windowedSize = study_sdl3::demo::config::windowSize,
             .resizable = study_sdl3::demo::config::windowResizable,
             .fullscreen = study_sdl3::demo::config::windowFullscreen,
-            .clearColor = SDL_Color{50, 50, 50, 255}}};
+            .clearColor = study_sdl3::demo::config::clearColor}};
   }
 
   AppInfo info() const override { return staticInfo(); }
 
   void onEnter(AppContext &ctx) override {
-    _image.emplace(ctx.assetPath(study_sdl3::demo::config::imagePath));
+    const std::string imagePath{
+        ctx.assetPath(study_sdl3::demo::config::imagePath)};
+    const std::string fontPath{
+        ctx.assetPath(study_sdl3::demo::config::fontPath)};
+    _image.emplace(ctx.assets().getImage(imagePath), imagePath);
     _text.emplace(
         TextProps{.value = std::string{study_sdl3::demo::config::textValue},
                   .style = {.fgColor = study_sdl3::demo::config::textColor},
                   .layout = {.fontFitWidth = ctx.drawableSize().x}},
-        Font(FontProps{.path =
-                           ctx.assetPath(study_sdl3::demo::config::fontPath),
-                       .style = {
-                           .size = study_sdl3::demo::config::textSize}}));
+        ctx.assets().getFont(FontProps{
+            .path = fontPath,
+            .style = {.size = study_sdl3::demo::config::textSize}}));
   }
 
   void onExit(AppContext &) override {

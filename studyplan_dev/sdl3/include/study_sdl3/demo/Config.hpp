@@ -11,6 +11,7 @@ inline constexpr std::string_view windowTitle{"Sup"};
 inline constexpr SDL_Point windowSize{750, 930};
 inline constexpr bool windowResizable{true};
 inline constexpr bool windowFullscreen{false};
+inline constexpr SDL_Color clearColor{50, 50, 50, 255};
 
 inline constexpr SDL_Color textColor{255, 255, 0, 255};
 inline constexpr float textSize{42.0f};

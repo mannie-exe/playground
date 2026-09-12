@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_rect.h>
 
@@ -10,12 +12,16 @@ struct RectangleStyle {
   SDL_Color color;
 };
 
+struct RectangleStylePatch {
+  std::optional<SDL_Color> color;
+};
+
 class Rectangle : public IDisplayObject {
   RectangleStyle _style;
 
 public:
   Rectangle(const RectTransform rect,
-            const RectangleStyle style = {.color = SDL_Color{192, 0, 30}},
+            const RectangleStyle style = {.color = SDL_Color{192, 0, 30, 255}},
             const bool visible = true)
       : IDisplayObject{rect, visible}, _style{style} {}
 
@@ -33,6 +39,11 @@ public:
     if (_style.color == style.color)
       return;
     _style = style;
+  }
+
+  void applyStylePatch(const RectangleStylePatch &patch) {
+    if (patch.color)
+      setColor(*patch.color);
   }
 
   void render(SDL_Surface &targetSurface, SDL_Color color) {

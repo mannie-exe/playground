@@ -22,7 +22,7 @@ public:
     }
   }
 
-  bool initialized() const { return _initialized; }
+  bool isInitialized() const { return _initialized; }
 
   TTFGuard(TTFGuard &&) = delete;
   TTFGuard &operator=(TTFGuard &&) = delete;

@@ -1,63 +1,75 @@
 #pragma once
 
-#include <format>
+#include <cstddef>
 #include <memory>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
-#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_rect.h>
 
 #include <study_sdl3/interfaces/IDisplayObject.hpp>
 #include <study_sdl3/interfaces/IInteractable.hpp>
-#include <study_sdl3/minesweeper/Config.hpp>
 #include <study_sdl3/minesweeper/MinesweeperCell.hpp>
 #include <study_sdl3/minesweeper/MinesweeperEvents.hpp>
 #include <study_sdl3/support/Random.hpp>
 #include <study_sdl3/support/SDLPrimitives.hpp>
 
+struct MinesweeperGridProps {
+  Vec2i size;
+  int cellSize;
+  int gap;
+  float bombChance;
+
+  int width() const { return size.x * cellSize + (size.x - 1) * gap; }
+  int height() const { return size.y * cellSize + (size.y - 1) * gap; }
+};
+
 class MinesweeperGrid : public IDisplayObject {
   study_sdl3::minesweeper::MinesweeperEvents _events;
+  study_sdl3::Random _random{};
+
+  MinesweeperGridProps _props;
+  MinesweeperCellStyle _cellStyle;
 
   std::vector<std::unique_ptr<MinesweeperCell>> _cells;
   std::vector<Vec2i> _bombs;
-  study_sdl3::Random _random;
-  int _rows{};
-  int _cols{};
+
+  int _cellsToClear{};
 
 public:
   explicit MinesweeperGrid(
-      const RectTransform transform,
+      const RectTransform transform, const MinesweeperGridProps props,
+      const MinesweeperCellStyle cellStyle,
       const study_sdl3::minesweeper::MinesweeperEvents &events,
-      const std::string &bombImagePath, Font &font,
-      int rows = study_sdl3::minesweeper::config::gridRows,
-      int cols = study_sdl3::minesweeper::config::gridColumns)
-      : IDisplayObject{transform}, _events{events}, _random{}, _rows{rows},
-        _cols{cols} {
-    _cells.reserve(rows * cols);
-    for (int row{0}; row < rows; ++row) {
-      for (int col{0}; col < cols; ++col) {
-        constexpr int spacing{
-            static_cast<int>(study_sdl3::minesweeper::config::cellSize) +
-            study_sdl3::minesweeper::config::padding};
+      SurfaceHandle bombImage, SurfaceHandle flagImage, FontHandle font)
+      : IDisplayObject{transform}, _events{events}, _props{props},
+        _cellStyle{cellStyle} {
+    if (!hasArea(_props.size) || _props.cellSize <= 0 ||
+        _props.gap < 0 || _props.bombChance < 0.0f || _props.bombChance > 1.0f)
+      throw std::invalid_argument(
+          "MinesweeperGridProps contains invalid dimensions or bomb chance");
 
-        const bool bomb = _random.get(0.0f, 1.0f) <=
-                                  study_sdl3::minesweeper::config::bombChance
-                              ? true
-                              : false;
+    _cells.reserve(_props.size.y * _props.size.x);
+    for (int row{0}; row < _props.size.y; ++row) {
+      for (int col{0}; col < _props.size.x; ++col) {
+        const int spacing{static_cast<int>(_props.cellSize) + _props.gap};
+
+        const bool bomb = _random.get(0.0f, 1.0f) < _props.bombChance;
 
         _cells.emplace_back(std::make_unique<MinesweeperCell>(
             rect(transform.position.x + spacing * col,
-                 transform.position.y + spacing * row,
-                 study_sdl3::minesweeper::config::cellSize,
-                 study_sdl3::minesweeper::config::cellSize),
-            bomb, Vec2i{col, row}, *this, _events, bombImagePath, font));
+                 transform.position.y + spacing * row, _props.cellSize,
+                 _props.cellSize),
+            bomb, false, Vec2i{col, row}, *this, _cellStyle, _events, bombImage,
+            flagImage, font));
 
         if (bomb)
           _bombs.emplace_back(Vec2i{col, row});
       }
     }
+
+    _cellsToClear =
+        _props.size.y * _props.size.x - static_cast<int>(_bombs.size());
 
     for (const auto gridPos : _bombs) {
       for (int i = -1; i <= 1; ++i) {
@@ -65,8 +77,7 @@ public:
           if (i == 0 && j == 0)
             continue;
           Vec2i target{gridPos.x + i, gridPos.y + j};
-          if (target.x >= 0 && target.x < _cols && target.y >= 0 &&
-              target.y < _rows)
+          if (inBoundsExclusive(target, _props.size))
             getCellAt(target).incrementAdjacentBombs();
         }
       }
@@ -75,22 +86,30 @@ public:
   ~MinesweeperGrid() = default;
 
   MinesweeperCell &getCellAt(const Vec2i &gridPos) {
-    if (gridPos.x < 0 || gridPos.x >= _cols || gridPos.y < 0 ||
-        gridPos.y >= _rows)
+    if (!inBoundsExclusive(gridPos, _props.size))
       throw std::out_of_range("MinesweeperGrid coordinate out of bounds");
-    return *_cells.at(static_cast<std::size_t>(gridPos.y * _cols + gridPos.x));
-  }
-
-  const MinesweeperCell &getCellAt(const Vec2i &gridPos) const {
-    if (gridPos.x < 0 || gridPos.x >= _cols || gridPos.y < 0 ||
-        gridPos.y >= _rows)
-      throw std::out_of_range("MinesweeperGrid coordinate out of bounds");
-    return *_cells.at(static_cast<std::size_t>(gridPos.y * _cols + gridPos.x));
+    return *_cells.at(
+        static_cast<std::size_t>(gridPos.y * _props.size.x + gridPos.x));
   }
 
   MinesweeperCell &getCellAt(const int x, const int y) {
     return getCellAt(Vec2i{x, y});
   }
+
+  const MinesweeperCell &getCellAt(const Vec2i &gridPos) const {
+    if (!inBoundsExclusive(gridPos, _props.size))
+      throw std::out_of_range("MinesweeperGrid coordinate out of bounds");
+    return *_cells.at(
+        static_cast<std::size_t>(gridPos.y * _props.size.x + gridPos.x));
+  }
+
+  const MinesweeperCell &getCellAt(const int x, const int y) const {
+    return getCellAt(Vec2i{x, y});
+  }
+
+  int getBombCount() const { return static_cast<int>(_bombs.size()); }
+  const MinesweeperGridProps &getProps() const { return _props; }
+  const MinesweeperCellStyle &getCellStyle() const { return _cellStyle; }
 
   void render(SDL_Surface &targetSurface) override {
     for (const auto &cell : _cells) {
@@ -102,10 +121,38 @@ public:
     EventResult result{EventResult::Ignored};
 
     if (event.type == _events.cellHit) {
-      SDL_Log("%s", std::format("Cell@{} hit: {}", event.user.data2,
-                                *static_cast<SDL_Point *>(event.user.data1))
-                        .c_str());
       return EventResult::Consumed;
+    }
+
+    if (event.type == _events.bombDetonated) {
+      for (const auto &gridPos : _bombs) {
+        MinesweeperCell &cell = getCellAt(gridPos);
+        if (cell.isCleared())
+          continue;
+        cell.clearCell(false);
+      }
+      SDL_Event gameLost{.user = {.type = _events.gameLost}};
+      SDL_PushEvent(&gameLost);
+      return EventResult::Consumed;
+    }
+
+    if (event.type == _events.cellCleared) {
+      --_cellsToClear;
+
+      if (!_cellsToClear) {
+        for (const auto &gridPos : _bombs) {
+          MinesweeperCell &cell = getCellAt(gridPos);
+          cell.setRevealed();
+          cell.clearCell(false);
+        }
+        SDL_Event gameWon{.user = {.type = _events.gameWon}};
+        SDL_PushEvent(&gameWon);
+        return EventResult::Consumed;
+      }
+
+      if ((*static_cast<const MinesweeperCell *>(event.user.data2))
+              .getAdjacentBombs())
+        return EventResult::Consumed;
     }
 
     for (const auto &cell : _cells) {

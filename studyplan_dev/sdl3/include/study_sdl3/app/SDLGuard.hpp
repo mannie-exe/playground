@@ -22,7 +22,7 @@ public:
     }
   }
 
-  bool initialized() const { return _initialized; }
+  bool isInitialized() const { return _initialized; }
 
   SDLGuard(SDLGuard &&) = delete;
   SDLGuard &operator=(SDLGuard &&) = delete;

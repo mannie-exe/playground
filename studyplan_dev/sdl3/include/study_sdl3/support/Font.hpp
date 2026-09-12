@@ -2,6 +2,7 @@
 
 #include <format>
 #include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -10,9 +11,6 @@
 
 #include <study_sdl3/support/SDLError.hpp>
 #include <study_sdl3/support/SDLResource.hpp>
-
-// TODO: create font registry for caching with good invalidation to minimize
-// size and maximize efficiency
 
 using FontResource = SDLResource<TTF_Font, TTF_CloseFont>;
 
@@ -101,8 +99,8 @@ public:
   int getLineSpace() const { return _props.layout.lineSpace; }
 
   TTF_HintingFlags getHinting() const { return _props.render.hinting; }
-  bool getSDF() const { return _props.render.sdf; }
-  bool getKern() const { return _props.render.kern; }
+  bool isSDF() const { return _props.render.sdf; }
+  bool isKerningEnabled() const { return _props.render.kern; }
 
   FontInfo getInfo() const { return getInfo(_font); }
 
@@ -251,3 +249,5 @@ private:
     setKerning(props.render.kern);
   }
 };
+
+using FontHandle = std::shared_ptr<const Font>;
