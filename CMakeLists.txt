@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.4)
 
-project(tetrass LANGUAGES C CXX)
+project(playground LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
@@ -59,11 +59,11 @@ if(CMAKE_EXPORT_COMPILE_COMMANDS)
     )
 endif()
 
-function(tetrass_register_install_target target_name)
-    set_property(GLOBAL APPEND PROPERTY tetrass_install_targets ${target_name})
+function(playground_register_install_target target_name)
+    set_property(GLOBAL APPEND PROPERTY playground_install_targets ${target_name})
 endfunction()
 
-function(tetrass_configure_cpp_target target_name)
+function(playground_configure_cpp_target target_name)
     target_compile_features(${target_name} PRIVATE cxx_std_23)
     target_compile_options(${target_name} PRIVATE
         "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
@@ -71,24 +71,24 @@ function(tetrass_configure_cpp_target target_name)
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endfunction()
 
-function(tetrass_add_console_target target_name)
+function(playground_add_console_target target_name)
     cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
 
     add_executable(${target_name} ${target_SOURCES})
-    tetrass_configure_cpp_target(${target_name})
+    playground_configure_cpp_target(${target_name})
 
     if(target_INCLUDES)
         target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
     endif()
 
-    tetrass_register_install_target(${target_name})
+    playground_register_install_target(${target_name})
 endfunction()
 
-function(tetrass_add_sdl_target target_name)
+function(playground_add_sdl_target target_name)
     cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
 
     add_executable(${target_name} ${target_SOURCES})
-    tetrass_configure_cpp_target(${target_name})
+    playground_configure_cpp_target(${target_name})
 
     if(target_INCLUDES)
         target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
@@ -99,14 +99,10 @@ function(tetrass_add_sdl_target target_name)
         SDL3_image::SDL3_image
         SDL3_ttf::SDL3_ttf)
 
-    tetrass_register_install_target(${target_name})
+    playground_register_install_target(${target_name})
 endfunction()
 
-tetrass_add_console_target(study_cpp_easy
-    SOURCES
-    studyplan_dev/cpp_easy/main.cpp)
-
-tetrass_add_console_target(experiment_rock_paper_scissors
+playground_add_console_target(experiment_rock_paper_scissors
     SOURCES
     experiments/rock_paper_scissors/main.cpp
     INCLUDES
@@ -169,20 +165,20 @@ CPMAddPackage(
     "SDLTTF_WERROR OFF"
 )
 
-tetrass_add_sdl_target(experiment_sdl3
+playground_add_sdl_target(experiment_sdl3
     SOURCES
     experiments/sdl3/src/main.cpp
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/experiments/sdl3/include)
 
-tetrass_add_sdl_target(study_sdl3
+playground_add_sdl_target(playground
     SOURCES
-    studyplan_dev/sdl3/src/main.cpp
+    src/main.cpp
     INCLUDES
-    ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/include)
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-set(tetrass_study_sdl3_assets_dir
-    ${CMAKE_CURRENT_SOURCE_DIR}/studyplan_dev/sdl3/assets)
+set(playground_assets_dir
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets)
 
 #[[
 Install means "assemble the runnable/exportable form of this project."
@@ -197,11 +193,11 @@ install prefix from CMakePresets.json points at dist/<config>, so install means:
   the platform convention
 - copy import/static libraries into dist/<config>/lib when CMake has them
 
-Targets are CMake's named build products. `rock_paper_scissors` and
+Targets are CMake's named build products. `experiment_rock_paper_scissors` and
 `experiment_sdl3` are executable targets created by add_executable(). SDL's CMake
 build may also create shared-library targets such as SDL3-shared,
 SDL3_image-shared, and SDL3_ttf-shared. If those targets exist, appending them
-to tetrass_install_targets tells CMake to install those built SDL libraries
+to playground_install_targets tells CMake to install those built SDL libraries
 next to our programs.
 
 This matters because linking and running are separate concerns. Linking records
@@ -210,7 +206,7 @@ runtime libraries into a layout that can run without changing PATH, DYLD paths,
 or Linux loader configuration during normal local experimentation.
 ]]
 
-get_property(tetrass_install_targets GLOBAL PROPERTY tetrass_install_targets)
+get_property(playground_install_targets GLOBAL PROPERTY playground_install_targets)
 
 foreach(shared_target IN ITEMS
     SDL3-shared
@@ -218,13 +214,13 @@ foreach(shared_target IN ITEMS
     SDL3_ttf-shared)
 
     if(TARGET ${shared_target})
-        list(APPEND tetrass_install_targets ${shared_target})
+        list(APPEND playground_install_targets ${shared_target})
     endif()
 endforeach()
 
 install(
-    TARGETS ${tetrass_install_targets}
-    RUNTIME_DEPENDENCY_SET tetrass_runtime_deps
+    TARGETS ${playground_install_targets}
+    RUNTIME_DEPENDENCY_SET playground_runtime_deps
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -234,7 +230,7 @@ install(
 #[[
 Install runtime dependencies discovered from the targets above.
 
-`RUNTIME_DEPENDENCY_SET tetrass_runtime_deps` in the previous install(TARGETS)
+`RUNTIME_DEPENDENCY_SET playground_runtime_deps` in the previous install(TARGETS)
 call asks CMake to scan those targets for dynamic library dependencies. This
 second install() call copies the discovered dependencies into the install tree.
 
@@ -249,7 +245,7 @@ libraries, while leaving OS-provided libraries where the OS already provides
 them.
 ]]
 install(
-    RUNTIME_DEPENDENCY_SET tetrass_runtime_deps
+    RUNTIME_DEPENDENCY_SET playground_runtime_deps
     PRE_EXCLUDE_REGEXES
     [[api-ms-]]
     [[ext-ms-]]
@@ -263,9 +259,9 @@ install(
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-if(EXISTS ${tetrass_study_sdl3_assets_dir})
+if(EXISTS ${playground_assets_dir})
     install(
-        DIRECTORY ${tetrass_study_sdl3_assets_dir}/
+        DIRECTORY ${playground_assets_dir}/
         DESTINATION ${CMAKE_INSTALL_BINDIR}/assets
     )
 endif()

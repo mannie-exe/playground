@@ -1,0 +1,32 @@
+#pragma once
+
+#include <SDL3_ttf/SDL_ttf.h>
+
+#include <support/SDLError.hpp>
+
+class TTFGuard {
+  bool _initialized{false};
+
+public:
+  TTFGuard() {
+    if (!TTF_Init()) {
+      throwSDLError("Failed to initialize SDL_ttf");
+    }
+
+    _initialized = true;
+  }
+
+  ~TTFGuard() {
+    if (_initialized) {
+      TTF_Quit();
+    }
+  }
+
+  bool isInitialized() const { return _initialized; }
+
+  TTFGuard(TTFGuard &&) = delete;
+  TTFGuard &operator=(TTFGuard &&) = delete;
+
+  TTFGuard(const TTFGuard &) = delete;
+  TTFGuard &operator=(const TTFGuard &) = delete;
+};
