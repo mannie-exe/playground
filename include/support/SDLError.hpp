@@ -1,6 +1,7 @@
 #pragma once
 
 #include <format>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -28,7 +29,7 @@ inline std::string buildSDLErrorMessage(std::string_view context) {
 }
 
 [[noreturn]] inline void throwSDLError(std::string_view context) {
-  throw buildSDLErrorMessage(context);
+  throw std::runtime_error{buildSDLErrorMessage(context)};
 }
 
 template <typename T> T *requireSDL(T *resource, std::string_view context) {

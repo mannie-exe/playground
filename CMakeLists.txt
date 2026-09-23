@@ -19,10 +19,8 @@ variables make the project easier to reason about by putting:
 This is build-tree organization only. It does not decide what gets copied into
 dist/ during `cmake --install`; that is handled by the install() rules below.
 
-`link_directories()` adds the generated library directory to the linker search
-path. It is broad/global and usually less precise than linking named targets
-with target_link_libraries(), but it can be useful while studying mixed C/C++
-native builds where generated libraries land in a common folder.
+Dependency search paths come from the linked CMake targets below rather than
+global link_directories().
 ]]
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
@@ -43,18 +41,20 @@ Keep clangd/VSCode pointed at a stable compile database path.
 CMake writes compile_commands.json into the active build directory, e.g.
 build/debug/compile_commands.json or build/release/compile_commands.json. That
 path changes by preset/build type, while clangd is configured to look at the
-workspace root. This target runs as part of the normal build and copies the
-active build's compile database to ./compile_commands.json.
+workspace root. Each project build generates an editor database with explicit
+header entries from the owning implementation's command or the application
+command. The build directory's original database is untouched.
 
 The copied root file is generated editor state, not source, and is ignored by
 Git.
 ]]
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
     add_custom_target(sync_compile_commands ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_BINARY_DIR}/compile_commands.json
-        ${CMAKE_SOURCE_DIR}/compile_commands.json
-        COMMENT "Syncing compile_commands.json for clangd"
+        COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_SOURCE_DIR}
+        -DBUILD_ROOT=${CMAKE_BINARY_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/GenerateEditorCommands.cmake
+        COMMENT "Generating compile_commands.json with explicit header entries"
         VERBATIM
     )
 endif()
@@ -68,7 +68,10 @@ function(playground_configure_cpp_target target_name)
     target_compile_options(${target_name} PRIVATE
         "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
     target_include_directories(${target_name} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/include)
+    if(TARGET sync_compile_commands)
+        add_dependencies(${target_name} sync_compile_commands)
+    endif()
 endfunction()
 
 function(playground_add_console_target target_name)
@@ -102,12 +105,6 @@ function(playground_add_sdl_target target_name)
     playground_register_install_target(${target_name})
 endfunction()
 
-playground_add_console_target(experiment_rock_paper_scissors
-    SOURCES
-    experiments/rock_paper_scissors/main.cpp
-    INCLUDES
-    ${CMAKE_CURRENT_SOURCE_DIR}/experiments/rock_paper_scissors/include)
-
 CPMAddPackage(
     URI "gh:libsdl-org/SDL#147a8ee@3.4.14"
     OPTIONS
@@ -118,6 +115,7 @@ CPMAddPackage(
     "SDL_EXAMPLES OFF"
     "SDL_INSTALL OFF"
     "SDL_WERROR OFF"
+    "SDL_GPU ON"
 )
 
 CPMAddPackage(
@@ -154,6 +152,8 @@ CPMAddPackage(
     "SDLIMAGE_PNG_SAVE OFF"
 )
 
+# FreeType is mandatory in this SDL_ttf version; HarfBuzz shapes glyph runs,
+# while SDL_ttf's GPU text engine owns atlas generation (no renderer here yet).
 CPMAddPackage(
     URI "gh:libsdl-org/SDL_ttf#a1ce367@3.2.2"
     OPTIONS
@@ -163,19 +163,72 @@ CPMAddPackage(
     "SDLTTF_VENDORED ON"
     "SDLTTF_STRICT OFF"
     "SDLTTF_WERROR OFF"
+    "SDLTTF_HARFBUZZ ON"
+    "SDLTTF_PLUTOSVG ON"
 )
 
-playground_add_sdl_target(experiment_sdl3
-    SOURCES
-    experiments/sdl3/src/main.cpp
-    INCLUDES
-    ${CMAKE_CURRENT_SOURCE_DIR}/experiments/sdl3/include)
+CPMAddPackage(
+    URI "gh:JuliaStrings/utf8proc@2.11.3"
+    OPTIONS "BUILD_SHARED_LIBS OFF" "UTF8PROC_INSTALL OFF" "UTF8PROC_ENABLE_TESTING OFF"
+)
+CPMAddPackage(
+    URI "gh:zeux/pugixml@1.16"
+    OPTIONS "BUILD_SHARED_LIBS OFF" "PUGIXML_INSTALL OFF" "PUGIXML_BUILD_TESTS OFF"
+)
+
+CPMAddPackage(
+    URI "gh:nucleic/kiwi#166899b656d8caa3b2444f5ab2464e55a50b9554@1.5.1"
+    DOWNLOAD_ONLY YES
+)
+CPMAddPackage(
+    URI "gh:marzer/tomlplusplus@3.4.0"
+    OPTIONS "TOMLPLUSPLUS_BUILD_TESTS OFF" "TOMLPLUSPLUS_BUILD_EXAMPLES OFF"
+)
+include(cmake/Modules.cmake)
+
+install(FILES ${tomlplusplus_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME tomlplusplus.txt)
+install(FILES config/project.toml DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(FILES ${utf8proc_SOURCE_DIR}/LICENSE.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME utf8proc.txt)
+install(FILES ${pugixml_SOURCE_DIR}/LICENSE.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME pugixml.txt)
+install(FILES ${kiwi_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME kiwi.txt)
+install(FILES docs/licenses/UNICODE.txt
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses)
 
 playground_add_sdl_target(playground
     SOURCES
     src/main.cpp
+    src/app/AppHost.cpp
+    src/app/AppContext.cpp
+    src/minesweeper/MinesweeperCell.cpp
+    src/minesweeper/MinesweeperGrid.cpp
+    src/minesweeper/MinesweeperUI.cpp
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(playground PRIVATE playground_sdl playground_constraints)
+
+# Compile the guide's additive snippets without adding an example program.
+set(playground_guide_check ${CMAKE_CURRENT_BINARY_DIR}/generated/UIGuideCheck.cpp)
+add_custom_command(OUTPUT ${playground_guide_check}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/docs/ui/GUIDE.md
+        -DOUTPUT=${playground_guide_check}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateGuideCheck.cmake
+    DEPENDS docs/ui/GUIDE.md cmake/GenerateGuideCheck.cmake
+    VERBATIM)
+add_library(playground_docs_check OBJECT EXCLUDE_FROM_ALL ${playground_guide_check})
+playground_configure_cpp_target(playground_docs_check)
+target_link_libraries(playground_docs_check PRIVATE playground_sdl playground_constraints)
+
+option(PLAYGROUND_BUILD_TESTS "Build focused UI and supporting-module tests" ON)
+if(PLAYGROUND_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 set(playground_assets_dir
     ${CMAKE_CURRENT_SOURCE_DIR}/assets)
@@ -192,18 +245,6 @@ install prefix from CMakePresets.json points at dist/<config>, so install means:
 - copy shared libraries into dist/<config>/lib on Unix-like systems when that is
   the platform convention
 - copy import/static libraries into dist/<config>/lib when CMake has them
-
-Targets are CMake's named build products. `experiment_rock_paper_scissors` and
-`experiment_sdl3` are executable targets created by add_executable(). SDL's CMake
-build may also create shared-library targets such as SDL3-shared,
-SDL3_image-shared, and SDL3_ttf-shared. If those targets exist, appending them
-to playground_install_targets tells CMake to install those built SDL libraries
-next to our programs.
-
-This matters because linking and running are separate concerns. Linking records
-which libraries an executable uses; installing collects the executable and the
-runtime libraries into a layout that can run without changing PATH, DYLD paths,
-or Linux loader configuration during normal local experimentation.
 ]]
 
 get_property(playground_install_targets GLOBAL PROPERTY playground_install_targets)

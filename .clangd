@@ -1,0 +1,10 @@
+CompileFlags:
+  Remove:
+    - -include
+    - -building-pch-with-obj
+    - -fpch-instantiate-templates
+    - -pch-through-header=*
+    - /Yc*
+    - /Yu*
+    - /Fp*
+    - /FI*

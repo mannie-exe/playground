@@ -1,16 +1,16 @@
 #pragma once
 
+#include <math/Color.hpp>
+#include <platform/Presentation.hpp>
 #include <string_view>
-
-#include <support/SDLPrimitives.hpp>
 
 namespace playground::snake::config {
 
 inline constexpr std::string_view gameName{"Snake"};
 inline constexpr std::string_view windowTitle{"Snake"};
-inline constexpr Vec2i windowSize{800, 600};
-inline constexpr bool windowResizable{true};
-inline constexpr bool windowFullscreen{false};
-inline constexpr SDL_Color clearColor{8, 16, 8, 255};
+inline constexpr playground::platform::AppViewPolicy viewPolicy{.resizable =
+                                                                    true};
+inline constexpr auto windowMode = playground::platform::WindowMode::Windowed;
+inline constexpr playground::math::ColorRGBA8 clearColor{8, 16, 8, 255};
 
-}
+} // namespace playground::snake::config

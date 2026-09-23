@@ -50,7 +50,7 @@ public:
            (_value == Value::SCISSOR && other._value == Value::PAPER);
   }
 
-  constexpr string_view asString() const {
+  constexpr string_view toString() const {
     switch (_value) {
     case Value::ROCK:
       return "ROCK";
@@ -70,13 +70,13 @@ private:
 };
 
 ostream &operator<<(ostream &stream, const GameMove &move) {
-  stream << move.asString();
+  stream << move.toString();
   return stream;
 }
 
 template <> struct formatter<GameMove> : formatter<string_view> {
   auto format(const GameMove &move, format_context &ctx) const {
-    return formatter<string_view>::format(move.asString(), ctx);
+    return std::format_to(ctx.out(), "{}", move);
   }
 };
 

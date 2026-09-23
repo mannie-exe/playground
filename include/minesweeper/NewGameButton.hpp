@@ -1,46 +1,84 @@
 #pragma once
 
-#include <SDL3/SDL_events.h>
-
+#include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
+#include <utility>
 
-#include <minesweeper/MinesweeperEvents.hpp>
-#include <support/Font.hpp>
-#include <ui/Button.hpp>
-#include <ui/DisplayText.hpp>
+#include <minesweeper/ViewResources.hpp>
+#include <ui/controls/Button.hpp>
 
 struct NewGameButtonProps {
-  ButtonStyle button;
-  SDL_Color labelColor{255, 255, 255, 255};
+  playground::ui::ButtonProps button;
+  playground::math::ColorRGBA8 labelColor{255, 255, 255, 255};
   std::string label{"New Game"};
 };
 
-class NewGameButton : public Button {
-  playground::minesweeper::MinesweeperEvents _events;
+class NewGameButton : public playground::ui::Button {
+  std::function<void()> _request;
 
-public:
-  NewGameButton(const RectTransform transform, IInteractable &parent,
-                const playground::minesweeper::MinesweeperEvents &events,
-                FontHandle font, const NewGameButtonProps props = {})
-      : Button{
-            transform,
-            parent,
-            props.button,
-            {.label = std::make_unique<DisplayText>(
-                 TextProps{.value = props.label,
-                           .style = {.fgColor = props.labelColor}},
-                 cloneFontToSize(font, props.label, transform.size, 0.825f),
-                 DisplayTextProps{
-                     .wrapToTransform = false,
-                     .alignment = {.horizontal = HorizontalAlign::Center,
-                                   .vertical = VerticalAlign::Middle}},
-                 SurfaceRenderProps{}, transform)}},
-        _events{events} {}
+  std::optional<std::uint64_t> _secondaryPointer;
 
-  EventResult onMouseLeftClick(const SDL_MouseButtonEvent &) override {
-    publishEventParent({.user = {.type = _events.newGameRequested}});
-    return EventResult::Consumed;
+protected:
+  void paint(playground::ui::PaintContext &context) const override {
+    if (_secondaryPointer && isEnabled())
+      context.fill({{}, bounds().size}, props().pressed);
+    else
+      Button::paint(context);
   }
 
-  NewGameButton(NewGameButton &&) noexcept = default;
+  void onDetach() noexcept override {
+    _secondaryPointer.reset();
+    Button::onDetach();
+  }
+
+  void onDefaultEvent(playground::ui::UIEvent &event) override {
+    using namespace playground::ui;
+    if (event.type == EventType::PointerCancel ||
+        event.type == EventType::FocusLost ||
+        (event.type == EventType::PointerUp &&
+         _secondaryPointer == event.pointer &&
+         (event.button == 1 || event.button == 3))) {
+      _secondaryPointer.reset();
+      releaseAllPointers();
+      invalidatePaint();
+    }
+    // Secondary presses show feedback; only primary mouse-down requests a new
+    // game.
+    if (event.type == EventType::PointerDown && event.button == 3 &&
+        !event.handled && isEnabled()) {
+      _secondaryPointer = event.pointer;
+      capturePointer(event.pointer);
+      invalidatePaint();
+      event.handled = true;
+      return;
+    }
+    if (event.type == EventType::PointerDown && event.button == 1 &&
+        !event.handled && isEnabled()) {
+      event.handled = true;
+      _request();
+      return;
+    }
+    if (event.type == EventType::KeyDown || event.type == EventType::KeyUp)
+      return;
+    Button::onDefaultEvent(event);
+  }
+
+public:
+  NewGameButton(const playground::minesweeper::ViewResources &resources,
+                playground::math::Size2 size, const NewGameButtonProps &props,
+                std::function<void()> request)
+      : Button{playground::minesweeper::makeLabel(resources, props.label,
+                                                  props.labelColor, size),
+               props.button},
+        _request{std::move(request)} {
+    if (!_request)
+      throw std::invalid_argument("New Game requires a reset request callback");
+    setContentAlignment(playground::layout::Alignment::stretch());
+    setFocusable(false);
+    auto semantics = semanticProps();
+    semantics.name = props.label;
+    setSemanticProps(std::move(semantics));
+  }
 };

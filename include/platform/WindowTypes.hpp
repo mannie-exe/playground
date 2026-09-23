@@ -4,35 +4,33 @@
 #include <string>
 #include <string_view>
 
-#include <SDL3/SDL_pixels.h>
-#include <SDL3/SDL_rect.h>
 #include <SDL3/SDL_video.h>
 
-#include <app/AppConfig.hpp>
-#include <support/SDLPrimitives.hpp>
+#include <math/GeometryFormatters.hpp>
+#include <platform/Presentation.hpp>
 
 struct WindowConfig {
-  std::string title{playground::config::defaultWindowTitle};
-  Vec2i windowedSize{playground::config::defaultWindowSize};
-  Vec2i windowedPosition{SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED};
-  bool resizable{playground::config::defaultWindowResizable};
-  bool fullscreen{playground::config::defaultWindowFullscreen};
+  std::string title{"Window"};
+  playground::math::Vec2i windowedSize{800, 600};
+  playground::math::Vec2i windowedPosition{SDL_WINDOWPOS_CENTERED,
+                                           SDL_WINDOWPOS_CENTERED};
+  bool resizable{true};
+  bool fullscreen{false};
   bool borderless{false};
   bool alwaysOnTop{false};
   bool focusable{true};
-  bool highPixelDensity{false};
+  bool highPixelDensity{true};
   bool hidden{false};
   bool maximized{false};
   bool minimized{false};
   bool transparent{false};
   bool mouseGrabbed{false};
-  SDL_Color clearColor{playground::config::defaultClearColor};
 };
 
 struct WindowState {
   std::string title;
-  Vec2i windowedSize;
-  Vec2i windowedPosition;
+  playground::math::Vec2i windowedSize;
+  playground::math::Vec2i windowedPosition;
   bool resizable;
   bool fullscreen;
   bool borderless;
@@ -45,6 +43,10 @@ struct WindowState {
   bool transparent;
   bool mouseGrabbed;
   SDL_DisplayID display;
+  playground::math::Vec2i actualSize;
+  playground::math::Vec2i actualPosition;
+  playground::math::Vec2i drawableSize;
+  float displayScale;
 };
 
 template <>
@@ -56,13 +58,12 @@ struct std::formatter<WindowConfig> : std::formatter<std::string_view> {
         ".windowedPosition = {}, .resizable = {}, .fullscreen = {}, "
         ".borderless = {}, .alwaysOnTop = {}, .focusable = {}, "
         ".highPixelDensity = {}, .hidden = {}, .maximized = {}, "
-        ".minimized = {}, .transparent = {}, .mouseGrabbed = {}, "
-        ".clearColor = {}}}",
+        ".minimized = {}, .transparent = {}, .mouseGrabbed = {}}}",
         config.title, config.windowedSize, config.windowedPosition,
         config.resizable, config.fullscreen, config.borderless,
         config.alwaysOnTop, config.focusable, config.highPixelDensity,
         config.hidden, config.maximized, config.minimized, config.transparent,
-        config.mouseGrabbed, config.clearColor);
+        config.mouseGrabbed);
   }
 };
 
@@ -76,10 +77,13 @@ struct std::formatter<WindowState> : std::formatter<std::string_view> {
         ".borderless = {}, .alwaysOnTop = {}, .focusable = {}, "
         ".highPixelDensity = {}, .hidden = {}, .maximized = {}, "
         ".minimized = {}, .transparent = {}, .mouseGrabbed = {}, "
-        ".display = {}}}",
-        state.title, state.windowedSize, state.windowedPosition, state.resizable,
-        state.fullscreen, state.borderless, state.alwaysOnTop, state.focusable,
-        state.highPixelDensity, state.hidden, state.maximized, state.minimized,
-        state.transparent, state.mouseGrabbed, state.display);
+        ".display = {}, .actualSize = {}, .actualPosition = {}, "
+        ".drawableSize = {}, .displayScale = {}}}",
+        state.title, state.windowedSize, state.windowedPosition,
+        state.resizable, state.fullscreen, state.borderless, state.alwaysOnTop,
+        state.focusable, state.highPixelDensity, state.hidden, state.maximized,
+        state.minimized, state.transparent, state.mouseGrabbed, state.display,
+        state.actualSize, state.actualPosition, state.drawableSize,
+        state.displayScale);
   }
 };

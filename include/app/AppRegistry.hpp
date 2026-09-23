@@ -3,6 +3,7 @@
 #include <format>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,7 +33,7 @@ public:
         return entry.factory();
     }
 
-    throw std::string{
+    throw std::runtime_error{
         std::format("AppRegistry failed to create requested app: {}", appId)};
   }
 
@@ -42,7 +43,7 @@ public:
         return entry.info;
     }
 
-    throw std::string{std::format(
+    throw std::runtime_error{std::format(
         "AppRegistry failed to find requested app info: {}", appId)};
   }
 

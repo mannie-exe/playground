@@ -15,11 +15,10 @@ public:
     return AppInfo{.id = AppId::Snake,
                    .name = snake::gameName,
                    .window =
-                       WindowConfig{.title = std::string{snake::windowTitle},
-                                    .windowedSize = snake::windowSize,
-                                    .resizable = snake::windowResizable,
-                                    .fullscreen = snake::windowFullscreen,
-                                    .clearColor = snake::clearColor}};
+                       AppWindowProps{.title = std::string{snake::windowTitle},
+                                      .clearColor = snake::clearColor},
+                   .view = snake::viewPolicy,
+                   .presentation = {.window = {.mode = snake::windowMode}}};
   }
 
   AppInfo info() const override { return staticInfo(); }

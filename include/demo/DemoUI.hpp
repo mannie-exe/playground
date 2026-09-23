@@ -1,48 +1,28 @@
 #pragma once
 
+#include <demo/Config.hpp>
 #include <memory>
-#include <vector>
+#include <platform/sdl/SurfacePaintImage.hpp>
+#include <ui/Builders.hpp>
+#include <ui/content/Image.hpp>
+#include <ui/content/Text.hpp>
 
-#include <SDL3/SDL.h>
+namespace playground::demo {
 
-#include <interfaces/IDisplayObject.hpp>
-#include <interfaces/IDrawable.hpp>
-#include <interfaces/IInteractable.hpp>
-#include <ui/Button.hpp>
+inline std::unique_ptr<ui::Node>
+makeDemoUI(AssetRegistry &assets, SurfaceHandle image, FontHandle font) {
+  auto layers = ui::make<ui::ZStack>();
+  layers->append(ui::make<ui::Image>(ui::ImageProps{
+      .image = sdl::makeSurfaceImage(std::move(image)),
+      .content = {.fit = ui::ContentFit::None, .alignment = {}}}));
+  layers->append(ui::make<ui::Text>(
+      assets, ui::TextProps{.value = std::string{config::textValue},
+                            .font = std::move(font),
+                            .foreground = config::textColor,
+                            .fontFit = ui::FontFit::ShrinkToFit}));
 
-class DemoUI : public IInteractable, public IDrawable {
-  std::vector<std::unique_ptr<IDisplayObject>> _items;
+  return ui::makeBox({.padding = layout::Insets::all(24)}, std::move(layers),
+                     {.contentAlignment = layout::Alignment::stretch()});
+}
 
-public:
-  DemoUI() {
-    int row{15}, col{15};
-    _items.reserve(row * col);
-
-    for (int i{0}; i < row; i++) {
-      for (int j{0}; j < col; j++) {
-        _items.emplace_back(std::make_unique<Button>(
-            rect(static_cast<float>(65 * i), static_cast<float>(65 * j),
-                 static_cast<float>(50), static_cast<float>(50)),
-            *this));
-      }
-    }
-  }
-
-  void render(SDL_Surface &targetSurface) override {
-    for (const std::unique_ptr<IDisplayObject> &item : _items) {
-      item->render(targetSurface);
-    }
-  }
-
-  EventResult handleEvent(const SDL_Event &event) override {
-    EventResult result{EventResult::Ignored};
-
-    for (auto it = _items.rbegin(); it != _items.rend(); ++it) {
-      result = combine(result, (*it)->handleEvent(event));
-      if (isTerminal(result))
-        break;
-    }
-
-    return result;
-  }
-};
+} // namespace playground::demo

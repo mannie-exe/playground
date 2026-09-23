@@ -1,108 +1,89 @@
 #pragma once
 
-#include <format>
+#include <minesweeper/ViewResources.hpp>
 #include <optional>
-#include <utility>
-
-#include <ui/Button.hpp>
-#include <ui/DisplayText.hpp>
-#include <ui/DisplayVector.hpp>
+#include <ui/containers/Stack.hpp>
+#include <ui/controls/Button.hpp>
 
 struct FlagCounterProps {
-  ButtonStyle button;
-  SDL_Color iconColor{255, 255, 255, 255};
-  SDL_Color labelColor{255, 255, 255, 255};
+  playground::ui::ButtonProps button;
+  playground::math::ColorRGBA8 iconColor{255, 255, 255, 255};
+  playground::math::ColorRGBA8 labelColor{255, 255, 255, 255};
   int amount{};
 };
 
-struct FlagCounterPropsPatch {
-  std::optional<ButtonStyle> button;
-  std::optional<SDL_Color> iconColor;
-  std::optional<SDL_Color> labelColor;
+struct FlagCounterPatch {
+  std::optional<playground::ui::ButtonProps> button;
+  std::optional<playground::math::ColorRGBA8> iconColor;
+  std::optional<playground::math::ColorRGBA8> labelColor;
   std::optional<int> amount;
 };
 
-class FlagCounter : public Button {
+class FlagCounter : public playground::ui::Box {
   FlagCounterProps _props;
-  FontHandle _font;
+  playground::minesweeper::ViewResources _resources;
+  playground::math::Size2 _labelSize;
+
+  playground::ui::Text *_label{};
+  playground::ui::Vector *_icon{};
 
 public:
-  FlagCounter(const RectTransform transform, IInteractable &parent,
-              SurfaceHandle flagImage, FontHandle font,
-              const FlagCounterProps props = {})
-      : Button{
-            transform,
-            parent,
-            props.button,
-            {.label = std::make_unique<DisplayText>(
-                 TextProps{.value = std::format("{}", props.amount),
-                           .style = {.fgColor = props.labelColor}},
-                 cloneFontToSize(
-                     font, std::format("{}", props.amount),
-                     Vec2f{transform.size.x * 0.5f, transform.size.y}, 0.825f),
-                 DisplayTextProps{
-                     .wrapToTransform = false,
-                     .alignment = {.horizontal = HorizontalAlign::Center,
-                                   .vertical = VerticalAlign::Middle}},
-                 SurfaceRenderProps{},
-                 rect(transform.position.x, transform.position.y,
-                      transform.size.x / 2, transform.size.y)),
-             .icon = std::make_unique<DisplayVector>(
-                 flagImage,
-                 rect(transform.position.x + transform.size.x / 2,
-                      transform.position.y, transform.size.x / 2,
-                      transform.size.y),
-                 SurfaceRenderProps{
-                     .blit = {.fitMode = SurfaceFitMode::Contain},
-                     .appearance = {.colorMod = props.iconColor}})},
-            InteractionState::Disabled},
-        _props{props}, _font{std::move(font)} {}
-
-  ~FlagCounter() = default;
+  FlagCounter(const playground::minesweeper::ViewResources &resources,
+              playground::math::Size2 size, FlagCounterProps props = {})
+      : _props{props}, _resources{resources},
+        _labelSize{size.width / 2, size.height} {
+    using namespace playground;
+    auto row = std::make_unique<ui::HStack>(layout::StackProps{
+        .childrenAlignment = layout::CrossAlignment::Stretch});
+    auto label = minesweeper::makeLabel(resources, std::to_string(props.amount),
+                                        props.labelColor, _labelSize);
+    auto icon = minesweeper::makeIcon(resources, false, props.iconColor);
+    _label = label.get();
+    _icon = icon.get();
+    label->setBoxProps({.width = layout::SizeRule::fixed(size.width / 2)});
+    icon->setBoxProps({.width = layout::SizeRule::fixed(size.width / 2)});
+    row->append(std::move(label));
+    row->append(std::move(icon));
+    setChild(std::move(row));
+    setContentAlignment(layout::Alignment::stretch());
+    setBackground(props.button.disabled);
+    setSemanticProps({.role = ui::SemanticRole::Group,
+                      .name = "Flag counter",
+                      .enabled = false});
+  }
 
   int getAmount() const { return _props.amount; }
   const FlagCounterProps &getProps() const { return _props; }
 
-  void setAmount(const int amount) {
+  void setAmount(int amount) {
     if (_props.amount == amount)
       return;
+    auto text = _label->props();
+    text.value = std::to_string(amount);
+    text.font =
+        playground::minesweeper::fittedFont(_resources, text.value, _labelSize);
+    _label->setProps(std::move(text));
     _props.amount = amount;
-    if (Button::getLabel()) {
-      Button::getLabel()->setValue(std::format("{}", amount));
-      Button::getLabel()->replaceFont(cloneFontToSize(
-          _font, std::format("{}", amount),
-          Vec2f{_transform.size.x * 0.5f, _transform.size.y}, 0.825f));
-    }
   }
 
-  void applyPropsPatch(const FlagCounterPropsPatch &patch) {
-    if (patch.button) {
-      _props.button = *patch.button;
-      Button::setStyle(_props.button);
-    }
-    if (patch.labelColor) {
-      _props.labelColor = *patch.labelColor;
-      if (Button::getLabel())
-        Button::getLabel()->setStyle(
-            TextStylePatch{.fgColor = _props.labelColor});
-    }
+  void applyPropsPatch(const FlagCounterPatch &patch) {
     if (patch.amount)
       setAmount(*patch.amount);
-    if (patch.iconColor)
+    if (patch.button) {
+      setBackground(patch.button->disabled);
+      _props.button = *patch.button;
+    }
+    if (patch.labelColor) {
+      auto text = _label->props();
+      text.foreground = *patch.labelColor;
+      _label->setProps(std::move(text));
+      _props.labelColor = *patch.labelColor;
+    }
+    if (patch.iconColor) {
+      auto icon = _icon->props();
+      icon.content.paint.tint = *patch.iconColor;
+      _icon->setProps(std::move(icon));
       _props.iconColor = *patch.iconColor;
+    }
   }
-
-  EventResult handleEvent(const SDL_Event &event) override {
-    if (!isVisible())
-      return EventResult::Ignored;
-    return Button::handleEvent(event);
-  }
-
-  void render(SDL_Surface &targetSurface) override {
-    if (!isVisible())
-      return;
-    Button::render(targetSurface);
-  }
-
-  FlagCounter(FlagCounter &&) noexcept = default;
 };

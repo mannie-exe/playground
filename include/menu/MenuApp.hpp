@@ -9,12 +9,8 @@ public:
   static AppInfo staticInfo() {
     return AppInfo{.id = AppId::Menu,
                    .name = "Menu",
-                   .window =
-                       WindowConfig{.title = "Me n' U",
-                                    .windowedSize = SDL_Point{800, 600},
-                                    .resizable = true,
-                                    .fullscreen = false,
-                                    .clearColor = SDL_Color{24, 24, 24, 255}}};
+                   .window = AppWindowProps{.title = "Me n' U",
+                                            .clearColor = {24, 24, 24, 255}}};
   }
 
   AppInfo info() const override { return staticInfo(); }

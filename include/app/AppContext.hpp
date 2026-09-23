@@ -1,17 +1,16 @@
 #pragma once
 
+#include <math/Geometry2D.hpp>
+
 #include <string>
 #include <string_view>
 
-#include <SDL3/SDL_rect.h>
-#include <SDL3/SDL_surface.h>
-
 #include <app/AppTypes.hpp>
+#include <platform/WindowTypes.hpp>
 #include <support/AssetRegistry.hpp>
 #include <support/PerformanceMonitor.hpp>
 
 class AppHost;
-class Window;
 
 class AppContext {
   AppHost &_host;
@@ -19,12 +18,12 @@ class AppContext {
 public:
   explicit AppContext(AppHost &host) : _host{host} {}
 
-  Window &window();
-  SDL_Surface &surface();
-
   const WindowState &windowState() const;
-  Vec2i windowSize() const;
-  Vec2i drawableSize() const;
+  const AppWindowProps &windowProps() const;
+  playground::platform::WindowMetrics windowMetrics() const;
+  const playground::platform::PresentationProps &presentation() const;
+  const playground::platform::AppViewPolicy &viewPolicy() const;
+  const playground::platform::SettingsDocument &userSettings() const;
 
   std::string assetPath(std::string_view relativePath) const;
   AssetRegistry &assets();
@@ -33,5 +32,11 @@ public:
   void requestSwitch(AppId appId);
   void requestMenu();
   void requestQuit();
-  void requestWindowConfig(WindowConfig config);
+  void requestWindowProps(AppWindowProps config);
+  void requestViewPolicy(playground::platform::AppViewPolicy policy);
+  void requestFitContent();
+  void requestPresentation(playground::platform::PresentationProps props);
+  void requestReloadSettings();
+  void requestUserSettings(playground::platform::SettingsDocument settings,
+                           bool persist = false);
 };

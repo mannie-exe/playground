@@ -9,6 +9,13 @@ public:
   virtual ~IApp() = default;
 
   virtual AppInfo info() const = 0;
+  // Query only after onEnter has constructed content. No window mutations.
+  // Null means this app has no preferred-content measurement implementation.
+  virtual std::optional<playground::math::Size2>
+  preferredContentSize(playground::math::Size2 maximum,
+                       playground::math::Vec2f density) {
+    return {};
+  }
 
   IApp(IApp &&) noexcept = default;
   IApp &operator=(IApp &&) noexcept = default;
