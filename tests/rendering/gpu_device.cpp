@@ -248,6 +248,9 @@ int main(int argc, char **argv) {
       test::require(device->resourceDomain() !=
                         rendering::ResourceDomainId::cpu(),
                     "GPU and CPU realization domains differ");
+      test::rejects<std::invalid_argument>(
+          [&] { device->acquireCommands(""); },
+          "invalid labels are rejected even with GPU profiling disabled");
       bool rejectedThread{};
       std::thread foreign{[&] {
         try {

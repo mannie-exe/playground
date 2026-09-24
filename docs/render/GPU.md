@@ -274,8 +274,9 @@ texture allocation underneath the existing engine.
 Prefer an SDL extension for a narrowly missing capability that fits its ownership
 model. Prefer a separate backend when required command scheduling, resource models
 or Vulkan extensions cannot fit that model cleanly. Keep any such fork isolated,
-version-pinned and tested at the adapter boundary; no SDL source patch is required
-or applied by the current implementation.
+version-pinned and tested at the adapter boundary. The current implementation
+applies the narrow timestamp extension described in [PROFILING.md](PROFILING.md),
+plus SDL_ttf raster/atlas corrections; it does not replace SDL's backend.
 
 Ordinary tests cover packing, ownership, preparation, software pixels and failures
 without hardware. PLAYGROUND_GPU_TESTS adds gpu_device and gpu_shaders (Vulkan),

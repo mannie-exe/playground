@@ -935,8 +935,8 @@ an implemented renderer, node or host policy.
 | More controls | Checkbox, slider, tree, menus/dialogs, text editing/selection and spreadsheet interaction; keyboard/focus and accessibility contracts |
 | Idle/damage rendering | Exposure/resize/input/asset/animation wakeups, old/new damage bounds, overlap-correct partial repaint and presentation |
 | Native accessibility | OS bridges for semantics, values, actions, focus and lifecycle |
-| GPU extensions | GPU 2D/3D, atlas text and presentation exist. Device-loss recovery, general render graphs, GPU timing, dynamic residency budgets and batching optimizations remain. |
-| 3D extensions | Scene/SceneView, software/GPU unlit triangles, clipping, depth, alpha modes and picking exist. PBR, lighting, shadows, instancing, animation and spatial acceleration remain. |
+| GPU extensions | GPU 2D/3D, atlas text, bounded recovery, asynchronous timing, ordered batching and budgeted target/residency caches exist. General render graphs, adaptive hardware-memory budgets and further batching optimizations remain. |
+| 3D extensions | Scene3D/SceneView, static model import, software/GPU unlit triangles, clipping, depth, alpha modes and picking exist. PBR, lighting, shadows, GPU instancing, animation and spatial acceleration remain. |
 | 2D panels in 3D | Independent 2D layout, per-viewport camera and ray-to-panel input conversion |
 
 Whole-description reconciliation is outside the design scope. Stable-key collection

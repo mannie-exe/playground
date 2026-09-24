@@ -14,6 +14,11 @@ host-observed submission-to-completion delay, not shader execution duration.
 remain missing: unsupported timing, an exhausted query ring and a result that is
 not ready do not produce zero-duration samples. Intervals can overlap; summing
 independent submissions is not necessarily a meaningful frame duration.
+Unmeasured CPU phases are reported as unmeasured, not as zero-duration work.
+Labels contain 1–128 bytes and are validated before command acquisition even when
+profiling is disabled. Ready samples within one poll are returned in submission
+order, independent of recycled query-slot indices; a delayed result can still
+arrive in a later poll, so consumers retain domain/sequence identity.
 
 ## SDL Vulkan extension
 

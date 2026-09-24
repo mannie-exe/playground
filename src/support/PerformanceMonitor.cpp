@@ -96,6 +96,10 @@ void PerformanceMonitor::report() {
        {FramePhase::Poll, FramePhase::Update, FramePhase::Render,
         FramePhase::Present, FramePhase::Total}) {
     const PhaseStats &stats{_stats[index(phase)]};
+    if (!stats.count) {
+      message += std::format(" | {} unmeasured", name(phase));
+      continue;
+    }
     message += std::format(
         " | {} avg={:.3f}ms min={:.3f}ms max={:.3f}ms", name(phase),
         stats.average(), stats.minimumMilliseconds, stats.maximumMilliseconds);
@@ -134,9 +138,9 @@ void PerformanceMonitor::recordGPU(
     const playground::rendering::GPUTimingSample &sample) {
   if (!_config.enabled || !_gpuTimingAvailable)
     return;
+  playground::rendering::validateGPUTimingLabel(sample.label);
   if (!sample.sequence || !sample.domain ||
       !std::isfinite(sample.milliseconds) || sample.milliseconds < 0 ||
-      sample.label.empty() || sample.label.size() > 128 ||
       (sample.completionLatencyMilliseconds &&
        (!std::isfinite(*sample.completionLatencyMilliseconds) ||
         *sample.completionLatencyMilliseconds < 0)))

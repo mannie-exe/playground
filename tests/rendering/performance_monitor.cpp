@@ -1,4 +1,7 @@
 #include <limits>
+#include <string>
+
+#include <SDL3/SDL_log.h>
 
 #include <support/PerformanceMonitor.hpp>
 #include <support/Test.hpp>
@@ -43,7 +46,27 @@ int main() {
             monitor.getConfig().sampleEveryFrames == 300 &&
             monitor.history().size() == 2,
         "F11 changes only reporting interval");
-    monitor.report();
+    {
+      struct LogCapture {
+        SDL_LogOutputFunction previous{};
+        void *userdata{};
+        std::string message;
+        LogCapture() {
+          SDL_GetLogOutputFunction(&previous, &userdata);
+          SDL_SetLogOutputFunction(
+              [](void *self, int, SDL_LogPriority, const char *message) {
+                static_cast<LogCapture *>(self)->message = message;
+              },
+              this);
+        }
+        ~LogCapture() { SDL_SetLogOutputFunction(previous, userdata); }
+      } captured;
+      monitor.report();
+      playground::test::require(
+          captured.message.contains("present unmeasured") &&
+              captured.message.contains("total avg=2.000ms"),
+          "summary distinguishes missing phases from measured durations");
+    }
     playground::test::require(monitor.history().size() == 2 &&
                                   monitor.history().back().frame == 3,
                               "summary report preserves retained history");
@@ -64,7 +87,7 @@ int main() {
             monitor.gpuHistory().front().sequence == 2 &&
             monitor.history().back().frame == 3,
         "completed GPU samples have a separate bounded history");
-    playground::test::rejects([&] { monitor.recordGPU({4, "frame", -1}); },
+    playground::test::rejects([&] { monitor.recordGPU({4, "frame", -1, {2}}); },
                               "invalid GPU sample rejected");
     {
       PerformanceMonitor signals{{.enabled = true, .logSummary = false}};

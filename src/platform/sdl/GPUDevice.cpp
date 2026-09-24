@@ -75,6 +75,7 @@ void GPUDevice::invalidate() noexcept {
 
 SDL_GPUCommandBuffer *GPUDevice::acquireCommands(std::string_view label) {
   checkOwnerThread();
+  rendering::validateGPUTimingLabel(label);
   pollCompletions();
   if (_recordings.size() + _pending.size() >= _limits.maxInFlightSubmissions)
     throw std::length_error("GPU submission capacity exhausted");

@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 #include <SDL3/SDL_gpu_timestamps_playground.h>
@@ -199,6 +200,36 @@ void preserveReadySamples() {
           std::abs(samples[0].milliseconds - 0.006) < 1e-12,
       "failed later read preserves prior ready sample and 64-bit wrap");
 }
+
+void labelsAndRecycledOrder() {
+  Driver driver;
+  int first{}, second{};
+  auto *a = reinterpret_cast<SDL_GPUCommandBuffer *>(&first);
+  auto *b = reinterpret_cast<SDL_GPUCommandBuffer *>(&second);
+  sdl::GPUTimestampRing ring{driver.api(), {2}};
+  rejects<std::invalid_argument>([&] { ring.begin(a, ""); });
+  rejects<std::invalid_argument>([&] {
+    ring.begin(a, std::string(rendering::maximumGPUTimingLabelBytes + 1, 'x'));
+  });
+  test::require(driver.writes == 0,
+                "invalid labels fail before recording native commands");
+  const auto one =
+      *ring.begin(a, std::string(rendering::maximumGPUTimingLabelBytes, 'x'));
+  ring.end(a, one);
+  ring.submitted(one, 1);
+  const auto two = *ring.begin(b, "second");
+  ring.end(b, two);
+  ring.submitted(two, 2);
+  test::require(ring.poll(1).size() == 1, "first slot becomes reusable");
+  const auto three = *ring.begin(a, "third");
+  test::require(three.slot == one.slot, "lower slot is recycled");
+  ring.end(a, three);
+  ring.submitted(three, 3);
+  const auto ready = ring.poll(3);
+  test::require(ready.size() == 2 && ready[0].sequence == 2 &&
+                    ready[1].sequence == 3,
+                "ready batches follow submission order, not slot order");
+}
 } // namespace
 
 int main() {
@@ -207,5 +238,6 @@ int main() {
     wrapAndFailures();
     malformedContracts();
     preserveReadySamples();
+    labelsAndRecycledOrder();
   });
 }

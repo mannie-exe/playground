@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -96,6 +97,7 @@ std::optional<GPUTimestampRing::Ticket>
 GPUTimestampRing::begin(SDL_GPUCommandBuffer *commands,
                         std::string_view label) {
   _impl->checkOwner();
+  rendering::validateGPUTimingLabel(label);
   if (!supported())
     return std::nullopt;
   if (!commands)
@@ -207,6 +209,8 @@ GPUTimestampRing::poll(rendering::SubmissionId completedSubmission) {
     samples.push_back({slot.submission, slot.label, milliseconds});
     ready.push_back(index);
   }
+  // Slot reuse changes physical order; publish this batch in submission order.
+  std::ranges::sort(samples, {}, &rendering::GPUTimingSample::sequence);
   // Commit only after every read/allocation succeeded; exceptions preserve
   // already-ready samples for the next poll instead of silently consuming them.
   for (const auto index : ready) {
