@@ -18,8 +18,8 @@ void validate(const ContentStyle &style) {
         align != layout::Align::End)
       throw std::invalid_argument("Content alignment must be Start, Center, or "
                                   "End; use Stretch fit for stretching");
-  if (style.paint.sampling != Sampling::Nearest &&
-      style.paint.sampling != Sampling::Linear)
+  if (style.paint.sampling != rendering::Sampling::Nearest &&
+      style.paint.sampling != rendering::Sampling::Linear)
     throw std::invalid_argument("Unknown content sampling mode");
 }
 

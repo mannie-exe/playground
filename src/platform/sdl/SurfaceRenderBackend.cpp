@@ -1,25 +1,38 @@
-#include <platform/sdl/SurfaceRenderBackend.hpp>
-
 #include <optional>
 #include <stdexcept>
 
+#include <platform/sdl/SoftwareSceneRenderer.hpp>
 #include <platform/sdl/SurfacePainter.hpp>
+#include <platform/sdl/SurfaceRenderBackend.hpp>
 #include <support/SDLError.hpp>
 
 namespace playground::sdl {
 namespace {
 
-class SurfaceFrame final : public rendering::RenderFrame {
+class SurfaceFrame final : public rendering::RenderFrame,
+                           private scene::SceneRenderer {
   SDL_Window &_window;
   bool &_frameActive;
+  std::uint64_t &_completedWork;
   SDL_Surface *_scaled;
 
   std::optional<SurfacePainter> _painter;
+  SoftwareSceneRenderer _scene;
+
+  rendering::PaintImageHandle
+  render(const scene::SceneRenderProps &props,
+         std::span<const scene::MeshDraw> draws) override {
+    if (!_painter)
+      throw std::logic_error("Frame has already been presented");
+    return _scene.render(props, draws);
+  }
 
 public:
   SurfaceFrame(SDL_Window &window, bool &frameActive,
-               rendering::RenderFrameProps props, SDL_Surface *scaled)
-      : _window{window}, _frameActive{frameActive}, _scaled{scaled} {
+               std::uint64_t &completedWork, rendering::RenderFrameProps props,
+               SDL_Surface *scaled)
+      : _window{window}, _frameActive{frameActive},
+        _completedWork{completedWork}, _scaled{scaled} {
     auto *surface = scaled ? scaled : SDL_GetWindowSurface(&_window);
     if (!surface)
       throwSDLError("Failed to acquire window surface for frame");
@@ -47,13 +60,15 @@ public:
     _frameActive = false;
   }
 
-  ui::PaintContext &paint2D() override {
+  rendering::PaintContext &paint2D() override {
     if (!_painter)
       throw std::logic_error("Frame has already been presented");
     return *_painter;
   }
 
-  void present() override {
+  scene::SceneRenderer *scene3D() noexcept override { return this; }
+
+  rendering::PresentationOutcome present() override {
     if (!_painter)
       throw std::logic_error("Frame has already been presented");
     _painter.reset();
@@ -76,6 +91,8 @@ public:
     }
     if (!SDL_UpdateWindowSurface(&_window))
       throwSDLError("Failed to present frame surface");
+    ++_completedWork;
+    return rendering::PresentationOutcome::Submitted;
   }
 };
 
@@ -110,8 +127,8 @@ SurfaceRenderBackend::beginFrame(rendering::RenderFrameProps props) {
       _scaledTarget = std::move(replacement);
     }
   }
-  return std::make_unique<SurfaceFrame>(_window, _frameActive, props,
-                                        _scaledTarget.get());
+  return std::make_unique<SurfaceFrame>(_window, _frameActive, _completedWork,
+                                        props, _scaledTarget.get());
 }
 
 } // namespace playground::sdl

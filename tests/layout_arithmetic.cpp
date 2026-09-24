@@ -1,8 +1,9 @@
 #include <array>
 #include <cmath>
-#include <layout/LayoutAlgorithms.hpp>
 #include <limits>
 #include <numeric>
+
+#include <layout/LayoutAlgorithms.hpp>
 #include <support/Test.hpp>
 
 using namespace playground;

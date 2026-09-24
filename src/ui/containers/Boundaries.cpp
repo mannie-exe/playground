@@ -1,6 +1,6 @@
-#include <ui/containers/Boundaries.hpp>
-
 #include <stdexcept>
+
+#include <ui/containers/Boundaries.hpp>
 
 namespace playground::ui {
 
@@ -67,14 +67,16 @@ void Layer::paintSubtree(PaintContext &context) const {
   }
   const auto scale = context.pixelScale() * _props.rasterScale;
   const double bytes = std::ceil(static_cast<double>(bounds.w()) * scale.x) *
-                       std::ceil(static_cast<double>(bounds.h()) * scale.y) * 4;
+                       std::ceil(static_cast<double>(bounds.h()) * scale.y) *
+                       context.captureBytesPerPixel();
   if (!std::isfinite(bytes) || bytes > _props.byteLimit) {
     dropCache();
     Box::paintSubtree(context);
     return;
   }
-  if (!_cache || _cachedRevision != subtreePaintRevision() ||
-      _cachedBounds != bounds || _cachedScale != scale) {
+  if (!_cache || _cachedDomain != context.resourceDomain() ||
+      _cachedRevision != subtreePaintRevision() || _cachedBounds != bounds ||
+      _cachedScale != scale) {
     dropCache();
     Connection reservation;
     if (auto budget = _budget.lock()) {
@@ -92,6 +94,7 @@ void Layer::paintSubtree(PaintContext &context) const {
         !math::hasArea(cache->pixelSize()))
       throw std::runtime_error("Paint backend returned an invalid layer image");
     _cache = std::move(cache);
+    _cachedDomain = context.resourceDomain();
     _cachedRevision = subtreePaintRevision();
     _cachedBounds = bounds;
     _cachedScale = scale;
@@ -126,7 +129,8 @@ void Layer::applyPatch(const LayerPatch &p) {
 
 std::size_t Layer::estimatedCacheBytes() const noexcept {
   return _cache ? static_cast<std::size_t>(_cache->pixelSize().width) *
-                      static_cast<std::size_t>(_cache->pixelSize().height) * 4
+                      static_cast<std::size_t>(_cache->pixelSize().height) *
+                      _cache->bytesPerPixel()
                 : 0;
 }
 

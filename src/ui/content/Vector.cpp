@@ -1,7 +1,6 @@
-#include <ui/content/Vector.hpp>
-
 #include <platform/sdl/SDLGeometry.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
+#include <ui/content/Vector.hpp>
 
 namespace playground::ui {
 

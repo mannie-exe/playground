@@ -59,9 +59,17 @@ their runtime behavior.
 | Viewport / preferred measurement | `ui_viewport`: optional authored versus shared-bootstrap sizing and invalid sizes, cross-platform DPI coordinate conventions, reflow zoom, all fixed-canvas fits, paint/input round trips, letterbox capture/release and touch routing, bounded padded measurement without arrangement, invalid/overflow extents | Synthetic input; no real monitor/window-manager behavior |
 | Presentation settings/storage | `ui_presentation_settings`: layer precedence, absent versus false/zero, replacement preview, enum round trips, parse/schema/type failures, rejected-write preservation, signed session coordinates and isolated file replacement | No real user-directory writes, process crash/power-loss injection or concurrent writers |
 | Breakpoints | `breakpoints`: half-open adjacency, 2D bounds, unknown offers, invalid/overlapping ranges, Keep/Set/Reset and failed-update preservation | No hysteresis or automatic subtree replacement |
-| 3D math | `geometry3d`: matrix identity/composition, point versus direction, camera basis, projection near/far/aspect, invalid input, overflow and index bounds | Math foundation; not a 3D renderer or exhaustive numerical proof |
+| 3D math | `geometry3d`, `transform3d`: matrix/camera arithmetic, quaternion composition, 30 TRS/inverse sweeps, homogeneous division, inverse-transpose normals, singular/nonfinite rejection | No condition-number estimate, SIMD or renderer execution |
+| Color semantics | `color_space`: all 256 byte-channel roundtrips, continuous transfer sweep, linear source-over, alpha-zero and invalid-channel rejection | SDR helpers, not a migration of SurfacePainter or ICC/HDR conformance |
+| Renderer negotiation | `renderer_selection`, `ui_render_backend`: automatic/explicit selection, Vulkan policy, strict and allowed fallback, non-negotiable requirements, factory capability agreement | Synthetic candidates plus software factory; hardware negotiation has opt-in tests |
 | Scene submission | `ui_scene_contracts`: valid/empty submissions, malformed triangles/indices, nonfinite geometry/model, invalid target and null mesh | No GPU scene execution |
-| Image realization | `ui_image_preparation`: packed pitch/alpha, byte counts, invalid device ownership, generic identity/malformed outputs, Image/Text/Vector preparation wiring, failure/readiness/retry, retained draw ownership | GPU upload and atlas code compile; no device is created by these tests, no hardware execution claim |
+| Scene ownership and mapping | `scene_viewport`, `scenes`: immutable mesh bounds, hierarchy updates, projection/picking, software depth/alpha/filtering | Selected pixels and transforms, not exhaustive model fidelity |
+| Model importing | `model_import`: static glTF/GLB, hierarchy, materials, atomic scene publication and malformed/unsupported data | Static triangle subset; decoder and filesystem confinement are not a sandbox |
+| Model file adapter | `model_import_files`: bare/absolute document paths, percent-decoded sibling files, traversal/network rejection | Isolated temporary files; no decoder fuzzing or symlink race guarantee |
+| Paths | `vector_paths`: curve flattening, fill rules, closure, stroke and complexity limits, UI/software integration | Solid fills and round strokes, not the full SVG paint model |
+| Shader contracts | `shader_contracts`: SPIR-V reflection, bindings, stage interfaces and rejected layouts | Native pipeline creation/reload requires opt-in `gpu_shaders` |
+| Runtime handoff | `ui_completion_queue`, `runtime_transitions`: bounded delivery, throwing callbacks, rollback and recovery state | Does not assert rollback of arbitrary app side effects |
+| Image realization | `ui_image_preparation`: pitch packing, all encoding/alpha pairs, metadata mismatch rejection, byte counts, invalid device ownership, Image/Text/Vector preparation/retry and retained ownership | GPU upload and atlas code compile; no device is created; metadata tests do not prove correct labeling of arbitrary source pixels |
 
 ## Assessment rules
 
@@ -95,6 +103,40 @@ equality for cache keys, infer performance from wall-clock deadlines, or equate
 offscreen pixel checks with interactive visual quality.
 
 ## Coverage boundaries
+
+Renderer-specific tests are separate constituents: `scenes` checks scene ownership,
+software depth/clipping/alpha pixels and SceneView preparation. Optional hardware
+test `gpu_device` (Vulkan only) covers actual GPU pixels, groups, atlas preparation and
+frame lifecycle. They require PLAYGROUND_GPU_TESTS plus compiled shader assets;
+ordinary UI tests do not require a device. See the renderer contracts for limits.
+
+Additional renderer/runtime constituents:
+
+| Test | Contract |
+|---|---|
+| ui_completion_queue | Capacity/work budgets, FIFO, worker publication, owner-only/nonrecursive drain, failure-tail preservation, closed/expired sinks |
+| runtime_transitions | Captured-state restoration, operation/restoration double failure, bounded recovery probation, completed/skipped work, update-clock rebasing |
+| resource_values | Unique resource domains, overflow-safe target/upload byte limits |
+| allocation_budget | Reservation cap, overflow rejection, failure preservation, in-flight lease ownership |
+| gpu_timing | Injected native timestamp table, capacity, cancellation, failure quarantine, unavailable results, counter wrap, owner-thread rules |
+| performance_monitor | Bounded CPU/GPU histories, absent measurements, availability states, hotkey preservation and invalid sample rejection |
+| text_pixels | Styled glyph bearings/crops, straight-alpha mixed runs, natural/explicit line spacing, patch reset and immutable cache distinction |
+| scene_viewport | Camera/letterbox/input mapping, projection, stable alpha ordering, immutable meshes and cached world transforms |
+| vector_paths | Curves, fill rules/holes, round strokes, bounded flattening, retained Path node and software pixels |
+| shader_contracts | Malformed SPIR-V, reflected slots, stage linkage, type/count mismatches |
+
+Hardware text tests include a vendored licensed color-glyph fixture when present;
+the test asserts COLOR glyph support before comparing decoded/premultiplied pixels.
+Coverage includes partial-alpha colored edges and opacity, bold, italic, outline,
+underline/strikethrough, wrapped alignment and directional text. Italic/outline,
+Twemoji's layer-only color fixture, Bungee's outlined-base color fixture and mixed
+monochrome/color fallback runs require actual atlas preparation and compare full
+CPU/GPU geometry and color with color-space-aware tolerances. Checked-in SDL_ttf
+patches repair bitmap bearings/crops and CPU color-glyph alpha association.
+GPU tests also exercise tracked target leases, cancellation, completed reuse and
+native timestamp execution when the Vulkan device advertises that capability.
+This is not exhaustive emoji/script/font/style conformance. Resource recovery
+tests do not simulate a driver hang or physically removed device.
 
 The inventory does not establish:
 

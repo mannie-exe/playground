@@ -1,13 +1,15 @@
-#include <platform/Settings.hpp>
-
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
-#include <toml++/toml.hpp>
+#include <type_traits>
 #include <utility>
+
+#include <toml++/toml.hpp>
+
+#include <platform/Settings.hpp>
 
 namespace playground::platform {
 namespace {
@@ -18,8 +20,14 @@ constexpr std::array displays{"primary", "current", "named"};
 constexpr std::array sizing{"preferred", "fit-content", "restore-previous"};
 constexpr std::array viewports{"reflow", "fixed-canvas"};
 constexpr std::array fits{"contain", "cover", "stretch"};
+constexpr std::array renderers{"auto", "software", "sdl-gpu"};
+constexpr std::array gpuDrivers{"auto", "vulkan"};
 
 template <class T> T value(const toml::node &node) {
+  if constexpr (std::is_same_v<T, bool>) {
+    if (!node.is_boolean())
+      throw std::invalid_argument("Settings boolean must be true or false");
+  }
   auto result = node.value<T>();
   if (!result)
     throw std::invalid_argument("Settings field has the wrong type");
@@ -75,10 +83,11 @@ const toml::table &table(const toml::node &node) {
     throw std::invalid_argument("Expected a settings table");
   return *result;
 }
-toml::table document(std::string_view text) {
+toml::table document(std::string_view text, int maximumVersion = 1) {
   auto result = toml::parse(text);
   const auto *version = result.get("schema_version");
-  if (!version || !version->is_integer() || value<std::int64_t>(*version) != 1)
+  if (!version || !version->is_integer() || value<std::int64_t>(*version) < 1 ||
+      value<std::int64_t>(*version) > maximumVersion)
     throw std::invalid_argument(
         "Unsupported or missing settings schema_version");
   return result;
@@ -117,6 +126,16 @@ SettingsPatch readPatch(const toml::table &fields) {
       p.followSystemScale = value<bool>(node);
     else if (name == "resolution_scale")
       p.resolutionScale = number(node);
+    else if (name == "glyph_atlases")
+      p.glyphAtlases = value<bool>(node);
+    else if (name == "vsync")
+      p.vsync = value<bool>(node);
+    else if (name == "renderer")
+      p.renderer = enumeration<rendering::RendererChoice>(node, renderers);
+    else if (name == "gpu_driver")
+      p.gpuDriver = enumeration<rendering::GPUDriver>(node, gpuDrivers);
+    else if (name == "renderer_fallback")
+      p.rendererFallback = value<bool>(node);
     else
       throw std::invalid_argument("Unknown settings field: " +
                                   std::string{name});
@@ -167,6 +186,16 @@ toml::table writePatch(const SettingsPatch &p) {
     t.insert("follow_system_scale", *p.followSystemScale);
   if (p.resolutionScale)
     t.insert("resolution_scale", *p.resolutionScale);
+  if (p.glyphAtlases)
+    t.insert("glyph_atlases", *p.glyphAtlases);
+  if (p.vsync)
+    t.insert("vsync", *p.vsync);
+  if (p.renderer)
+    t.insert("renderer", enumName(*p.renderer, renderers));
+  if (p.gpuDriver)
+    t.insert("gpu_driver", enumName(*p.gpuDriver, gpuDrivers));
+  if (p.rendererFallback)
+    t.insert("renderer_fallback", *p.rendererFallback);
   return t;
 }
 std::string format(const toml::table &t) {
@@ -207,6 +236,16 @@ void SettingsPatch::apply(PresentationProps &p, AppViewPolicy &v) const {
     p.viewport.followSystemScale = *followSystemScale;
   if (resolutionScale)
     p.render.resolutionScale = *resolutionScale;
+  if (glyphAtlases)
+    p.render.glyphAtlases = *glyphAtlases;
+  if (vsync)
+    p.render.vsync = *vsync;
+  if (renderer)
+    p.renderer.backend = *renderer;
+  if (gpuDriver)
+    p.renderer.driver = *gpuDriver;
+  if (rendererFallback)
+    p.renderer.allowFallback = *rendererFallback;
 }
 void SettingsDocument::apply(std::string_view app, PresentationProps &p,
                              AppViewPolicy &v) const {
@@ -215,7 +254,7 @@ void SettingsDocument::apply(std::string_view app, PresentationProps &p,
     found->second.apply(p, v);
 }
 SettingsDocument parseSettings(std::string_view text) {
-  const auto root = document(text);
+  const auto root = document(text, 2);
   SettingsDocument result;
   for (const auto &[key, node] : root) {
     if (key == "schema_version")
@@ -234,7 +273,7 @@ std::string serializeSettings(const SettingsDocument &document) {
   toml::table apps;
   for (const auto &[key, patch] : document.apps)
     apps.insert(key, writePatch(patch));
-  return format(toml::table{{"schema_version", 1},
+  return format(toml::table{{"schema_version", 2},
                             {"defaults", writePatch(document.defaults)},
                             {"apps", std::move(apps)}});
 }
@@ -273,16 +312,20 @@ std::string serializeSession(const SessionState &state) {
                             {"display_name", saved.displayName}});
   return format(toml::table{{"schema_version", 1}, {"apps", std::move(apps)}});
 }
-void SettingsStore::reload() {
+void SettingsStore::reload() { publish(readSnapshot()); }
+SettingsSnapshot SettingsStore::readSnapshot() const {
   auto project = _projectFiles.read("project.toml");
   auto user = _userFiles.read("settings.toml");
   auto session = _userFiles.read("session.toml");
   auto nextProject = project ? parseSettings(*project) : SettingsDocument{};
   auto nextUser = user ? parseSettings(*user) : SettingsDocument{};
   auto nextSession = session ? parseSession(*session) : SessionState{};
-  _project = std::move(nextProject);
-  _user = std::move(nextUser);
-  _session = std::move(nextSession);
+  return {std::move(nextProject), std::move(nextUser), std::move(nextSession)};
+}
+void SettingsStore::publish(SettingsSnapshot snapshot) noexcept {
+  _project = std::move(snapshot.project);
+  _user = std::move(snapshot.user);
+  _session = std::move(snapshot.session);
 }
 void SettingsStore::setUser(SettingsDocument document, bool persist) {
   const auto text = serializeSettings(document);

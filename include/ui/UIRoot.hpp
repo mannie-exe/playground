@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <runtime/CompletionQueue.hpp>
 #include <ui/Node.hpp>
 
 namespace playground::ui {
@@ -26,31 +27,19 @@ struct NodeInspection {
   SemanticProps semantics;
 };
 
-namespace detail {
-struct CompletionMailbox {
-  std::mutex mutex;
-  std::deque<std::move_only_function<void()>> pending;
-};
-} // namespace detail
-
 class CompletionSink {
-  std::weak_ptr<detail::CompletionMailbox> _mailbox;
+  runtime::CompletionSink _sink;
 
 public:
-  explicit CompletionSink(std::weak_ptr<detail::CompletionMailbox> mailbox)
-      : _mailbox{std::move(mailbox)} {}
+  explicit CompletionSink(runtime::CompletionSink sink)
+      : _sink{std::move(sink)} {}
   template <typename T, typename Callback>
   bool post(NodeHandle<T> handle, Revision revision, Callback callback) const {
-    auto mailbox = _mailbox.lock();
-    if (!mailbox)
-      return false;
-    std::lock_guard lock{mailbox->mutex};
-    mailbox->pending.push_back([handle, revision,
-                                callback = std::move(callback)]() mutable {
+    return _sink.post([handle, revision,
+                       callback = std::move(callback)]() mutable {
       if (auto *node = handle.get(); node && node->sourceRevision() == revision)
         callback(*node);
     });
-    return true;
   }
 };
 
@@ -64,8 +53,7 @@ class UIRoot {
   std::deque<std::move_only_function<void(UIRoot &)>> _deferred;
   bool _flushingMutations{};
   bool _updating{};
-  std::shared_ptr<detail::CompletionMailbox> _completions{
-      std::make_shared<detail::CompletionMailbox>()};
+  runtime::CompletionQueue _completions;
   std::vector<detail::NodeTable::Capture> _hovered;
 
   math::Size2 _viewport{};
@@ -99,8 +87,10 @@ class UIRoot {
   void synchronizeHover(const UIEvent &event);
 
 public:
-  explicit UIRoot(UIServices services = {});
+  explicit UIRoot(UIServices services = {},
+                  runtime::CompletionQueueProps completions = {});
   ~UIRoot() {
+    _completions.close();
     if (_content)
       _content->detach();
   }
@@ -116,7 +106,9 @@ public:
     return _environment;
   }
   UIServices &services() noexcept { return _services; }
-  CompletionSink completionSink() const { return CompletionSink{_completions}; }
+  CompletionSink completionSink() const {
+    return CompletionSink{_completions.sink()};
+  }
   std::optional<HitResult> hitTest(math::Point2 position);
   bool needsPaint() const noexcept { return _table->paintDirty; }
   void requestPaint() noexcept { _table->paintDirty = true; }

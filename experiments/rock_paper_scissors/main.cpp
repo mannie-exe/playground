@@ -3,9 +3,8 @@
 #include <print>
 #include <string_view>
 
-#include <random.hpp>
-
 #include "readchar.hpp"
+#include <random.hpp>
 
 using namespace std;
 

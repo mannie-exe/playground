@@ -1,5 +1,3 @@
-#include <support/SVGDocument.hpp>
-
 #include <cmath>
 #include <format>
 #include <sstream>
@@ -9,6 +7,8 @@
 #include <vector>
 
 #include <pugixml.hpp>
+
+#include <support/SVGDocument.hpp>
 
 namespace playground {
 

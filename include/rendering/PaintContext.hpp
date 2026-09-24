@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -9,9 +10,12 @@
 #include <math/Geometry2D.hpp>
 #include <math/Shapes2D.hpp>
 #include <rendering/ImagePreparer.hpp>
-#include <ui/PaintImage.hpp>
+#include <rendering/PaintImage.hpp>
+#include <rendering/PathPaint.hpp>
+#include <rendering/ResourceDomain.hpp>
+#include <rendering/TextImagePreparer.hpp>
 
-namespace playground::ui {
+namespace playground::rendering {
 
 // Borrowed for synchronous painting/command recording; never retain in nodes
 // or asynchronous callbacks. Backends control the target and restore drawing
@@ -21,11 +25,20 @@ public:
   virtual ~PaintContext() = default;
   // Null selects identity preparation (software sources / recording contexts).
   virtual rendering::ImagePreparer *imagePreparer() noexcept { return nullptr; }
+  // Realized layer images cannot cross backend/device lifetimes.
+  virtual ResourceDomainId resourceDomain() const noexcept {
+    return ResourceDomainId::cpu();
+  }
+  virtual TextImagePreparer *textPreparer() noexcept { return nullptr; }
+  virtual std::size_t captureBytesPerPixel() const noexcept { return 4; }
   virtual void save() = 0;
   virtual void restore() noexcept = 0;
   virtual void translate(math::Vec2f offset) = 0;
   virtual void clip(math::Rect rectangle) = 0;
   virtual void fill(math::Rect rectangle, math::ColorRGBA8 color) = 0;
+  virtual void drawPath(const math::Path2D &, const PathPaint &) {
+    throw std::logic_error("Paint backend does not support vector paths");
+  }
   virtual void clipRounded(math::RoundedRect) {
     throw std::logic_error("Paint backend does not support rounded clips");
   }
@@ -44,8 +57,9 @@ public:
   }
   // Source coordinates are image pixels; destination coordinates are local
   // logical units. Deferred backends retain resources needed by recorded work.
-  virtual void drawImage(const PaintImageHandle &image, math::Rect sourcePixels,
-                         math::Rect destination, ImagePaint appearance) {
+  virtual void drawImage(const rendering::PaintImageHandle &image,
+                         math::Rect sourcePixels, math::Rect destination,
+                         rendering::ImagePaint appearance) {
     throw std::logic_error("Paint backend does not support images");
   }
   virtual void transform(math::Transform2D value) {
@@ -61,7 +75,7 @@ public:
     throw std::logic_error("Paint backend does not support group compositing");
   }
   virtual void cancelLayer() noexcept {}
-  virtual std::shared_ptr<const PaintImage>
+  virtual std::shared_ptr<const rendering::PaintImage>
   capture(math::Rect bounds, math::Vec2f scale,
           const std::function<void(PaintContext &)> &draw) {
     throw std::logic_error(
@@ -102,4 +116,4 @@ public:
   PaintScope &operator=(const PaintScope &) = delete;
 };
 
-} // namespace playground::ui
+} // namespace playground::rendering

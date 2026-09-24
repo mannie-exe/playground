@@ -1,6 +1,8 @@
+#include <format>
+
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_properties.h>
-#include <format>
+
 #include <platform/Window.hpp>
 #include <support/SDLError.hpp>
 

@@ -1,9 +1,10 @@
 #include <array>
 #include <format>
+#include <utility>
+
 #include <platform/sdl/EventResult.hpp>
 #include <platform/sdl/SDLInput.hpp>
 #include <support/Test.hpp>
-#include <utility>
 
 using namespace playground;
 

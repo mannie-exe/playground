@@ -2,10 +2,11 @@
 
 #include <map>
 #include <optional>
-#include <platform/FileStore.hpp>
-#include <platform/Presentation.hpp>
 #include <string>
 #include <string_view>
+
+#include <platform/FileStore.hpp>
+#include <platform/Presentation.hpp>
 
 namespace playground::platform {
 
@@ -27,6 +28,10 @@ struct SettingsPatch {
   std::optional<float> uiScale;
   std::optional<bool> followSystemScale;
   std::optional<float> resolutionScale;
+  std::optional<bool> glyphAtlases, vsync;
+  std::optional<rendering::RendererChoice> renderer;
+  std::optional<rendering::GPUDriver> gpuDriver;
+  std::optional<bool> rendererFallback;
   void apply(PresentationProps &, AppViewPolicy &) const;
 };
 struct SettingsDocument {
@@ -40,6 +45,11 @@ struct SavedWindow {
   std::string displayName;
 };
 using SessionState = std::map<std::string, SavedWindow, std::less<>>;
+
+struct SettingsSnapshot {
+  SettingsDocument project, user;
+  SessionState session;
+};
 
 SettingsDocument parseSettings(std::string_view utf8);
 std::string serializeSettings(const SettingsDocument &);
@@ -58,6 +68,9 @@ public:
   SettingsStore(FileStore &project, FileStore &user)
       : _projectFiles{project}, _userFiles{user} {}
   void reload();
+  SettingsSnapshot readSnapshot() const;
+  SettingsSnapshot snapshot() const { return {_project, _user, _session}; }
+  void publish(SettingsSnapshot snapshot) noexcept;
   void setUser(SettingsDocument document, bool persist);
   void saveSession(SessionState state);
   const SettingsDocument &user() const noexcept { return _user; }

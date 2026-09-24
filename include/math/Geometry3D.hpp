@@ -61,6 +61,29 @@ bool isFinite(const Matrix4 &matrix);
 Matrix4 translation(Vec3f offset);
 Matrix4 scaling(Vec3f scale);
 
+struct Quaternion {
+  float x{}, y{}, z{}, w{1};
+  bool operator==(const Quaternion &) const = default;
+};
+Quaternion normalizedRotation(Quaternion value);
+Quaternion axisAngle(Vec3f axis, float radians);
+// Hamilton product: rotation(a * b) applies b first, then a.
+Quaternion operator*(Quaternion a, Quaternion b);
+Matrix4 rotation(Quaternion value);
+Matrix4 inverse(const Matrix4 &matrix);
+Vec3f transformPoint(const Matrix4 &matrix, Vec3f point);
+Vec3f transformDirection(const Matrix4 &matrix, Vec3f direction);
+Vec3f transformNormal(const Matrix4 &model, Vec3f normal);
+
+struct Transform3D {
+  Vec3f position{};
+  Quaternion orientation{};
+  Vec3f scale{1, 1, 1};
+
+  Matrix4 matrix() const;
+  bool operator==(const Transform3D &) const = default;
+};
+
 // Left-handed, +Y up, camera looking +Z. NDC z is [0,1]. UI remains +Y down;
 // the viewport/backend handles the mapping without changing UI box geometry.
 Matrix4 perspectiveLH(float verticalFovRadians, float aspect, float nearPlane,

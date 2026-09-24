@@ -1,8 +1,10 @@
-#include <SDL3/SDL.h>
 #include <iostream>
+#include <stdexcept>
+
+#include <SDL3/SDL.h>
+
 #include <layout/LayoutFormatters.hpp>
 #include <platform/sdl/SurfacePainter.hpp>
-#include <stdexcept>
 #include <ui/UIFormatters.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Boundaries.hpp>

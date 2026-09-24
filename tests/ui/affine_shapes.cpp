@@ -1,4 +1,5 @@
 #include <numbers>
+
 #include <platform/sdl/SurfacePainter.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
@@ -19,7 +20,7 @@ struct PreparedLeaf : ui::Node {
     prepared = true;
     density = context.pixelScale;
   }
-  void paint(ui::PaintContext &) const override {
+  void paint(rendering::PaintContext &) const override {
     test::require(prepared,
                   "singular subtree must not paint unprepared resources");
   }
@@ -99,7 +100,7 @@ int main() {
       painter.transform(math::Transform2D::scaling({-1, 1}));
       painter.drawImage(sdl::makeSurfaceImage(image), math::rect(0, 0, 2, 1),
                         math::rect(0, 0, 20, 10),
-                        {.sampling = ui::Sampling::Nearest});
+                        {.sampling = rendering::Sampling::Nearest});
     }
     test::require(pixel(5, 10).b == 255 && pixel(15, 10).r == 255,
                   "reflected image maps inverse coordinates");

@@ -1,9 +1,12 @@
 #pragma once
 
-#include <math/Geometry2D.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <math/Geometry2D.hpp>
+#include <rendering/RenderSettings.hpp>
+#include <rendering/RendererTypes.hpp>
 
 namespace playground::platform {
 
@@ -57,18 +60,11 @@ struct ViewportProps {
   bool operator==(const ViewportProps &) const = default;
 };
 
-struct RenderSettings {
-  // Whole-frame resolution; unlike UI scale, this never changes layout/input.
-  float resolutionScale{1};
-  void validate() const;
-  math::Vec2i targetSize(math::Vec2i drawable) const;
-  bool operator==(const RenderSettings &) const = default;
-};
-
 struct PresentationProps {
   WindowPreferences window;
   ViewportProps viewport;
-  RenderSettings render;
+  rendering::RenderSettings render;
+  rendering::RendererPreferences renderer;
   void validate() const;
   bool operator==(const PresentationProps &) const = default;
 };

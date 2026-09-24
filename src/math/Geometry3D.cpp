@@ -1,9 +1,9 @@
-#include <math/Geometry3D.hpp>
-
 #include <algorithm>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+
+#include <math/Geometry3D.hpp>
 
 namespace playground::math {
 namespace {

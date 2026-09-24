@@ -1,14 +1,14 @@
+#include <limits>
+#include <memory>
+
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Boundaries.hpp>
 
-#include <limits>
-#include <memory>
-
 namespace {
 using namespace playground;
 
-class Image final : public ui::PaintImage {
+class Image final : public rendering::PaintImage {
   math::Size2 _size;
 
 public:
@@ -16,9 +16,9 @@ public:
   math::Size2 pixelSize() const noexcept override { return _size; }
 };
 
-class Painter final : public ui::PaintContext {
+class Painter final : public rendering::PaintContext {
 public:
-  ui::PaintImageHandle result;
+  rendering::PaintImageHandle result;
   int captures{};
   int draws{};
   int depth{};
@@ -28,14 +28,14 @@ public:
   void translate(math::Vec2f) override {}
   void clip(math::Rect) override {}
   void fill(math::Rect, math::ColorRGBA8) override {}
-  ui::PaintImageHandle
+  rendering::PaintImageHandle
   capture(math::Rect, math::Vec2f,
-          const std::function<void(ui::PaintContext &)> &) override {
+          const std::function<void(rendering::PaintContext &)> &) override {
     ++captures;
     return result;
   }
-  void drawImage(const ui::PaintImageHandle &, math::Rect, math::Rect,
-                 ui::ImagePaint) override {
+  void drawImage(const rendering::PaintImageHandle &, math::Rect, math::Rect,
+                 rendering::ImagePaint) override {
     ++draws;
   }
 };

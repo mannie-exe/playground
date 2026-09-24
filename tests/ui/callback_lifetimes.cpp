@@ -1,8 +1,8 @@
-#include <support/Test.hpp>
-#include <ui/RuntimeServices.hpp>
-
 #include <memory>
 #include <stdexcept>
+
+#include <support/Test.hpp>
+#include <ui/RuntimeServices.hpp>
 
 int main() {
   return playground::test::run([] {

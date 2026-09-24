@@ -1,8 +1,13 @@
 # Installed read-only defaults. User overrides live in SDL_GetPrefPath(),
 # never in this file. App policies still own whether resizing is allowed.
-schema_version = 1
+schema_version = 2
 
 [defaults]
 ui_scale = 1.0
 follow_system_scale = true
 resolution_scale = 1.0
+glyph_atlases = true
+vsync = true
+renderer = "auto"
+gpu_driver = "auto"
+renderer_fallback = true

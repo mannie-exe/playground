@@ -1,4 +1,5 @@
 #include <cmath>
+
 #include <support/Test.hpp>
 #include <ui/content/ContentTypes.hpp>
 
@@ -71,7 +72,7 @@ int main() {
     test::rejects(
         [] {
           ui::content_detail::validate(
-              {.paint = {.sampling = static_cast<ui::Sampling>(99)}});
+              {.paint = {.sampling = static_cast<rendering::Sampling>(99)}});
         },
         "unknown sampling rejected");
   });

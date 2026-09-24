@@ -1,21 +1,24 @@
-#include <app/AppHost.hpp>
-
-#include <SDL3/SDL_init.h>
-#include <SDL3/SDL_timer.h>
 #include <algorithm>
-#include <app/AppConfig.hpp>
-#include <app/AppContext.hpp>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <utility>
 
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
+
+#include <app/AppConfig.hpp>
+#include <app/AppContext.hpp>
+#include <app/AppHost.hpp>
 #include <demo/DemoApp.hpp>
 #include <menu/MenuApp.hpp>
 #include <minesweeper/MinesweeperApp.hpp>
-#include <platform/sdl/SurfaceRenderBackend.hpp>
+#include <platform/sdl/RenderBackendFactory.hpp>
 #include <snake/SnakeApp.hpp>
+#include <support/SDLError.hpp>
+#include <support/Transaction.hpp>
 
 AppHost::AppHost(WindowConfig initialWindow)
     : _sdl{SDL_INIT_VIDEO}, _ttf{},
@@ -24,8 +27,6 @@ AppHost::AppHost(WindowConfig initialWindow)
           playground::platform::preferenceDirectory("Playground", "Playground"),
           true},
       _settings{_projectFiles, _userFiles}, _window{initialWindow},
-      _renderer{std::make_unique<playground::sdl::SurfaceRenderBackend>(
-          *_window.get())},
       _bootstrapSize{initialWindow.windowedSize} {
   registerDefaultApps();
   _settings.reload();
@@ -45,28 +46,148 @@ void AppHost::request(PendingAppCommand command) {
 void AppHost::switchTo(AppId appId) {
   AppContext ctx{*this};
 
-  if (_activeApp) {
-    saveWindowSession();
-    _activeApp->onExit(ctx);
-  }
-
+  // Check the next app's requirements before exiting the current app.
   std::unique_ptr<IApp> nextApp{_registry.create(appId)};
   const AppInfo nextInfo{nextApp->info()};
+  auto nextPresentation = nextInfo.presentation;
+  auto nextPolicy = nextInfo.view;
+  _settings.resolve(appKey(appId), nextPresentation, nextPolicy);
+  const auto previous = checkpoint();
+  saveWindowSession();
+  auto previousApp = std::move(_activeApp);
+  playground::withRestoration(
+      [&] {
+        auto nextRenderer = configureRenderer(nextPresentation.renderer,
+                                              nextInfo.rendererRequirements);
+        _activeApp = std::move(nextApp);
+        _activeAppId = appId;
+        _presentation = std::move(nextPresentation);
+        _viewPolicy = nextPolicy;
+        _rendererState = std::move(nextRenderer);
+        _windowProps = nextInfo.window;
+        _pendingCommand.reset();
+        prepareWindowForSizing();
+        applyWindowProps(_windowProps);
+        _activeApp->onEnter(ctx);
+        applyViewSizing();
+      },
+      [&] {
+        if (_activeApp)
+          cleanupApp(*_activeApp);
+        _activeApp = std::move(previousApp);
+        restore(previous);
+      });
+  if (previousApp)
+    cleanupApp(*previousApp);
 
-  _activeApp = std::move(nextApp);
-  _activeAppId = appId;
+  _notifiedRendererDomain = {};
+  _updateClock.rebase();
 
   _assets.trim(playground::config::maxCachedFonts,
                playground::config::maxCachedImages,
                playground::config::maxCachedVectors);
   _assets.trimSurfaceBytes(playground::config::maxCachedSurfaceBytes);
+}
 
-  _windowProps = nextInfo.window;
-  resolveSettings();
-  prepareWindowForSizing();
+void AppHost::cleanupApp(IApp &app) noexcept {
+  // Exit hooks may not leak commands into the next app, even if they throw.
+  auto pending = std::move(_pendingCommand);
+  _pendingCommand.reset();
+  try {
+    AppContext ctx{*this};
+    app.onExit(ctx);
+  } catch (const std::exception &error) {
+    SDL_Log("App cleanup failed: %s", error.what());
+  } catch (...) {
+    SDL_Log("App cleanup failed with a non-standard exception");
+  }
+  _pendingCommand = std::move(pending);
+}
+
+AppHost::RuntimeCheckpoint AppHost::checkpoint() {
+  _window.refreshState();
+  return {_activeAppId,
+          _windowProps,
+          _viewPolicy,
+          _presentation,
+          _rendererState,
+          _activeApp ? _activeApp->info().rendererRequirements
+                     : playground::rendering::RendererRequirements{},
+          bool(_renderer),
+          _window.state(),
+          _pendingCommand};
+}
+
+void AppHost::restore(const RuntimeCheckpoint &previous) {
+  _updateClock.rebase();
+  _rendererRecovery.skipped();
+  _activeAppId = previous.appId;
+  _windowProps = previous.windowProps;
+  _viewPolicy = previous.view;
+  _presentation = previous.presentation;
+  _rendererState = previous.renderer;
+  _pendingCommand = previous.pending;
+  _renderer.reset();
+  if (SDL_WindowHasSurface(_window.get()) &&
+      !SDL_DestroyWindowSurface(_window.get()))
+    throwSDLError("Cannot release surface while restoring runtime");
+  if (previous.hasRenderer) {
+    _renderer =
+        playground::sdl::createRenderBackend(*_window.get(), previous.renderer);
+    _renderer->prepare(previous.requirements);
+  }
+  auto normal = _presentation.window;
+  normal.mode = playground::platform::WindowMode::Windowed;
+  normal.center = false;
+  _window.setMinimumSize({1, 1});
+  _window.applyPreferences(normal);
+  _window.setWindowedSize(previous.window.windowedSize);
+  _window.setWindowedPosition(previous.window.windowedPosition);
   applyWindowProps(_windowProps);
-  _activeApp->onEnter(ctx);
-  applyViewSizing();
+  applyPresentation(true);
+  if (!previous.window.fullscreen) {
+    _window.setMaximized(previous.window.maximized);
+    _window.setMinimized(previous.window.minimized);
+  }
+}
+
+void AppHost::recoverRenderer(std::string reason) {
+  if (!_rendererRecovery.begin(std::move(reason)))
+    throw playground::rendering::RenderFailure(
+        "Renderer recovery attempt budget exhausted: " +
+        _rendererRecovery.reason());
+  try {
+    if (_renderer)
+      _renderer->invalidate();
+    _renderer.reset();
+    if (SDL_WindowHasSurface(_window.get()) &&
+        !SDL_DestroyWindowSurface(_window.get()))
+      throwSDLError("Cannot release surface during renderer recovery");
+    auto replacement = playground::sdl::createRenderBackend(
+        *_window.get(), _presentation.renderer,
+        _activeApp->info().rendererRequirements);
+    _renderer = std::move(replacement.backend);
+    _rendererState = std::move(replacement.state);
+    _rendererRecovery.recovered();
+    _updateClock.rebase();
+    synchronizeRendererDomain();
+  } catch (...) {
+    _rendererRecovery.failed();
+    throw;
+  }
+}
+
+void AppHost::synchronizeRendererDomain() {
+  if (!_renderer || !_activeApp)
+    return;
+  const auto current = _renderer->resourceDomain();
+  if (current == _notifiedRendererDomain)
+    return;
+  AppContext ctx{*this};
+  _performance.setGPUTimingAvailable(false);
+  _performance.setGPUTimingAvailable(_renderer->supportsGPUTiming());
+  _activeApp->onRendererChanged(ctx, _notifiedRendererDomain, current);
+  _notifiedRendererDomain = current;
 }
 
 void AppHost::prepareWindowForSizing() {
@@ -109,7 +230,6 @@ void AppHost::applyViewSizing() {
 
 int AppHost::run() {
   SDL_Event event;
-  std::uint64_t previousCounter = SDL_GetPerformanceCounter();
   const std::uint64_t counterFrequency = SDL_GetPerformanceFrequency();
 
   while (_running) {
@@ -140,10 +260,10 @@ int AppHost::run() {
 
     _performance.begin(FramePhase::Update);
     const std::uint64_t currentCounter = SDL_GetPerformanceCounter();
-    const float deltaSeconds =
-        static_cast<float>(currentCounter - previousCounter) /
-        static_cast<float>(counterFrequency);
-    previousCounter = currentCounter;
+    const float deltaSeconds = static_cast<float>(
+        _updateClock.advance(currentCounter, counterFrequency));
+
+    synchronizeRendererDomain();
 
     if (_activeApp)
       _activeApp->update(ctx, deltaSeconds);
@@ -155,19 +275,37 @@ int AppHost::run() {
     if (!_running)
       break;
 
+    synchronizeRendererDomain();
     _performance.begin(FramePhase::Render);
-    auto frame = _renderer->beginFrame({.clearColor = _windowProps.clearColor,
-                                        .settings = _presentation.render});
-    if (frame && _activeApp)
-      _activeApp->render(ctx, *frame);
-
-    _performance.end(FramePhase::Render);
-
-    _performance.begin(FramePhase::Present);
-    if (frame)
-      frame->present();
-    frame.reset();
-    _performance.end(FramePhase::Present);
+    auto timedPhase = FramePhase::Render;
+    std::unique_ptr<playground::rendering::RenderFrame> frame;
+    try {
+      _renderer->setProfilingEnabled(_performance.isEnabled());
+      _performance.setGPUTimingAvailable(_renderer->supportsGPUTiming());
+      frame = _renderer->beginFrame({.clearColor = _windowProps.clearColor,
+                                     .settings = _presentation.render});
+      if (frame && _activeApp)
+        _activeApp->render(ctx, *frame);
+      _performance.end(FramePhase::Render);
+      _performance.begin(FramePhase::Present);
+      timedPhase = FramePhase::Present;
+      const auto outcome =
+          frame ? frame->present()
+                : playground::rendering::PresentationOutcome::Skipped;
+      const auto completedWork = _renderer->completedWork();
+      if (outcome == playground::rendering::PresentationOutcome::Submitted)
+        _rendererRecovery.observeCompleted(completedWork, deltaSeconds);
+      else
+        _rendererRecovery.skipped();
+      for (const auto &sample : _renderer->takeGPUTimings())
+        _performance.recordGPU(sample);
+      frame.reset();
+      _performance.end(FramePhase::Present);
+    } catch (const playground::rendering::RenderFailure &error) {
+      frame.reset();
+      _performance.end(timedPhase);
+      recoverRenderer(error.what());
+    }
     _performance.endFrame();
     processPendingCommand();
   }
@@ -175,7 +313,7 @@ int AppHost::run() {
   AppContext ctx{*this};
   saveWindowSession();
   if (_activeApp)
-    _activeApp->onExit(ctx);
+    cleanupApp(*_activeApp);
 
   return 0;
 }
@@ -209,7 +347,21 @@ void AppHost::processPendingCommand() {
 
   PendingAppCommand command = std::move(*_pendingCommand);
   _pendingCommand.reset();
+  try {
+    executeCommand(std::move(command));
+    _lastCommandError.clear();
+  } catch (const playground::RestorationFailure &) {
+    throw;
+  } catch (const std::exception &error) {
+    if (!_renderer || _rendererRecovery.status() ==
+                          playground::rendering::RecoveryStatus::Exhausted)
+      throw;
+    _lastCommandError = error.what();
+    SDL_Log("Host command rejected: %s", error.what());
+  }
+}
 
+void AppHost::executeCommand(PendingAppCommand command) {
   switch (command.type) {
   case AppCommandType::None:
     return;
@@ -224,33 +376,68 @@ void AppHost::processPendingCommand() {
     return;
   case AppCommandType::SetWindowProps:
     if (command.window) {
-      applyWindowProps(*command.window);
-      _windowProps = std::move(*command.window);
+      const auto previous = checkpoint();
+      playground::withRestoration(
+          [&] {
+            applyWindowProps(*command.window);
+            _windowProps = std::move(*command.window);
+          },
+          [&] { restore(previous); });
     }
     return;
   case AppCommandType::SetViewPolicy:
     if (command.view) {
       command.view->validate();
-      _viewPolicy = *command.view;
-      prepareWindowForSizing();
-      applyViewSizing();
+      const auto previous = checkpoint();
+      playground::withRestoration(
+          [&] {
+            _viewPolicy = *command.view;
+            prepareWindowForSizing();
+            applyViewSizing();
+          },
+          [&] { restore(previous); });
     }
     return;
   case AppCommandType::FitContent:
-    if (_presentation.window.mode == playground::platform::WindowMode::Windowed)
-      fitContent();
+    if (_presentation.window.mode ==
+        playground::platform::WindowMode::Windowed) {
+      const auto previous = checkpoint();
+      playground::withRestoration([&] { fitContent(); },
+                                  [&] { restore(previous); });
+    }
     return;
   case AppCommandType::SetPresentation:
     if (command.presentation) {
-      _presentation = *command.presentation;
-      applyPresentation();
+      command.presentation->validate();
+      const auto previous = checkpoint();
+      playground::withRestoration(
+          [&] {
+            auto selected =
+                configureRenderer(command.presentation->renderer,
+                                  _activeApp->info().rendererRequirements);
+            _presentation = *command.presentation;
+            _rendererState = std::move(selected);
+            applyPresentation();
+          },
+          [&] { restore(previous); });
     }
     return;
-  case AppCommandType::ReloadSettings:
-    _settings.reload();
-    resolveSettings();
-    applyPresentation();
+  case AppCommandType::ReloadSettings: {
+    auto loaded = _settings.readSnapshot();
+    auto oldSettings = _settings.snapshot();
+    const auto previous = checkpoint();
+    playground::withRestoration(
+        [&] {
+          _settings.publish(std::move(loaded));
+          resolveSettings();
+          applyPresentation();
+        },
+        [&] {
+          _settings.publish(std::move(oldSettings));
+          restore(previous);
+        });
     return;
+  }
   case AppCommandType::SetUserSettings:
     if (command.settings) {
       const auto info = _activeApp->info();
@@ -258,10 +445,23 @@ void AppHost::processPendingCommand() {
       auto policy = info.view;
       _settings.resolveWithUser(appKey(_activeAppId), *command.settings,
                                 candidate, policy);
-      _settings.setUser(std::move(*command.settings), command.persist);
-      resolveSettings();
-      applyPresentation();
+      const auto previous = checkpoint();
+      playground::withRestoration(
+          [&] {
+            auto selected = configureRenderer(candidate.renderer,
+                                              info.rendererRequirements);
+            _presentation = std::move(candidate);
+            _viewPolicy = policy;
+            _rendererState = std::move(selected);
+            applyPresentation();
+            _settings.setUser(std::move(*command.settings), command.persist);
+          },
+          [&] { restore(previous); });
     }
+    return;
+  case AppCommandType::RecoverRenderer:
+    _rendererRecovery = playground::rendering::RecoveryState{};
+    recoverRenderer("Explicit renderer recovery requested");
     return;
   }
 }
@@ -279,8 +479,42 @@ void AppHost::resolveSettings() {
   auto presentation = info.presentation;
   auto policy = info.view;
   _settings.resolve(appKey(_activeAppId), presentation, policy);
+  auto selected =
+      configureRenderer(presentation.renderer, info.rendererRequirements);
   _presentation = std::move(presentation);
   _viewPolicy = policy;
+  _rendererState = std::move(selected);
+}
+
+playground::rendering::RendererState AppHost::resolveRenderer(
+    playground::rendering::RendererPreferences preferences,
+    playground::rendering::RendererRequirements requirements) const {
+  return playground::sdl::resolveRenderer(preferences, requirements);
+}
+
+playground::rendering::RendererState AppHost::configureRenderer(
+    playground::rendering::RendererPreferences preferences,
+    playground::rendering::RendererRequirements requirements) {
+  const auto selected = resolveRenderer(preferences, requirements);
+  if (_renderer) {
+    const auto current = _renderer->description();
+    if (current.backend == selected.selected.backend &&
+        current.driver == selected.selected.driver) {
+      _renderer->prepare(requirements);
+      return selected;
+    }
+  }
+  _renderer.reset();
+  // Surface and GPU presentation cannot simultaneously own this window.
+  _updateClock.rebase();
+  _rendererRecovery.skipped();
+  if (SDL_WindowHasSurface(_window.get()) &&
+      !SDL_DestroyWindowSurface(_window.get()))
+    throwSDLError("Cannot release window surface for renderer switch");
+  auto replacement = playground::sdl::createRenderBackend(
+      *_window.get(), preferences, requirements);
+  _renderer = std::move(replacement.backend);
+  return std::move(replacement.state);
 }
 
 void AppHost::applyPresentation(bool preservePosition) {

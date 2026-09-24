@@ -1,5 +1,6 @@
 #include <array>
 #include <cmath>
+
 #include <math/Geometry2D.hpp>
 #include <support/Test.hpp>
 

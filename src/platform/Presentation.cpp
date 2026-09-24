@@ -1,9 +1,9 @@
-#include <platform/Presentation.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+
+#include <platform/Presentation.hpp>
 
 namespace playground::platform {
 namespace {
@@ -44,28 +44,11 @@ void ViewportProps::validate() const {
       alignment.y < 0 || alignment.y > 1)
     throw std::invalid_argument("Invalid viewport props");
 }
-void RenderSettings::validate() const {
-  positive(resolutionScale, "Render scale must be finite and positive");
-  if (resolutionScale > 4)
-    throw std::invalid_argument("Render scale exceeds supported 4x limit");
-}
-math::Vec2i RenderSettings::targetSize(math::Vec2i drawable) const {
-  validate();
-  if (!math::hasArea(drawable))
-    throw std::invalid_argument("Render target must have positive dimensions");
-  const auto axis = [&](int extent) {
-    const double result =
-        std::ceil(static_cast<double>(extent) * resolutionScale);
-    if (result > std::numeric_limits<int>::max())
-      throw std::overflow_error("Render target extent overflow");
-    return std::max(1, static_cast<int>(result));
-  };
-  return {axis(drawable.x), axis(drawable.y)};
-}
 void PresentationProps::validate() const {
   window.validate();
   viewport.validate();
   render.validate();
+  renderer.validate();
 }
 math::Vec2f uiWindowScale(const ViewportProps &props,
                           const WindowMetrics &metrics) {

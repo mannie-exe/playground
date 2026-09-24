@@ -1,9 +1,10 @@
 #pragma once
 
+#include <optional>
+
 #include <minesweeper/FlagCounter.hpp>
 #include <minesweeper/MinesweeperGrid.hpp>
 #include <minesweeper/NewGameButton.hpp>
-#include <optional>
 
 enum class GameState { Playing, Won, Lost };
 

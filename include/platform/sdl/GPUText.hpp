@@ -1,8 +1,14 @@
 #pragma once
 
-#include <platform/sdl/GPUResources.hpp>
+#include <memory>
 #include <string_view>
+
+#include <SDL3_ttf/SDL_ttf.h>
+
+#include <math/Geometry2D.hpp>
+#include <platform/sdl/GPUDevice.hpp>
 #include <support/Font.hpp>
+#include <support/SDLResource.hpp>
 
 namespace playground::sdl {
 
@@ -31,6 +37,8 @@ public:
   GPUText(std::shared_ptr<GPUTextEngine> engine, FontHandle font,
           std::string_view utf8);
   void setValue(std::string_view utf8);
+  void setWrapWidth(int pixels);
+  math::Vec2i size();
   const TTF_GPUAtlasDrawSequence *drawData();
   GPUText(const GPUText &) = delete;
   GPUText &operator=(const GPUText &) = delete;

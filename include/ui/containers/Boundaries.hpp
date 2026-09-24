@@ -69,8 +69,9 @@ class Layer : public Box {
   std::weak_ptr<UIServices::CacheBudget> _budget;
   mutable Connection _reservation;
 
-  mutable std::shared_ptr<const PaintImage> _cache;
+  mutable std::shared_ptr<const rendering::PaintImage> _cache;
   mutable Revision _cachedRevision{};
+  mutable rendering::ResourceDomainId _cachedDomain{};
   mutable math::Rect _cachedBounds;
   mutable math::Vec2f _cachedScale;
 

@@ -118,7 +118,8 @@ void UIRoot::synchronizeHover(const UIEvent &event) {
   }
 }
 
-UIRoot::UIRoot(UIServices services) : _services{std::move(services)} {
+UIRoot::UIRoot(UIServices services, runtime::CompletionQueueProps completions)
+    : _services{std::move(services)}, _completions{completions} {
   if (!_services.scheduler)
     _services.scheduler = &_scheduler;
   _context.stats = &_stats;
@@ -267,22 +268,7 @@ void UIRoot::update(double seconds) {
     bool &active;
     ~UpdateGuard() { active = false; }
   } guard{_updating};
-  std::size_t count{};
-  {
-    std::lock_guard lock{_completions->mutex};
-    count = _completions->pending.size();
-  }
-  // Pop only the callback being attempted. A throw preserves the unexecuted
-  // tail, before any newly posted work; new work waits for the next update.
-  for (std::size_t i = 0; i < count; ++i) {
-    std::move_only_function<void()> complete;
-    {
-      std::lock_guard lock{_completions->mutex};
-      complete = std::move(_completions->pending.front());
-      _completions->pending.pop_front();
-    }
-    complete();
-  }
+  _completions.drain();
   _services.scheduler->advance(seconds);
   flushMutations();
   flushChanges();

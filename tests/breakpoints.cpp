@@ -1,5 +1,6 @@
-#include <layout/Breakpoints.hpp>
 #include <limits>
+
+#include <layout/Breakpoints.hpp>
 #include <support/Test.hpp>
 
 using namespace playground;
@@ -8,7 +9,7 @@ enum class Mode { Compact, Wide, Unknown };
 int main() {
   return test::run([] {
     const layout::BreakpointProps<Mode> defaults{
-        .rules = {{.availableSpace = {.maximumWidth = 600},
+        .rules = {{.availableSpace = {.maximumWidth = 600.0f},
                    .mode = Mode::Compact},
                   {.availableSpace = {.minimum = {600, 0}},
                    .mode = Mode::Wide}},
@@ -24,15 +25,15 @@ int main() {
     test::require(modes.select(widthOnly) == Mode::Wide,
                   "unrestricted height accepts unknown height");
     layout::SizeRange box{
-        .minimum = {10, 20}, .maximumWidth = 30, .maximumHeight = 40};
+        .minimum = {10, 20}, .maximumWidth = 30.0f, .maximumHeight = 40.0f};
     test::require(box.contains(layout::SizeConstraints::tight({10, 20})) &&
                       !box.contains(layout::SizeConstraints::tight({30, 20})) &&
                       !box.contains(layout::SizeConstraints::tight({10, 40})),
                   "both axes have inclusive minimum and exclusive maximum");
     for (auto invalid :
          {layout::SizeRange{.minimum = {-1, 0}},
-          layout::SizeRange{.maximumWidth = 0},
-          layout::SizeRange{.minimum = {20, 0}, .maximumWidth = 10},
+          layout::SizeRange{.maximumWidth = 0.0f},
+          layout::SizeRange{.minimum = {20, 0}, .maximumWidth = 10.0f},
           layout::SizeRange{.maximumHeight =
                                 std::numeric_limits<float>::infinity()},
           layout::SizeRange{

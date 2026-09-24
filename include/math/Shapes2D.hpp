@@ -1,9 +1,8 @@
 #pragma once
 
-#include <type_traits>
-
 #include <algorithm>
 #include <stdexcept>
+#include <type_traits>
 #include <variant>
 
 #include <math/Geometry2D.hpp>

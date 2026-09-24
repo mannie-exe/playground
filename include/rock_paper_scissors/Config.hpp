@@ -1,10 +1,10 @@
 #pragma once
 
-#include <math/Color.hpp>
-#include <platform/Presentation.hpp>
 #include <string_view>
 
+#include <math/Color.hpp>
 #include <math/Geometry2D.hpp>
+#include <platform/Presentation.hpp>
 
 namespace playground::rock_paper_scissors::config {
 inline constexpr std::string_view gameName{"Rock Paper Scissors"};

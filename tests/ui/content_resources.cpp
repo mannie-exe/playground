@@ -1,7 +1,8 @@
-#include <app/TTFGuard.hpp>
 #include <memory>
-#include <platform/sdl/SurfacePainter.hpp>
 #include <string>
+
+#include <app/TTFGuard.hpp>
+#include <platform/sdl/SurfacePainter.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/content/Image.hpp>
@@ -10,7 +11,7 @@
 
 using namespace playground;
 
-class RecordingPaint final : public ui::PaintContext {
+class RecordingPaint final : public rendering::PaintContext {
 public:
   int depth{}, draws{};
   math::Size2 pixels;
@@ -19,8 +20,8 @@ public:
   void translate(math::Vec2f) override {}
   void clip(math::Rect) override {}
   void fill(math::Rect, math::ColorRGBA8) override {}
-  void drawImage(const ui::PaintImageHandle &image, math::Rect source,
-                 math::Rect destination, ui::ImagePaint) override {
+  void drawImage(const rendering::PaintImageHandle &image, math::Rect source,
+                 math::Rect destination, rendering::ImagePaint) override {
     test::require(math::isFinite(source) && math::isFinite(destination),
                   "finite draw request");
     ++draws;
@@ -146,7 +147,8 @@ int main() {
         "out-of-resource crop rejected");
     test::rejects(
         [&] {
-          i->applyPatch({.image = ui::Patch<ui::PaintImageHandle>::reset()});
+          i->applyPatch(
+              {.image = ui::Patch<rendering::PaintImageHandle>::reset()});
         },
         "required image cannot Reset");
     test::rejects(

@@ -13,7 +13,7 @@
 namespace playground::ui {
 
 struct ImageProps {
-  PaintImageHandle image;
+  rendering::PaintImageHandle image;
   std::optional<math::Rect> sourceRect;
   float assetDensity{1};
   ContentStyle content;
@@ -22,7 +22,7 @@ struct ImageProps {
 };
 
 struct ImagePatch {
-  Patch<PaintImageHandle> image;
+  Patch<rendering::PaintImageHandle> image;
   Patch<std::optional<math::Rect>> sourceRect;
   Patch<float> assetDensity;
   Patch<ContentStyle> content;
@@ -31,7 +31,7 @@ struct ImagePatch {
 class Image final : public Node {
   ImageProps _props;
 
-  PaintImageHandle _image;
+  rendering::PaintImageHandle _image;
   bool _prepared{};
   layout::LayoutDirection _direction{layout::LayoutDirection::LeftToRight};
 

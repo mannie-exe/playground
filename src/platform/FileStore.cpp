@@ -1,13 +1,14 @@
-#include <platform/FileStore.hpp>
-
-#include <SDL3/SDL_filesystem.h>
-#include <SDL3/SDL_stdinc.h>
 #include <atomic>
 #include <chrono>
 #include <fstream>
 #include <stdexcept>
-#include <support/SDLError.hpp>
 #include <utility>
+
+#include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
+
+#include <platform/FileStore.hpp>
+#include <support/SDLError.hpp>
 
 namespace playground::platform {
 namespace {

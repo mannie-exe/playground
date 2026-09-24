@@ -1,278 +1,284 @@
 # GPU resources and rendering runtime
 
-This document records APIs, ownership and runtime obligations, not a GPU renderer
-implementation tutorial. Read [2D.md](2D.md) for PaintContext and [3D.md](3D.md)
-for the separate scene service. UI layout and node contracts live in
-[../ui/CONTRACTS.md](../ui/CONTRACTS.md).
+Read [2D.md](2D.md) for painting, [3D.md](3D.md) for scenes, and
+[CONTRACTS.md](CONTRACTS.md) for coordinates, color and constraint boundaries.
 
-## Availability
+## Available backends
 
-| Boundary | Exists now | Not implied |
-|---|---|---|
-| Application rendering | RenderBackend/RenderFrame, AppHost integration, software backend | GPU backend selection or live switching |
-| Image realization | Generic handles/preparer, validated RGBA data, SDL GPU upload/ownership/cache helpers | GPU draw pipelines, samplers or presentation |
-| Text | CPU Text path; GPUTextEngine/GPUText ownership and atlas draw-data access | GPU Text node implementation with equivalent wrapping/fitting/vertical behavior |
-| Scene | Camera math, mesh/material values, abstract SceneRenderer | Scene renderer, depth pass, PBR or SceneView node |
+| Backend | 2D | 3D | Composition |
+|---|---|---|---|
+| SurfaceRenderBackend | Shapes, affine/rounded clips, images, layers/capture | Reference unlit rasterizer | Encoded sRGB UI; scene internals linear |
+| GPURenderBackend | Same operations through SDL GPU | Indexed unlit textured geometry and depth | Linear RGBA16_FLOAT, final SDR sRGB encoding |
 
-AppHost constructs SurfaceRenderBackend. Merely enabling SDL GPU or constructing a
-GPUImage does not cause an app to render on the GPU. Resource helpers are compiled
-and available but are not wired into an active GPU painter.
+Hardware rendering selects Vulkan only; Direct3D and Metal are not selectable.
+GPU eligibility requires packaged SPIR-V shaders and a supported device/driver. Auto
+prefers GPU; explicit software remains available without shader tools. Strict
+preferences and application requirements are never weakened. Creation failures
+may try another compatible candidate under the selected fallback policy.
 
-## System vocabulary
+SDL GPU is part of SDL3, not an additional Vulkan wrapper. The pinned SDL_ttf
+build enables HarfBuzz and PlutoSVG; FreeType is mandatory upstream. HarfBuzz
+shapes glyphs, FreeType rasterizes them, and SDL_ttf owns GPU atlas allocation.
+PlutoSVG supports font SVG glyphs, not general UI SVG image rendering.
+[SHADERS.md](SHADERS.md) describes offline HLSL compilation and packaging.
 
-| Term | Meaning here |
+## Vocabulary
+
+| Term | Meaning |
 |---|---|
-| Source | Immutable decoded/rasterized content; independent of where it is drawn |
-| Realization | A representation usable by one backend/device, such as a GPU texture |
-| Preparation | Obtain a realization; may submit upload work |
-| Recording | Describe drawing commands on the CPU |
-| Submission | Hand recorded work to the device queue |
-| Completion | The GPU has finished the relevant work; returning from a draw/upload call is not this |
-| Presentation | Make a frame available to the window/display system |
-| Residency | Keep unused resources available; different from shared ownership of live resources |
+| Source | Immutable authored/decoded resource, independent of its displayed box |
+| Realization | Backend/device-compatible representation of a source |
+| Preparation | Obtain a realization; may submit uploads |
+| Recording | Collect CPU draw commands and retain their inputs |
+| Submission | Send commands to the device queue; not completion |
+| Completion | Device has finished work; fences establish this when needed |
+| Presentation | Make output available to the window/display |
+| Residency | Retaining unused resources, separate from live ownership |
 
-The resource path and frame path meet, but are not the same lifecycle:
-
-```text
-asset request → source image → ImagePreparer → backend image ──┐
-                                                            ↓
-AppHost → RenderBackend → RenderFrame → paint2D / scene3D → present
-```
+Input/update -> layout -> prepare uploads/text/scenes -> record UI -> submit
+offscreen producers -> UI composition -> acquire swapchain -> encode/present.
 
 <a id="runtime-contract"></a>
-## Host and frame contract
+## Host/frame ownership
 
-Declarations: [RenderBackend.hpp](../../include/rendering/RenderBackend.hpp),
-[IRuntimeObject.hpp](../../include/interfaces/IRuntimeObject.hpp),
-[AppHost.hpp](../../include/app/AppHost.hpp),
-[AppContext.hpp](../../include/app/AppContext.hpp).
+AppHost owns Window and RenderBackend. IApp borrows RenderFrame; the host presents.
+Destroy the frame before replacing its backend or reconfiguring the window.
+SDL/TTF guards outlive all dependent handles.
 
 | API | Contract |
 |---|---|
-| RenderBackend::drawableSize() const → Vec2i | Physical output extent, not logical UI/window size |
-| beginFrame(RenderFrameProps) → unique_ptr<RenderFrame> | At most one live frame; null means temporarily unavailable, not a failed resource |
-| RenderFrameProps::clearColor | Authored frame clear value; backend owns clearing |
-| RenderFrameProps::settings | Whole-frame rendering resolution, independent of window/UI geometry; software backend supports a reusable scaled target |
-| RenderFrame::paint2D() → PaintContext& | Borrowed 2D painter for this active frame |
-| RenderFrame::scene3D() → SceneRenderer* | Borrowed optional capability; null explicitly means unsupported |
-| RenderFrame::present() | Explicit end/presentation operation; do not call twice |
-| RenderFrame destruction | Abandon unfinished frame without presenting; not rollback of pixels or previously submitted uploads |
-| IApp/IRuntimeObject::render(AppContext&, RenderFrame&) | App chooses which frame services to use; host still presents |
+| RenderBackend::description() | Actual backend, driver and capabilities |
+| drawableSize() | Physical pixels, not logical layout units |
+| beginFrame(RenderFrameProps) | One live frame; null for minimized/empty targets |
+| frame.paint2D() | Borrowed painter; never store beyond the frame |
+| frame.scene3D() | Borrowed optional scene service, not an application world |
+| frame.present() | Explicit once-only submission/presentation |
+| Frame destruction | Discard unfinished recording, not previously submitted work |
+| UISession::render(frame) | Supplies painter and scene services during preparation |
 
-Destroy a frame before its backend/window and before window reconfiguration.
-Do not keep its painter or scene service in a node, job, or later frame. Helpers
-retain device resources where necessary; a borrowed RenderFrame does not keep its
-backend alive. Raw get() accessors are borrows, not ownership transfer.
+The host processes pending intent after event callbacks, update and frame
+destruction. AppContext is temporary; persistent callbacks must not retain it.
+PendingAppCommand is one coalescing optional slot, not a FIFO; Quit has priority.
+UI completion/deferred queues and GPU work have independent lifetimes.
 
-The current host loop has these boundaries:
+App requirements are prepared before activation. The previous app stays alive
+while the candidate enters and sizes its window. Failure restores captured host,
+window, command and renderer state; failed restoration is a distinct terminal
+RestorationFailure carrying both exceptions. This does not undo arbitrary external
+effects in application callbacks. Exit callbacks are isolated and cannot issue
+commands into the next app. AppContext::lastCommandError reports rejected intent.
 
-1. Poll platform events, handle host events, dispatch remaining input to the app;
-   process pending app/window intent between event callbacks.
-2. Call app.update(ctx, deltaSeconds), then process pending intent.
-3. Acquire a frame; if available, call app.render(ctx, frame).
-4. Present, destroy the frame, then process pending intent again.
+Typed native acquire/submit/present failures trigger bounded renderer recreation
+after frame destruction. CPU sources survive; fresh ResourceDomainId values
+invalidate realizations. Update is not replayed. SDL does not expose reliable
+device-loss classification, so RenderFailure means a recovery candidate rather
+than proof of device loss. Validation and arbitrary application exceptions still
+propagate; no recovery screen is installed.
 
-Updates/input continue when no frame is available. They are not driven by GPU
-completion. PerformanceMonitor's Render/Present phases measure CPU-side time;
-future GPU timing needs explicit timestamps/fence-aware measurement.
-
-AppContext is a temporary host facade: assets, asset paths, window facts, metrics
-and requestSwitch/requestMenu/requestQuit/requestWindowProps, plus presentation,
-view-policy, content-fit and settings requests. It no longer exposes
-a target surface. Do not capture it in persistent callbacks. PendingAppCommand is
-currently **one coalescing optional slot**, not a FIFO: later non-Quit requests can
-replace earlier ones; Quit takes precedence. This is independent of the root's
-deferred/completion queues and any future GPU submission queue.
-
-Use requestWindowProps/requestPresentation/requestSwitch from callbacks. AppContext exposes window
-facts, not a mutable Window. Immediate AppHost::switchTo is private; the host
-applies app requests at the boundaries above, after callback/frame borrows end.
-This facade does not make calls from worker threads safe; post results to the UI
-thread before requesting host changes.
-
-App switching applies the new app's window configuration and trims CPU asset
-caches. It does not select a new renderer or manage device-local budgets. Switching
-apps and rendering frames are not transactional. The top-level main catches
-exceptions and exits; RAII unwinds resources, but no recovery screen is installed.
-SDL failures are translated to std::runtime_error with operation/error context.
-
-AppInfo separates AppWindowProps, AppViewPolicy and PresentationProps. The host
-resolves project/user settings, constructs content before preferred measurement,
-and applies window mode/display choices outside frame lifetime. See
-[windowing](../platform/WINDOWING.md) and [settings/storage](../platform/SETTINGS.md).
-A future GPU backend must preserve viewport/input coordinates while honoring target
-resolution; separate scene-only resolution and swapchain policy remain its own design.
+RenderSettings controls whole-frame resolutionScale, glyphAtlases and vsync,
+without changing input/layout coordinates. SceneView has a separate resolution
+multiplier. GPU immediate presentation falls back to VSYNC when unsupported;
+software pacing remains platform-controlled. See [settings](../platform/SETTINGS.md).
 
 <a id="resource-contracts"></a>
-## Generic image contracts
+## Image sources and ownership
 
-Sources: [PaintImage.hpp](../../include/ui/PaintImage.hpp),
-[ImagePreparer.hpp](../../include/rendering/ImagePreparer.hpp),
-[ImageData.hpp](../../include/rendering/ImageData.hpp).
+PaintImageHandle is shared immutable identity. pixelSize, alphaMode and
+colorEncoding describe actual pixels: Straight/Premultiplied and SRGB/Linear.
+Premultiplication is in the declared encoding. Encoded associated sources must
+be unassociated before decoding. Metadata does not convert bytes or prove labels.
 
-| Type/API | Meaning and obligation |
+| API | Behavior |
 |---|---|
-| PaintImage::pixelSize() const noexcept | Pixel dimensions used for source geometry; not the assigned UI box |
-| PaintImageHandle | shared_ptr<const PaintImage>; immutable image identity, retainable by nodes/recorded work |
-| ImagePreparer::prepare(PaintImageHandle) | Return a compatible realization with the same dimensions and alpha interpretation |
-| prepareImage(source, preparer) | Reject null source; null preparer means identity; reject null/differently sized result |
-| PaintContext::imagePreparer() | Optional borrowed service; defaults to null |
-| PrepareContext::images | Pass-local service supplied by the UI host/session |
-| RGBA8Image | Positive Vec2i dimensions, AlphaMode, exactly width × height × 4 top-down RGBA bytes |
-| RGBA8Image::byteSize/validate | Reject invalid dimensions, address-size overflow, byte-count mismatch or unknown alpha mode |
+| ImagePreparer::prepare | Compatible realization preserving dimensions/metadata |
+| prepareImage | Validates source/result; null preparer means identity |
+| RGBA8Image | Tight top-down RGBA bytes, dimensions and encoding/association |
+| byteSize/validate | Reject invalid dimensions, overflow, byte counts and enums |
+| SurfacePaintImage | Shared CPU source; do not mutate published pixels |
+| GPUDevice/GPUDeviceHandle | Native ownership/shared lifetime, not SDL initialization ownership |
+| GPUImage(device, pixels) | Raw RGBA8_UNORM single-level upload retaining device |
+| GPUImage(device, size) | Linear-associated RGBA16F color target; initialize before publishing |
+| GPUTextureResource / GPUResource | Device-retaining native RAII; depth is not a sampleable PaintImage |
+| get/device accessors | Native borrows/device inspection, not ownership transfer |
+| packSurfaceRGBA8 | Preserve pitch/metadata; no gamma conversion |
+| GPUImagePreparer | CPU surface -> cached upload; same-device image -> identity; foreign device -> error |
 
-AlphaMode is Straight or Premultiplied. Keeping the same alpha interpretation is
-an implementation obligation; the generic PaintImage interface only exposes size,
-so prepareImage cannot independently validate it. No color-space/profile metadata
-exists on generic images yet. Do not treat this as a finished color-management API.
+The realization cache keys shared surface ownership plus alpha/encoding and holds
+strong, byte-budgeted LRU results. Wrappers around one source can share uploads;
+distinct equal allocations need not. AssetRegistry handles authored-value sharing
+upstream. Eviction releases cache ownership, not live caller handles. Limits are
+policy estimates, not a query of free VRAM. Live images retain their device.
 
-Image is renderer-neutral. Text and Vector still rasterize through current CPU
-providers; all three route their image output through preparation. They retain
-sources separately from prepared results where needed. A failed preparation leaves
-the node unready and retryable, not silently painting a stale realization.
+Published images have no mipmap generation, compressed formats, mutable streaming
+updates or video planes. Transient draw records and mesh transfers do reuse cycling
+upload/storage buffers. Transfers reject sizes exceeding SDL's 32-bit capacity. No automatic
+GPU-to-CPU or cross-device copy exists. GPU-only authored sources require retained
+CPU sources or regeneration information for backend switching. Use these APIs on
+the renderer thread and release resources before SDL/TTF shutdown.
 
-## SDL GPU ownership APIs
+## Drawing and synchronization
 
-Declarations: [GPUResources.hpp](../../include/platform/sdl/GPUResources.hpp).
-These APIs are in playground::sdl, not the generic UI namespace.
+GPUPainter records values and retained image handles. Consecutive compatible
+same-texture quads become instanced batches, preserving painter order; paths
+remain isolated because they have distinct segment uniforms. Draw records stream
+in bounded chunks through reusable SDL-cycled transfer/storage buffers. HLSL implements inverse
+affine rounded shapes, joined fill/border coverage, nearest/linear filtering,
+32 nested clip masks and 4x4 coverage. Exceeding clip capacity throws. 2D filtering
+decodes source texels before interpolation. Composition uses premultiplied
+ONE / ONE_MINUS_SRC_ALPHA into linear RGBA16_FLOAT targets.
 
-| Type/API | Inputs, ownership and limitations |
-|---|---|
-| GPUDeviceProps | Required nonzero shaderFormats; debug=true; optional driver=nullptr. Formats are capabilities offered to SDL, not shader source or compiled shaders. |
-| GPUDevice(props) | Creates/owns SDL_GPUDevice; creation can fail. No window claim or swapchain is created by this wrapper. |
-| GPUDeviceHandle | Shared device lifetime for dependent resources |
-| GPUImage(device, RGBA8Image) | Validates data, creates a sampled 2D texture and submits its upload; retains the device |
-| GPUImage::get/device/alphaMode/pixelSize | Borrowed native texture, device owner, alpha interpretation and size; no mutation/readback API |
-| packSurfaceRGBA8(SurfacePaintImage) | Converts source format to packed RGBA and respects source pitch/alpha convention; does not transfer ownership of the source |
-| GPUImagePreparer(device) | Non-null device required; device-local realization service |
-| GPUImagePreparer::prepare | SurfacePaintImage → cached/uploaded GPUImage; same-device GPUImage → identity; other sources/devices rejected |
-| GPUImagePreparer::prune | Remove expired cache bookkeeping; also run during surface preparation |
+Offscreen groups/captures are submitted before consumers. Group opacity applies
+once. The main target is reused until dimensions change. No pass samples its own
+attachment. SDL's GPU release APIs defer native retirement; shared_ptr is not a
+fence. present() submits the UI target, acquires the swapchain late, then encodes
+sRGB for SDR output. After acquisition an error guard submits rather than cancels:
+SDL forbids cancellation then. Earlier uploads/captures cannot be rolled back.
+CPU Render/Present profiling does not measure GPU execution time.
 
-Uploads currently produce R8G8B8A8_UNORM sampled textures with one mip level.
-No gamma conversion, mip generation, render-target usage, compressed format,
-streaming update or video-plane API is supplied. The packed staging format is
-portable; SDL may perform an extra alignment copy on some GPU backends/hardware.
-The wrapper also rejects uploads larger than SDL's 32-bit transfer-buffer size.
+AllocationLimits centralizes maximum dimensions, target bytes, transfer bytes and
+retained-cache bytes. Default target cap is 64 MiB, dimensions 16384 per axis;
+scene color-plus-depth accounting uses 12 bytes/pixel. UI Layer also enforces its
+root/individual cache policies. Layer and text compare ResourceDomainId;
+SceneView includes scene-renderer and image-preparer domains. Changed domains
+rebuild output, not the application model. No ID is recycled during the process.
 
-On success, the upload is submitted, not necessarily completed. The upload path
-uses scoped texture/transfer ownership and abandons unsubmitted command buffers
-on failure. Release requests use SDL's GPU resource-release APIs. A future renderer
-must preserve resources through recording/submission and obey device timeline
-rules; it must not use a stale raw texture because a shared handle was dropped.
+Mesh residency and target pooling have their own byte budgets. Target reuse
+requires exclusive pool ownership **and** no recording or pending-submission
+leases. `GPUDevice` acquires commands, retains resource-use leases, submits with
+an SDL fence and polls completion on its owner thread. Submission IDs increase
+within one resource domain; neither an ID nor a shared pointer proves completion.
+Leases contain bookkeeping, not device-owning handles, avoiding ownership cycles.
+Recorded painter draws retain images before encoding; encoded commands lease
+every project texture they read or write. Native custom callbacks must declare
+sampled project images with `GPURecordingContext::use(image)` before drawing.
+Do not submit/cancel the borrowed commands yourself.
 
-These wrappers are noncopyable; share their designated handles instead. Resource
-objects retain the device so native release occurs before device destruction.
-That does **not** retain SDL initialization or make the objects thread-safe. Use
-them on the owning renderer thread, and release all GPU/TTF objects before platform
-shutdown. Device loss/recreation is not handled automatically.
+The pool uses exact-size matching, grows when compatible targets are busy, and
+evicts unused completed targets under retention pressure. Ordinary reuse never
+waits for device idle. Recent targets remain cached for 240 completed submissions
+by default; aging is evaluated on later acquisitions. This is demand-driven
+hysteresis, not a GPU-time-based adaptive controller or a free-VRAM query.
 
-## Upload cache semantics
+`maxTargetPoolBytes` (64 MiB) limits retained cache entries; `maxLiveTargetBytes`
+(256 MiB) limits estimated pool allocations, including published targets and
+reservations held by recorded/in-flight uses. Allocation pressure first trims
+unused completed targets, then throws `length_error` if capacity is still absent.
+It does not block or silently reduce resolution. Native retirement and driver
+overhead are not exact VRAM accounting; independent uploads, mesh residency and
+TTF atlas pages have separate ownership and are not charged to this pool.
+`maxInFlightSubmissions` bounds tracked recordings plus pending batches (256);
+capacity exhaustion is a policy error, not proof of device loss. SDL fence polls
+do not distinguish not-ready from every native failure, so recovery may first be
+triggered by a later acquisition/submission/query failure or an explicit request.
 
-GPUImagePreparer keys by shared ownership of the underlying source surface plus
-alpha convention, not by filename or hashing pixel bytes. Different wrappers around
-the same surface can share the realization. Distinct equal-looking allocations
-need not share it; CPU AssetRegistry handles authored-value sharing upstream.
+PaintDevice exposes quad/draw-call/streamed-byte counters; TargetPool exposes
+retained/live estimated bytes, allocations, reuses, busy misses, evictions and
+pressure failures. These are diagnostic work counters, not GPU duration. Software
+scene targets use the same allocation-policy type, including the explicit
+`maxSoftwareTargetPixels` limit. Public native custom passes use GPUFrameAccess;
+see [custom pipelines and reload](SHADERS.md) and [profiling](PROFILING.md).
 
-Both source keys and cached GPU outputs are weak. A live node or recorded draw
-keeps its GPU image alive; the upload cache alone does not retain unused textures.
-It is not the CPU registry's LRU, and it has no byte budget or memory-pressure
-query. Pruning scans bookkeeping; it is not a constant-time residency manager.
+## Text and SVG
 
-Treat a published source as immutable. Editing shared pixels without replacing
-identity can leave a cached upload stale. Replace the underlying surface owner,
-not merely its adapter wrapper. Alpha labels also must match the actual pixels.
-Backend/device replacement must invalidate incompatible layer/prepared caches;
-there is no automatic cross-device copy or GPU-to-CPU readback fallback.
+GPUTextEngine owns TTF's engine. GPUText retains engine/font/TTF_Text and exposes
+setValue, setWrapWidth, size and borrowed drawData. Consume sequences before text
+or engine changes. Atlas textures belong to TTF; never release them yourself.
+The adapter converts +Y-up positions to UI +Y-down while preserving the pinned
+TTF implementation's supplied UV orientation.
 
-## Text and glyph atlases
+Text keeps existing measurement, fitting, wrapping, direction, alignment and
+truncation logic, then passes the resolved font/string/wrap to TextImagePreparer.
+The neutral service takes a borrowed TextSource; SDL's FontTextSource carries
+the actual immutable FontHandle. Text does not discover this by cross-casting
+ImagePreparer, and either service can be supplied independently.
+Blended horizontal text uses atlas quads to produce a cached linear image.
+Font layout's `lineSpace` is an optional baseline advance in **pixels**, not a
+multiplier: absent means the font's natural line skip. `getLineSpace()` returns
+the authored override; `getLineSkip()` returns the resolved native pixel advance.
+A `FontPatch` omits `lineSpace` to keep it, supplies an engaged integer to set it,
+or uses `patch.lineSpace.emplace(std::nullopt)` to reset it to natural metrics.
+Text density scaling multiplies only explicit overrides; automatic metrics follow
+the newly sized font. Size/style/outline changes rebuild mutable Font resources,
+so native pointers borrowed through `get()` must not survive those mutations.
+Native custom fallback registrations are outside FontProps and must be registered
+again after a rebuild; registry-provided FontHandles expose immutable fonts.
 
-Declarations: [GPUText.hpp](../../include/platform/sdl/GPUText.hpp).
+Unchanged text reuses it: this avoids CPU full-string raster work but is not
+direct glyph drawing into the window every frame.
 
-| API | Contract |
-|---|---|
-| GPUTextEngine(GPUDeviceHandle) | Own TTF's GPU atlas engine and retain its device |
-| GPUText(shared engine, FontHandle, string_view utf8) | Retain engine/font and own TTF_Text; validate UTF-8; reject missing owners |
-| GPUText::setValue(string_view) | Validate/update the text; draw data must be reacquired |
-| GPUText::drawData() | Borrowed linked TTF_GPUAtlasDrawSequence list; null can mean empty text; errors throw |
-| GPUTextEngine::get/device | Borrow native engine or inspect retained device; not ownership release |
+Solid, Shaded, LCD, vertical columns and SDF retain CPU raster/upload compatibility,
+not silently reduced features. glyph_atlases=false requests this path explicitly.
+The pinned SDL_ttf is locally patched by
+[`SDLTTFText.cmake`](../../cmake/patches/SDLTTFText.cmake). Text operations use
+actual raster glyph bearings/dimensions, including italic/outline expansion and
+COLR glyphs without base outlines. Atlas UVs preserve source cropping instead of
+stretching an entire glyph into the cropped destination. These styles and color
+fonts therefore stay on the atlas path, not a full-string fallback.
+Color atlas glyphs unassociate encoded-premultiplied bytes before linear decoding;
+their foreground RGB is ignored, but foreground opacity still applies.
+The patch also converts color glyph RGB to straight alpha when SDL_ttf writes a
+CPU blended-text surface. Monochrome and color runs can then share that surface
+without mixed alpha associations; `TTF_GetGlyphImage` and native atlas pixels
+remain encoded-premultiplied for color glyphs. Foreground RGB affects monochrome
+runs only, while foreground opacity affects both.
 
-HarfBuzz shapes characters into glyph choices/positions. FreeType rasterizes glyphs.
-SDL_ttf's GPU text engine manages atlas textures and supplies geometry: positions,
-texture coordinates, indices, image type and a link to the next batch. Your renderer
-still needs shaders, samplers, vertex/index uploads and draw calls for those batches.
+Tests compare complete CPU/GPU text output for Twemoji, Bungee and a mixed
+monochrome/color fallback-font string, including wrapping, partial alpha and a
+nonwhite translucent foreground. This is still not exhaustive script/font
+conformance: arbitrary overlapping runs can differ because the legacy CPU text
+rasterizer's overlap arithmetic is not linear-light source-over. SDF, LCD and
+vertical-text algorithms remain the explicitly selected compatibility paths.
+SVG documents remain rasterize-at-density then upload. Authored Path2D geometry
+has a separate direct GPU coverage path, exposed by PaintContext::drawPath and
+the retained UI Path node; see [vector paths](2D.md#vector-paths).
+Preparation failures remain retryable.
 
-The returned arrays are not persistent snapshots. Consume/copy them before text,
-font or engine changes; retain the text/engine while recording/submitting dependent
-work. Atlas textures belong to TTF—never destroy them yourself. Geometry in these
-sequences uses +Y up, unlike UI layout's +Y down; conversion belongs in the adapter.
-Glyph image types can require different shading/blending paths, not one assumed
-monochrome mask. Platform/font lifetime and renderer-thread requirements still apply.
+## Extensions and verification
 
-GPUText is currently a low-level helper, not the implementation of ui::Text. It
-does not expose all wrapping, alignment, fitting, truncation, orientation or style
-controls. Preserve existing Text semantics before substituting atlas drawing.
-Until then, CPU-rasterized text uploaded as an ordinary image remains the available
-preparation path. SVG likewise remains rasterize-at-target-size then upload, not
-GPU vector-path rendering.
+Reflected custom pipelines/reload and glTF/GLB importing are implemented separately
+from UI; see [SHADERS.md](SHADERS.md) and [3D.md](3D.md). CPU background work can
+publish through the bounded CompletionQueue, without worker mutation of the scene
+or UI. Fixed-step simulation, HDR/ICC/wide-gamut color, PBR/lights/shadows/animation
+and advanced transparency are not implicit in a GPU device. A general ECS/job
+graph is not required to use the current path.
 
-## Build and runtime prerequisites
+The project applies a pinned Vulkan-only SDL timestamp extension. Its versioned
+device-property interface feeds a bounded asynchronous query ring, sharing
+GPUDevice's submission completion tracker. Measurements cover whole command-
+buffer intervals, not individual shader stages; absent capability and unavailable
+results produce no samples. [PROFILING.md](PROFILING.md) defines timing identity,
+counter arithmetic, cancellation and native pool lifetime.
 
-[CMakeLists.txt](../../CMakeLists.txt) enables SDL_GPU. SDL GPU is part of SDL3,
-not a separately added graphics library. SDL_ttf explicitly enables HarfBuzz and
-PlutoSVG; FreeType is mandatory in the pinned SDL_ttf source, not an optional flag.
-PlutoSVG supports SVG glyph content; it is not the UI's general SVG image renderer.
+External tools such as [NVIDIA Nsight Graphics](https://docs.nvidia.com/nsight-graphics/UserGuide/gpu-trace-overview.html)
+and [RenderDoc](https://docs.vulkan.org/tutorial/latest/Advanced_glTF/Debugging_Visual_Auditing/04_renderdoc_analysis.html)
+remain useful for detailed pipeline/pass analysis. CPU phase times include
+submission/wait costs but do not establish GPU execution duration. Replacing or
+extending the native adapter does not change PaintContext, Scene3D or UI layout
+contracts.
 
-The active app requires no GPU device yet. To exercise GPU helpers, the caller
-needs initialized SDL video, a supported driver/device and nonzero supported shader
-format flags. Text additionally needs initialized TTF and valid fonts. Shader
-compilation/reflection, packaging and backend-selection policy are not configured
-by GPUDeviceProps and have not been installed as a new toolchain.
+### Replacing SDL_GPU
 
-## Obligations of a future GPU backend
+SDL_GPU is the current Vulkan adapter, not the engine's required public graphics
+API. A native Vulkan implementation would implement RenderBackend/RenderFrame,
+PaintContext, ImagePreparer, TextImagePreparer and SceneRenderer, with fresh resource
+domains and its own synchronization, memory and swapchain ownership. Immutable CPU
+image/mesh/model inputs remain reconstruction sources; native handles do not migrate.
 
-These are requirements to implement, not currently available APIs:
+The optional GPUFrameAccess/custom-pipeline extension is deliberately SDL-specific.
+Applications using it would need a corresponding native extension or a later neutral
+pipeline API; those calls are not promised a transparent backend swap. SDL_ttf's GPU
+text engine also takes an SDL_GPUDevice. Replacing SDL_GPU requires a different text
+engine/atlas adapter (or CPU raster/upload compatibility), not merely replacing
+texture allocation underneath the existing engine.
 
-1. Choose/claim the window/device, acquire drawable/swapchain targets, handle null
-   acquisition/minimization, resize and presentation without overlapping frames.
-2. Define shader formats, binding layouts, color/alpha conventions and sampling.
-   Keep node order, nested clips and group-opacity behavior equivalent to the 2D contract.
-3. Supply a compatible ImagePreparer and retain resources required by recorded work.
-   Integrate atlas text without losing Text's layout semantics.
-4. Define command/pass ordering, upload batching, buffers, resource retirement and
-   CPU/GPU timing separately. Shared ownership is not a fence or scheduling policy.
-5. Define backend capability checks/fallback policy, device-loss handling and cache
-   invalidation. Do not silently accept unsupported operations.
-6. Add opt-in real-device tests, then a scene renderer with depth/target ownership.
-   Keep ordinary UI tests independent of graphics hardware.
+Prefer an SDL extension for a narrowly missing capability that fits its ownership
+model. Prefer a separate backend when required command scheduling, resource models
+or Vulkan extensions cannot fit that model cleanly. Keep any such fork isolated,
+version-pinned and tested at the adapter boundary; no SDL source patch is required
+or applied by the current implementation.
 
-## Incremental work before a complete renderer
-
-These are independent next steps, not prerequisites for committing the software
-backend or promises of existing services:
-
-| Work | Small, verifiable boundary |
-|---|---|
-| Shader assets | Choose the initial shader language and offline compilation path; define vertex layouts, bindings, target formats and packaged metadata together. Reject incompatible interfaces before drawing. |
-| Procedural/imported geometry | Produce validated immutable MeshData first. An importer converts units, handedness, winding, UV orientation and indices at the boundary rather than leaking file-format conventions into scene math. |
-| Background preparation | Start with one decode/parse job producing CPU-owned data. Deliver through CompletionSink with node/request generation checks; do not move UI mutation or GPU uploads onto that worker. |
-| Resource versions | Keep CPU source identity and device-local realization separate. Replace immutable handles on edits; add explicit request generations for reloads before introducing automatic hot reload. |
-| Frame resources | Specify upload-buffer reuse and submission retirement together. Record which frame owns each transient allocation and what completion permits reuse; shared_ptr alone is not GPU synchronization. |
-| Simulation time | Add a bounded fixed-step accumulator only when a simulation needs it. Keep UI timers, elapsed wall time, simulation time and GPU timestamps distinct. |
-| Profiling/budgets | Measure raster/upload counts and bytes before adding eviction or worker scheduling policy. CPU cache estimates, staging memory and GPU allocations are different budgets. |
-
-The existing completion mailbox is thread-safe for posting, not a worker pool.
-Signals, timers, registries and node mutations remain owner-thread operations.
-Keep those boundaries while introducing concurrency; a general job graph or ECS
-is not needed merely to load the first model or render the first triangle.
-
-## Verification boundaries
-
-[ui_image_preparation](../../tests/ui/image_preparation.cpp) tests CPU packing,
-validation and fake realization/failure/retry across Image/Text/Vector.
-[ui_render_backend](../../tests/ui/render_backend.cpp) tests software frame/session
-contracts. GPU resource/atlas sources are compiled, but these tests create no GPU
-device and establish no hardware behavior. Real upload/readback, device lifecycle,
-atlas lifetime and draw correctness need explicit device-backed verification.
-
-See [the testing inventory](../ui/TESTING.md) and
-[CONTRIBUTING.md](../../CONTRIBUTING.md#testing) for scope and commands.
+Ordinary tests cover packing, ownership, preparation, software pixels and failures
+without hardware. PLAYGROUND_GPU_TESTS adds gpu_device and gpu_shaders (Vulkan),
+skip code 77 for unsupported drivers. These read back selected pixels
+and exercise layers, paths, atlases, custom-pipeline reload and frame lifecycle. Windows success is not Linux,
+mobile or exhaustive visual verification. See [CONTRIBUTING](../../CONTRIBUTING.md#testing).

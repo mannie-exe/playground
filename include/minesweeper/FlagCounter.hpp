@@ -1,7 +1,8 @@
 #pragma once
 
-#include <minesweeper/ViewResources.hpp>
 #include <optional>
+
+#include <minesweeper/ViewResources.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/controls/Button.hpp>
 

@@ -21,7 +21,7 @@ class NewGameButton : public playground::ui::Button {
   std::optional<std::uint64_t> _secondaryPointer;
 
 protected:
-  void paint(playground::ui::PaintContext &context) const override {
+  void paint(playground::rendering::PaintContext &context) const override {
     if (_secondaryPointer && isEnabled())
       context.fill({{}, bounds().size}, props().pressed);
     else

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <numeric>
+
 #include <ui/collections/Collection.hpp>
 #include <ui/collections/ExtentIndex.hpp>
 #include <ui/containers/Boundaries.hpp>

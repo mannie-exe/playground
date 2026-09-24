@@ -9,6 +9,12 @@ public:
   virtual ~IApp() = default;
 
   virtual AppInfo info() const = 0;
+  // Invalidate native resources after a published backend/domain change.
+  // CPU/model state stays intact. No host commands, exceptions or onEnter
+  // replay.
+  virtual void
+  onRendererChanged(AppContext &, playground::rendering::ResourceDomainId,
+                    playground::rendering::ResourceDomainId) noexcept {}
   // Query only after onEnter has constructed content. No window mutations.
   // Null means this app has no preferred-content measurement implementation.
   virtual std::optional<playground::math::Size2>

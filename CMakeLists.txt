@@ -118,6 +118,9 @@ CPMAddPackage(
     "SDL_GPU ON"
 )
 
+include(cmake/SDLTimestamps.cmake)
+playground_apply_sdl_timestamps("${SDL_SOURCE_DIR}")
+
 CPMAddPackage(
     URI "gh:libsdl-org/SDL_image#bec9134@3.4.4"
     OPTIONS
@@ -153,7 +156,7 @@ CPMAddPackage(
 )
 
 # FreeType is mandatory in this SDL_ttf version; HarfBuzz shapes glyph runs,
-# while SDL_ttf's GPU text engine owns atlas generation (no renderer here yet).
+# while SDL_ttf's GPU text engine owns atlas generation for the GPU renderer.
 CPMAddPackage(
     URI "gh:libsdl-org/SDL_ttf#a1ce367@3.2.2"
     OPTIONS
@@ -166,6 +169,9 @@ CPMAddPackage(
     "SDLTTF_HARFBUZZ ON"
     "SDLTTF_PLUTOSVG ON"
 )
+
+include(cmake/patches/SDLTTFText.cmake)
+playground_patch_sdl_ttf("${SDL_ttf_SOURCE_DIR}")
 
 CPMAddPackage(
     URI "gh:JuliaStrings/utf8proc@2.11.3"
@@ -184,7 +190,24 @@ CPMAddPackage(
     URI "gh:marzer/tomlplusplus@3.4.0"
     OPTIONS "TOMLPLUSPLUS_BUILD_TESTS OFF" "TOMLPLUSPLUS_BUILD_EXAMPLES OFF"
 )
+CPMAddPackage(
+    URI "gh:jkuhlmann/cgltf#360db1a95480fe102ae9c69b27c5d101167ff5ba@1.15"
+    DOWNLOAD_ONLY YES
+)
+CPMAddPackage(
+    NAME spirv_reflect
+    GITHUB_REPOSITORY KhronosGroup/SPIRV-Reflect
+    GIT_TAG 9137a7e529e4e911a4dbd63f1ce71e4b3e8f4cfc
+    OPTIONS
+    "SPIRV_REFLECT_STATIC_LIB ON"
+    "SPIRV_REFLECT_EXECUTABLE OFF"
+    "SPIRV_REFLECT_SHARED_LIB OFF"
+    "SPIRV_REFLECT_BUILD_TESTS OFF"
+    "SPIRV_REFLECT_EXAMPLES OFF"
+    "SPIRV_REFLECT_INSTALL OFF"
+)
 include(cmake/Modules.cmake)
+include(cmake/Shaders.cmake)
 
 install(FILES ${tomlplusplus_SOURCE_DIR}/LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME tomlplusplus.txt)
@@ -196,6 +219,10 @@ install(FILES ${pugixml_SOURCE_DIR}/LICENSE.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME pugixml.txt)
 install(FILES ${kiwi_SOURCE_DIR}/LICENSE
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME kiwi.txt)
+install(FILES ${cgltf_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME cgltf.txt)
+install(FILES ${spirv_reflect_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME spirv-reflect.txt)
 install(FILES docs/licenses/UNICODE.txt
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses)
 
@@ -210,6 +237,7 @@ playground_add_sdl_target(playground
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(playground PRIVATE playground_sdl playground_constraints)
+add_dependencies(playground playground_shaders)
 
 # Compile the guide's additive snippets without adding an example program.
 set(playground_guide_check ${CMAKE_CURRENT_BINARY_DIR}/generated/UIGuideCheck.cpp)

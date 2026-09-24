@@ -1,8 +1,9 @@
 #pragma once
 
+#include <string_view>
+
 #include <math/Color.hpp>
 #include <platform/Presentation.hpp>
-#include <string_view>
 
 namespace playground::snake::config {
 

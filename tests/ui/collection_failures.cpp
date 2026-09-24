@@ -1,11 +1,12 @@
 #include <memory>
 #include <string>
+#include <vector>
+
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/collections/Repeat.hpp>
 #include <ui/collections/VirtualList.hpp>
 #include <ui/controls/Button.hpp>
-#include <vector>
 
 using namespace playground;
 

@@ -1,7 +1,7 @@
-#include <support/AssetRegistry.hpp>
-
 #include <SDL3/SDL_iostream.h>
 #include <SDL3_image/SDL_image.h>
+
+#include <support/AssetRegistry.hpp>
 
 using StreamResource = SDLResource<SDL_IOStream, SDL_CloseIO>;
 
@@ -84,8 +84,9 @@ std::string AssetRegistry::fontKey(const FontProps &props) {
          std::to_string(props.style.outline) + ":" +
          std::to_string(props.layout.alignment) + ":" +
          std::to_string(props.layout.direction) + ":" +
-         std::to_string(props.layout.lineSpace) + ":" +
-         std::to_string(props.render.hinting) + ":" +
+         (props.layout.lineSpace ? std::to_string(*props.layout.lineSpace)
+                                 : "auto") +
+         ":" + std::to_string(props.render.hinting) + ":" +
          std::to_string(props.render.sdf) + ":" +
          std::to_string(props.render.kern);
 }

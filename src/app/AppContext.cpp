@@ -48,6 +48,19 @@ const playground::platform::PresentationProps &
 AppContext::presentation() const {
   return _host.presentation();
 }
+const playground::rendering::RendererState &AppContext::rendererState() const {
+  return _host.rendererState();
+}
+const playground::rendering::RecoveryState &
+AppContext::rendererRecovery() const {
+  return _host.rendererRecovery();
+}
+const std::string &AppContext::lastCommandError() const {
+  return _host.lastCommandError();
+}
+void AppContext::requestRendererRecovery() {
+  _host.request({.type = AppCommandType::RecoverRenderer});
+}
 const playground::platform::AppViewPolicy &AppContext::viewPolicy() const {
   return _host.viewPolicy();
 }

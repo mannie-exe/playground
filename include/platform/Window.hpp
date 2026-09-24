@@ -1,12 +1,11 @@
 #pragma once
 
-#include <math/Geometry2D.hpp>
+#include <string>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_video.h>
 
-#include <string>
-
+#include <math/Geometry2D.hpp>
 #include <platform/WindowTypes.hpp>
 #include <support/SDLResource.hpp>
 

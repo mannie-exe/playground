@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
+
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_mouse.h>
-#include <optional>
+
 #include <ui/UITypes.hpp>
 
 namespace playground::sdl {

@@ -3,19 +3,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <math/Geometry2D.hpp>
 #include <stdexcept>
 #include <vector>
 
-namespace playground::rendering {
+#include <math/Geometry2D.hpp>
+#include <rendering/ImageTypes.hpp>
 
-enum class AlphaMode { Straight, Premultiplied };
+namespace playground::rendering {
 
 // Tightly packed, top-to-bottom RGBA bytes; no implicit gamma conversion.
 // GPU uploads currently use RGBA8_UNORM to preserve the software pixel values.
 struct RGBA8Image {
   math::Vec2i size;
   AlphaMode alpha{AlphaMode::Straight};
+  ColorEncoding encoding{ColorEncoding::SRGB};
   std::vector<std::uint8_t> pixels;
 
   static std::size_t byteSize(math::Vec2i size) {
@@ -30,8 +31,8 @@ struct RGBA8Image {
   void validate() const {
     if (pixels.size() != byteSize(size))
       throw std::invalid_argument("RGBA byte count does not match dimensions");
-    if (alpha != AlphaMode::Straight && alpha != AlphaMode::Premultiplied)
-      throw std::invalid_argument("Unknown alpha mode");
+    if (!isValid(alpha) || !isValid(encoding))
+      throw std::invalid_argument("Unknown image alpha mode or color encoding");
   }
 };
 

@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <layout/LayoutAlgorithms.hpp>
 #include <optional>
-#include <platform/sdl/TextColumns.hpp>
 #include <string>
+
+#include <layout/LayoutAlgorithms.hpp>
+#include <platform/sdl/TextColumns.hpp>
 #include <support/AssetRegistry.hpp>
 #include <support/TextFlow.hpp>
 #include <ui/Node.hpp>
@@ -61,10 +62,13 @@ class Text final : public Node {
 
   layout::LayoutDirection _direction{layout::LayoutDirection::LeftToRight};
   std::optional<Measurement> _arrangedText;
-  PaintImageHandle _source;
-  PaintImageHandle _raster;
+  rendering::PaintImageHandle _source;
+  rendering::PaintImageHandle _raster;
   math::Rect _destination;
   std::string _rasterKey;
+  rendering::ResourceDomainId _rasterDomain{};
+  rendering::ResourceDomainId _rasterImageDomain{};
+  bool _atlasRaster{};
   bool _prepared{};
 
   static void validate(const TextProps &props);

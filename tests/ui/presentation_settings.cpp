@@ -1,4 +1,5 @@
 #include <chrono>
+
 #include <platform/Settings.hpp>
 #include <support/Test.hpp>
 
@@ -39,6 +40,19 @@ int main() {
             policy.initialSizing == platform::InitialWindowSizing::FitContent,
         "per-app overrides preserve false/zero and cannot change resizability");
     const auto saved = platform::serializeSettings(store.user());
+    auto rendererSettings = platform::parseSettings(
+        "schema_version=2\n[defaults]\nglyph_atlases=false\nvsync=false\n");
+    platform::PresentationProps renderProps;
+    platform::AppViewPolicy renderPolicy;
+    platform::parseSettings(platform::serializeSettings(rendererSettings))
+        .apply("demo", renderProps, renderPolicy);
+    test::require(!renderProps.render.glyphAtlases && !renderProps.render.vsync,
+                  "explicit false rendering switches survive roundtrip");
+    test::rejects(
+        [] {
+          platform::parseSettings("schema_version=2\n[defaults]\nvsync=1");
+        },
+        "render boolean requires boolean type");
     platform::parseSettings(saved);
     platform::PresentationProps replacement;
     platform::AppViewPolicy replacementPolicy;
@@ -47,10 +61,22 @@ int main() {
                       replacement.viewport.followSystemScale,
                   "removing user overrides resolves from project/app values, "
                   "not previous effective settings");
-    user.files["settings.toml"] = "schema_version=2";
+    user.files["settings.toml"] = "schema_version=3";
     test::rejects([&] { store.reload(); }, "unsupported schema rejected");
     test::require(platform::serializeSettings(store.user()) == saved,
                   "failed reload preserves published settings");
+    user.files["settings.toml"] =
+        "schema_version=2\n[defaults]\nui_scale=3.0\n";
+    auto staged = store.readSnapshot();
+    test::require(platform::serializeSettings(store.user()) == saved,
+                  "reading staged settings does not publish them");
+    auto prior = store.snapshot();
+    store.publish(std::move(staged));
+    test::require(store.user().defaults.uiScale == 3.0f,
+                  "staged settings publish explicitly");
+    store.publish(std::move(prior));
+    test::require(platform::serializeSettings(store.user()) == saved,
+                  "runtime rejection can restore prior settings snapshot");
     for (const char *invalid : {"schema_version=1\n[defaults]\nui_scale=nan",
                                 "schema_version=1\n[defaults]\nui_scale=0",
                                 "schema_version=1\n[defaults]\nresizable=true",
@@ -79,6 +105,56 @@ int main() {
     test::rejects<std::exception>(
         [] { platform::parseSettings("not toml ["); },
         "syntax errors do not masquerade as defaults");
+    for (auto renderer :
+         {rendering::RendererChoice::Auto, rendering::RendererChoice::Software,
+          rendering::RendererChoice::SDLGPU}) {
+      for (auto driver :
+           {rendering::GPUDriver::Auto, rendering::GPUDriver::Vulkan}) {
+        platform::SettingsDocument settings;
+        settings.defaults.renderer = renderer;
+        settings.defaults.gpuDriver = driver;
+        settings.defaults.rendererFallback = false;
+        auto roundtrip =
+            platform::parseSettings(platform::serializeSettings(settings));
+        platform::PresentationProps actual;
+        platform::AppViewPolicy view;
+        roundtrip.apply("demo", actual, view);
+        test::require(
+            actual.renderer ==
+                rendering::RendererPreferences{renderer, driver, false},
+            "renderer enum variants and explicit false survive settings "
+            "roundtrip");
+      }
+    }
+    for (const auto driver : {"metal", "direct3d12"})
+      test::rejects<std::invalid_argument>(
+          [&] {
+            platform::parseSettings(
+                std::string{"schema_version=2\n[defaults]\ngpu_driver='"} +
+                driver + "'\n");
+          },
+          "unsupported GPU drivers rejected, not silently migrated");
+    const auto inherited =
+        platform::parseSettings("schema_version=2\n[defaults]\nrenderer='sdl-"
+                                "gpu'\nrenderer_fallback=false\n"
+                                "[apps.demo]\nrenderer='software'\n");
+    platform::PresentationProps inheritedProps;
+    platform::AppViewPolicy inheritedView;
+    inherited.apply("demo", inheritedProps, inheritedView);
+    test::require(inheritedProps.renderer.backend ==
+                          rendering::RendererChoice::Software &&
+                      !inheritedProps.renderer.allowFallback,
+                  "per-app renderer override inherits other preference fields");
+    for (const char *field :
+         {"renderer='gpu'", "gpu_driver='opengl'", "renderer_fallback=1"})
+      test::rejects(
+          [&] {
+            platform::parseSettings(
+                std::string{"schema_version=2\n[defaults]\n"} + field);
+          },
+          "invalid renderer preferences rejected");
+    test::rejects([] { platform::parseSession("schema_version=2"); },
+                  "settings schema migration does not change session schema");
     platform::PresentationProps unchanged;
     platform::AppViewPolicy unchangedPolicy;
     platform::SettingsDocument invalidName;

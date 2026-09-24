@@ -82,7 +82,7 @@ public:
   void render(AppContext &ctx,
               playground::rendering::RenderFrame &frame) override {
     _session.synchronize(ctx.windowMetrics(), ctx.presentation().viewport);
-    _session.render(frame.paint2D());
+    _session.render(frame);
   }
 
 private:

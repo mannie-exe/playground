@@ -1,16 +1,17 @@
 #pragma once
-
 #include <format>
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <utility>
+
+#include <rendering/RenderFormatters.hpp>
 #include <ui/UITypes.hpp>
 #include <ui/collections/Repeat.hpp>
 #include <ui/collections/ScrollView.hpp>
 #include <ui/collections/VirtualList.hpp>
 #include <ui/containers/Boundaries.hpp>
 #include <ui/content/Text.hpp>
-#include <utility>
 
 namespace playground::ui {
 
@@ -226,16 +227,6 @@ constexpr std::string_view toString(Key value) {
   return "Unknown";
 }
 
-constexpr std::string_view toString(Sampling value) {
-  switch (value) {
-  case Sampling::Nearest:
-    return "Nearest";
-  case Sampling::Linear:
-    return "Linear";
-  }
-  return "Unknown";
-}
-
 constexpr std::string_view toString(TextWrap value) {
   switch (value) {
   case TextWrap::None:
@@ -385,16 +376,6 @@ struct std::formatter<playground::ui::EventPhase>
 template <>
 struct std::formatter<playground::ui::Key> : std::formatter<std::string_view> {
   auto format(playground::ui::Key value, std::format_context &context) const {
-    return std::formatter<std::string_view>::format(
-        playground::ui::toString(value), context);
-  }
-};
-
-template <>
-struct std::formatter<playground::ui::Sampling>
-    : std::formatter<std::string_view> {
-  auto format(playground::ui::Sampling value,
-              std::format_context &context) const {
     return std::formatter<std::string_view>::format(
         playground::ui::toString(value), context);
   }

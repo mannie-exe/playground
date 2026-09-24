@@ -11,10 +11,10 @@
 #include <SDL3/SDL_surface.h>
 
 #include <platform/sdl/SurfacePaintImage.hpp>
+#include <rendering/PaintContext.hpp>
+#include <rendering/PaintImage.hpp>
 #include <support/SDLResource.hpp>
 #include <support/SurfaceHandles.hpp>
-#include <ui/PaintContext.hpp>
-#include <ui/PaintImage.hpp>
 
 namespace playground::sdl {
 
@@ -26,7 +26,7 @@ struct SurfacePainterProps {
 // Synchronous, UI-thread-only backend. Source modulation is scoped and
 // restored; neither this painter nor its shared SDL resources support
 // concurrent mutation.
-class SurfacePainter final : public ui::PaintContext {
+class SurfacePainter final : public rendering::PaintContext {
   using OwnedSurface = SDLResource<SDL_Surface, SDL_DestroySurface>;
 
   struct Mask {
@@ -104,7 +104,7 @@ class SurfacePainter final : public ui::PaintContext {
   static Pixel solid(math::ColorRGBA8 color);
 
   void rasterImage(const SurfacePaintImage &image, math::Rect source,
-                   math::Rect destination, ui::ImagePaint appearance);
+                   math::Rect destination, rendering::ImagePaint appearance);
 
 public:
   explicit SurfacePainter(SDL_Surface &target,
@@ -146,9 +146,11 @@ public:
                        std::optional<math::ColorRGBA8> border) override;
 
   void fill(math::Rect rectangle, math::ColorRGBA8 color) override;
+  void drawPath(const math::Path2D &, const rendering::PathPaint &) override;
 
-  void drawImage(const ui::PaintImageHandle &image, math::Rect sourcePixels,
-                 math::Rect destination, ui::ImagePaint appearance) override;
+  void drawImage(const rendering::PaintImageHandle &image,
+                 math::Rect sourcePixels, math::Rect destination,
+                 rendering::ImagePaint appearance) override;
 
   void beginLayer(math::Rect localBounds, float opacity) override;
 
@@ -156,9 +158,9 @@ public:
 
   void cancelLayer() noexcept override;
 
-  std::shared_ptr<const ui::PaintImage>
+  std::shared_ptr<const rendering::PaintImage>
   capture(math::Rect bounds, math::Vec2f scale,
-          const std::function<void(ui::PaintContext &)> &draw) override;
+          const std::function<void(rendering::PaintContext &)> &draw) override;
 };
 
 } // namespace playground::sdl

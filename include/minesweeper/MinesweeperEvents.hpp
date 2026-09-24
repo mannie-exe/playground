@@ -2,12 +2,12 @@
 
 #include <format>
 #include <limits>
-#include <math/Geometry2D.hpp>
 #include <optional>
 #include <unordered_map>
 
 #include <SDL3/SDL_events.h>
 
+#include <math/Geometry2D.hpp>
 #include <support/SDLError.hpp>
 
 namespace playground::minesweeper {

@@ -1,6 +1,6 @@
-#include <support/TextFlow.hpp>
-
 #include <utf8proc.h>
+
+#include <support/TextFlow.hpp>
 
 namespace playground::ui {
 

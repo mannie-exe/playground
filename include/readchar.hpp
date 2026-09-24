@@ -34,6 +34,7 @@ inline char readchar() { return static_cast<char>(_getch()); }
 #else
 
 #include <cerrno>
+
 #include <termios.h>
 #include <unistd.h>
 

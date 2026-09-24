@@ -3,6 +3,7 @@
 
 #include <app/SDLGuard.hpp>
 #include <platform/Window.hpp>
+#include <platform/sdl/RenderBackendFactory.hpp>
 #include <platform/sdl/SurfaceRenderBackend.hpp>
 #include <platform/sdl/UISession.hpp>
 #include <support/Test.hpp>
@@ -11,7 +12,7 @@
 
 using namespace playground;
 
-class RecordingPainter final : public ui::PaintContext {
+class RecordingPainter final : public rendering::PaintContext {
 public:
   int depth{}, fills{};
 
@@ -52,6 +53,34 @@ int main() {
                   "constructing a window does not select surface rendering");
     sdl::SurfaceRenderBackend backend{*window.get()};
     rendering::RenderBackend &abstractBackend = backend;
+    abstractBackend.prepare({.scene3D = true});
+    test::rejects<std::runtime_error>(
+        [&] { abstractBackend.prepare({.linearComposition = true}); },
+        "required unsupported capabilities fail before activation");
+    test::require(abstractBackend.description().capabilities.paint2D &&
+                      abstractBackend.description().capabilities.scene3D,
+                  "backend advertises implemented capabilities only");
+    const auto selected =
+        sdl::resolveRenderer({rendering::RendererChoice::Software}, {});
+    test::require(!selected.isFallback() &&
+                      selected.selected.backend ==
+                          rendering::RendererKind::Software,
+                  "explicit software selection remains deterministic");
+    test::rejects<std::runtime_error>(
+        [] {
+          sdl::resolveRenderer({rendering::RendererChoice::Software,
+                                rendering::GPUDriver::Auto, false},
+                               {.linearComposition = true});
+        },
+        "factory rejects unsupported software composition needs");
+    auto created = sdl::createRenderBackend(*window.get(), selected);
+    test::require(created->description().capabilities ==
+                      selected.selected.capabilities,
+                  "factory realization matches negotiated capabilities");
+    auto forged = selected;
+    forged.selected.capabilities.scene3D = false;
+    test::rejects([&] { sdl::createRenderBackend(*window.get(), forged); },
+                  "factory does not accept invented capabilities");
     test::require(abstractBackend.drawableSize() == math::Vec2i{32, 24},
                   "backend queries physical size without creating a surface");
     test::require(!SDL_WindowHasSurface(window.get()),
@@ -60,9 +89,8 @@ int main() {
     {
       auto frame = abstractBackend.beginFrame({.clearColor = {0, 0, 255, 255}});
       test::require(bool(frame), "hidden offscreen test window acquires frame");
-      test::require(
-          frame->scene3D() == nullptr,
-          "software frame explicitly does not support scene rendering");
+      test::require(frame->scene3D() != nullptr,
+                    "software frame provides scene rendering");
       test::rejects<std::logic_error>([&] { abstractBackend.beginFrame({}); },
                                       "overlapping frames rejected");
       session.render(frame->paint2D());
@@ -72,7 +100,14 @@ int main() {
       test::require(inside.r == 255 && inside.b == 0 && outside.r == 0 &&
                         outside.b == 255,
                     "frame clears and native UI draws into backend target");
-      frame->present();
+      test::require(frame->present() ==
+                        rendering::PresentationOutcome::Submitted,
+                    "software presentation reports accepted frame");
+      test::require(abstractBackend.completedWork() == 1,
+                    "software completed work advances after successful update");
+      test::rejects<std::logic_error>(
+          [&] { frame->scene3D()->render({}, {}); },
+          "scene service is frame scoped after presentation");
       test::rejects<std::logic_error>([&] { frame->present(); },
                                       "duplicate presentation rejected");
       test::rejects<std::logic_error>([&] { frame->paint2D(); },

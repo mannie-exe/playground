@@ -24,17 +24,21 @@ or PATH change is required. Install prepares runtime files. Running directly fro
 the build tree need not find `project.toml`; absent files retain compiled defaults.
 The project root is not treated as a writable preferences directory.
 
-All documents require integer `schema_version = 1`. Missing files mean no overrides;
+Settings readers accept integer schema versions 1 and 2; writers emit version 2.
+Version 1 settings retain their defaults and are upgraded on the next explicit
+save. Renderer preference fields are additive and accepted by this reader in both
+versions; older readers will reject them. Session documents remain version 1.
+Missing files mean no overrides;
 malformed/unreadable files are errors, not silently replaced defaults. Unknown
 sections, fields and enum strings are rejected to expose spelling/schema errors.
-Future schema migrations need explicit readers; there is no automatic version repair.
+Unknown versions still fail rather than being silently repaired.
 
 ## Settings schema
 
 Both project and user files use this shape; every field inside the tables is optional:
 
 ```toml
-schema_version = 1
+schema_version = 2
 
 [defaults]
 mode = "windowed"
@@ -46,6 +50,9 @@ viewport_mode = "reflow"
 ui_scale = 1.0
 follow_system_scale = true
 resolution_scale = 1.0
+renderer = "auto"
+gpu_driver = "auto"
+renderer_fallback = true
 
 [apps.demo]
 initial_sizing = "fit-content"
@@ -70,6 +77,24 @@ display = "primary"
 | `ui_scale` | Finite positive Reflow zoom |
 | `follow_system_scale` | Boolean |
 | `resolution_scale` | Finite value in (0,4], whole-frame raster multiplier |
+| `glyph_atlases` | Boolean, default true; GPU blended horizontal text uses SDL_ttf atlases; false requests raster/upload compatibility |
+| `vsync` | Boolean, default true; GPU requests VSYNC or immediate (falls back to VSYNC if unsupported); software pacing remains platform-controlled |
+| `renderer` | auto, software, sdl-gpu; a preference, not an app requirement |
+| `gpu_driver` | auto or vulkan; Auto selects Vulkan for hardware; dormant when explicitly selecting software |
+| `renderer_fallback` | Allow another compatible backend/driver; never weakens app requirements |
+
+AppInfo::rendererRequirements owns RendererRequirements. AppContext::rendererState reports
+requested and actual selection, capabilities and a nonempty fallbackReason when
+an explicit preference could not be met. Auto selects a compatible available
+implementation without claiming fallback merely because it chooses software.
+Software supports 2D and 3D. GPU supports both plus linear composition when compiled
+shaders and a device are available. Backend changes are applied outside live frames;
+failure attempts to restore the old backend. CPU sources are retained, while
+device-specific layers, images and atlas output are rebuilt. The host
+realizes required capabilities before activation, including scene shader/pipeline
+preparation when 3D is required. It applies settings to the active runtime before
+persisting them. Old `metal` and `direct3d12` preferences are rejected explicitly.
+These are owner-thread safe-boundary operations, not atomic OS/GPU transactions.
 
 The shipped project file specifies shared presentation defaults, not a duplicate
 Demo sizing policy. App configs declare FitContent; an explicit per-app user/project
@@ -90,17 +115,103 @@ and project values, not against yesterday's already-merged state.
 ## Publication and persistence
 
 SettingsStore borrows two FileStores; both must outlive it. Its API is synchronous,
-owning-thread only. `reload()` reads/parses all three documents into candidates
-before replacing the in-memory documents. Cross-layer conditions, such as a named
+owning-thread only. `readSnapshot()` reads/parses all three documents without
+publication; `snapshot()` captures published documents and `publish()` replaces
+them. `reload()` combines reading and publication. AppHost uses snapshots to
+restore documents if runtime activation fails. Cross-layer conditions, such as a named
 display needing a name, are checked during resolution. A successfully parsed
 document is not proof that every possible app-baseline combination is valid.
 
 `setUser(document, persist)` validates serialized values and, if requested, writes
-before publishing the replacement user document. AppHost previews the active app's
-merged settings first. Disk failures preserve the previous published document.
+before publishing the replacement user document. AppHost validates, realizes the
+required renderer services and applies the active app's merged settings first.
+Disk failures preserve the previous published document and trigger restoration of
+the previous backend/window policy. OS restoration is best-effort and may itself
+fail; such a failure is terminal and retains both exception causes.
 An explicit save rewrites TOML canonically: comments/formatting are not retained.
 Runtime-only changes do not touch `settings.toml`. App switches/settings reloads
 resolve values again; explicit runtime presentation requests do not edit preferences.
+
+App switching keeps the outgoing app alive while constructing and entering the
+candidate. Candidate commands are deferred and discarded on failure; on success,
+the old app's cleanup runs before it is destroyed. `onEnter` must build owned state,
+not perform irreversible external effects. Shared service mutations and external
+IO cannot be rolled back automatically. `onExit` is cleanup-only; its exceptions
+are logged and isolated, and its host commands are discarded. It must not rely on
+the outgoing window configuration still being active. Rejected commands preserve
+the prior app and are reported through `AppContext::lastCommandError()`; startup,
+restoration and unrecoverable renderer failures terminate normally through the
+entry-point exception handler. There is no interactive error dialog.
+
+## Rendering recovery
+
+GPU command acquisition/submission/presentation failures use `RenderFailure`,
+distinct from invalid props, resource allocation and application exceptions. A
+failed frame is abandoned before backend recreation; model updates and callbacks
+are not replayed. CPU sources remain owned, and a new resource domain invalidates
+native realizations. The default `RecoveryPolicy` permits one automatic attempt.
+Its budget resets only after five accumulated seconds of observed, advancing
+completed work on submitted frames; queue acceptance alone does not count. Each
+observation contributes at most 0.25 seconds, so a single stalled frame cannot
+clear probation. Skipped/no-target presentations restart probation, and a failed
+recreation or second failure before probation completes is terminal.
+`rendererRecovery()` exposes status, attempt count, healthy duration and reason. An explicit
+`requestRendererRecovery()` starts a new attempt budget at the next safe boundary.
+
+Recovery is synchronous at a safe frame boundary: simulation is paused during
+recreation, and the next update receives zero delta rather than the time spent
+recovering. Updates/callbacks already performed are never replayed. After a
+published resource-domain change, `IApp::onRendererChanged(ctx, previous, current)`
+can discard native caches without rebuilding model state or replaying `onEnter`.
+This nonthrowing invalidation hook must not request host commands. Initial entry
+uses an unspecified previous domain; software realizations share the CPU domain.
+Settings-driven replacement and restoration similarly rebase the update clock.
+
+`RenderFrame::present()` returns `PresentationOutcome::Submitted` or `Skipped`;
+neither reports GPU completion. `RenderBackend::completedWork()` nonblockingly
+polls a backend-local completion sequence. Software advances after a successful
+surface update; GPU advancement requires completed submission fences.
+
+SDL GPU does not expose a typed device-loss notification in the pinned version.
+This policy is bounded recovery from native submission failures, not guaranteed
+recovery from every device-loss or driver-hang scenario. It does not match SDL
+error strings or catch arbitrary application exceptions and call them device loss.
+
+## Performance sampling
+
+`PerformanceMonitor` records CPU Poll, Update, Render, Present and Total phases;
+these are host durations, not GPU execution times. `history()` retains at most
+`PerformanceConfig::historySize` complete samples (default 240, maximum 65536).
+Zero disables history retention without disabling summaries. Missing phases have
+an explicit measured flag and are not fabricated zero-duration observations.
+Resizing the history keeps newest samples; rejected props/samples do not publish
+partial data. Reports clear interval aggregates but preserve history.
+
+`recordGPU(GPUTimingSample)` accepts only completed native timestamp observations;
+`gpuHistory()` retains them separately with the same entry budget. Samples carry
+their resource domain, native sequence and label, rather than pretending to line up with the CPU
+frame that happened to receive them. No supported query means no sample, not zero
+GPU time. Reports show the latest newly collected GPU scope, without averaging
+unrelated scopes or mixing GPU duration into CPU Total. Labels are limited to 128
+bytes so retained telemetry is bounded beyond just its entry count.
+
+`RenderBackend::supportsGPUTiming()` reports native support, separately from
+whether monitoring is enabled. AppHost updates `setGPUTimingAvailable()` when
+domains change and before recording. `gpuTimingStatus()` distinguishes
+Unsupported, Disabled, Pending and Measured. Each CPU history entry snapshots the
+status and whether a fresh completed GPU sample arrived during that frame; it
+does not attribute the GPU work itself to that CPU frame. A report without a new
+sample explicitly says unsupported or pending, never `0ms`.
+Optional completion latency is separately validated and labeled: it measures
+host submit-to-observed-completion delay, including queueing and polling delay,
+and must not be mistaken for the native GPU scope's execution duration.
+
+F10 toggles monitoring, Shift+F10 reports the current interval, and F11 switches
+the reporting interval between 60 and 300 frames while preserving enabled state,
+logging policy and history budget. Toggling monitoring resets sample state;
+enabling mid-frame waits until the next complete frame for its first sample.
+
+## Window session persistence
 
 Normal window geometry is saved per app on app switch and orderly run-loop exit.
 It uses signed desktop coordinates (negative positions are legitimate) and a

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <layout/LayoutPrimitives.hpp>
 #include <string>
 #include <utility>
+
+#include <layout/LayoutPrimitives.hpp>
 
 namespace playground::layout {
 

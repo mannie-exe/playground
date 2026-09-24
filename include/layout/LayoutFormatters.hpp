@@ -1,9 +1,10 @@
 #pragma once
 
 #include <format>
+#include <string_view>
+
 #include <layout/Constraints.hpp>
 #include <layout/LayoutPrimitives.hpp>
-#include <string_view>
 
 namespace playground::layout {
 

@@ -1,8 +1,9 @@
 #include <limits>
 #include <numeric>
+#include <vector>
+
 #include <support/Test.hpp>
 #include <ui/collections/ExtentIndex.hpp>
-#include <vector>
 
 using namespace playground;
 

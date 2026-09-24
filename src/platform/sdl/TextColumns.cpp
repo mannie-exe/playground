@@ -1,7 +1,7 @@
-#include <platform/sdl/TextColumns.hpp>
-
-#include <support/VerticalOrientation.hpp>
 #include <utf8proc.h>
+
+#include <platform/sdl/TextColumns.hpp>
+#include <support/VerticalOrientation.hpp>
 
 namespace playground::sdl {
 

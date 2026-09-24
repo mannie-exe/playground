@@ -1,5 +1,3 @@
-#include "layout/LayoutAlgorithms.hpp"
-
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -8,6 +6,8 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+
+#include "layout/LayoutAlgorithms.hpp"
 
 namespace {
 using namespace playground::layout;

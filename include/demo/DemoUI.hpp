@@ -1,7 +1,8 @@
 #pragma once
 
-#include <demo/Config.hpp>
 #include <memory>
+
+#include <demo/Config.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <ui/Builders.hpp>
 #include <ui/content/Image.hpp>

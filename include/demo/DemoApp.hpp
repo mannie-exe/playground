@@ -65,6 +65,6 @@ public:
   void render(AppContext &ctx,
               playground::rendering::RenderFrame &frame) override {
     _ui.synchronize(ctx.windowMetrics(), ctx.presentation().viewport);
-    _ui.render(frame.paint2D());
+    _ui.render(frame);
   }
 };

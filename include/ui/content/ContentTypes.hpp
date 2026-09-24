@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 #include <layout/LayoutPrimitives.hpp>
-#include <ui/PaintImage.hpp>
+#include <rendering/PaintImage.hpp>
 
 namespace playground::ui {
 
@@ -14,7 +14,7 @@ enum class ContentFit { None, Stretch, Contain, Cover, Shrink };
 struct ContentStyle {
   ContentFit fit{ContentFit::Contain};
   layout::Alignment alignment{layout::Alignment::center()};
-  ImagePaint paint;
+  rendering::ImagePaint paint;
 
   bool operator==(const ContentStyle &) const = default;
 };

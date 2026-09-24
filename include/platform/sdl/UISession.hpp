@@ -3,6 +3,7 @@
 #include <platform/Presentation.hpp>
 #include <platform/sdl/EventResult.hpp>
 #include <platform/sdl/SDLInput.hpp>
+#include <rendering/RenderBackend.hpp>
 #include <ui/UIRoot.hpp>
 
 namespace playground::sdl {
@@ -20,7 +21,11 @@ public:
                    const platform::ViewportProps &props);
   EventResult handleEvent(const SDL_Event &event);
   void update(float seconds) { _root.update(seconds); }
-  void render(ui::PaintContext &context);
+  void render(rendering::PaintContext &context,
+              scene::SceneRenderer *scenes = nullptr);
+  void render(rendering::RenderFrame &frame) {
+    render(frame.paint2D(), frame.scene3D());
+  }
   void clear() { _root.setContent({}); }
 };
 } // namespace playground::sdl

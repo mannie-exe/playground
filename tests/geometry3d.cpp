@@ -1,7 +1,8 @@
 #include <cmath>
 #include <limits>
-#include <math/Geometry3D.hpp>
 #include <numbers>
+
+#include <math/Geometry3D.hpp>
 #include <support/Test.hpp>
 
 using namespace playground;

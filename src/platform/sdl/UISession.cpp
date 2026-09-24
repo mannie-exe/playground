@@ -27,8 +27,9 @@ EventResult UISession::handleEvent(const SDL_Event &event) {
   return EventResult::Ignored;
 }
 
-void UISession::render(ui::PaintContext &context) {
-  ui::PaintScope scope{context};
+void UISession::render(rendering::PaintContext &context,
+                       scene::SceneRenderer *scenes) {
+  rendering::PaintScope scope{context};
   context.clip({{},
                 {static_cast<float>(_metrics.windowSize.x),
                  static_cast<float>(_metrics.windowSize.y)}});
@@ -36,8 +37,10 @@ void UISession::render(ui::PaintContext &context) {
   context.transform(math::Transform2D::scaling(_mapping.windowUnitsPerLogical));
   context.clip({{}, _mapping.logicalSize});
   _root.flushLayout(_environment);
-  _root.prepare(
-      {.pixelScale = context.pixelScale(), .images = context.imagePreparer()});
+  _root.prepare({.pixelScale = context.pixelScale(),
+                 .images = context.imagePreparer(),
+                 .scenes = scenes,
+                 .text = context.textPreparer()});
   _root.render(context);
 }
 

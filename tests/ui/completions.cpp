@@ -1,6 +1,7 @@
 #include <memory>
-#include <support/Test.hpp>
 #include <thread>
+
+#include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Box.hpp>
 

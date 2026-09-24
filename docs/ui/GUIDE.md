@@ -139,9 +139,10 @@ void updateGuide(GuideUI &guide, double seconds) {
   guide.root.update(seconds);
 }
 
-void renderGuide(GuideUI &guide, ui::PaintContext &paint) {
+void renderGuide(GuideUI &guide, rendering::PaintContext &paint) {
   guide.root.prepare({.pixelScale = paint.pixelScale(),
-                      .images = paint.imagePreparer()});
+                      .images = paint.imagePreparer(),
+                      .text = paint.textPreparer()});
   guide.root.render(paint);
 }
 
@@ -404,7 +405,7 @@ see [image sources](../render/2D.md#image-sources) for the current adapter.
 ```cpp
 #include <ui/content/Image.hpp>
 
-std::unique_ptr<ui::Image> makeGuideImage(ui::PaintImageHandle image) {
+std::unique_ptr<ui::Image> makeGuideImage(rendering::PaintImageHandle image) {
   return std::make_unique<ui::Image>(
       ui::ImageProps{.image = std::move(image),
                      .content = {.fit = ui::ContentFit::Contain}},
@@ -1120,7 +1121,7 @@ public:
             .measure = [](ui::MeasureContext &, const layout::SizeConstraints &) {
               return layout::MeasureResult{{160, 90}};
             },
-            .paint = [this](ui::PaintContext &paint) {
+            .paint = [this](rendering::PaintContext &paint) {
               const auto &child = *children().front();
               paint.fill({{}, child.bounds().size}, _state.previewColor);
             }});
@@ -1188,7 +1189,11 @@ Workers must not dereference NodeHandle to edit nodes. Capture a completion sink
 handle and relevant source revision, compute independent data, then post the
 result. The UI thread applies only results whose root, identity and revision
 still match. Additional request-specific freshness belongs in your own job data.
-The sink is a delivery boundary, not a worker pool.
+The sink is a delivery boundary, not a worker pool. Its bounded queue rejects posts
+when full or closed; check the returned bool when delivery matters. UIRoot's optional
+CompletionQueueProps selects capacity and per-update work budget. The example below
+deliberately permits dropping a nonessential status update, rather than blocking
+the worker or mutating UI state from it.
 
 Completion callbacks run outside the queue lock. A throwing callback is not
 automatically retried; unattempted callbacks remain queued. Its own partial side
@@ -1291,7 +1296,105 @@ Read [2D.md](../render/2D.md) for painting and host-adapter usage,
 [3D.md](../render/3D.md) for a separate scene service whose output can become an
 image. Those services do not add camera/depth responsibilities to UI nodes.
 
-## Where to look next
+## Add a scene viewport without changing UI layout
+
+A scene is an application model, not a special layout tree. Keep its owner across
+frames; a viewport node holds shared read access. Mutate the scene from update or
+routed callbacks, then let the normal layout/preparation pass rebuild changed
+output. A stable SceneView caches its image until its scene, camera, size or renderer
+changes. Merely moving its box does not upload the mesh again.
+
+The following additions build a 3D preview. The surrounding IApp should declare
+rendererRequirements.scene3D=true and render its UISession with render(frame),
+not only render(frame.paint2D()), so preparation receives the scene service.
+
+```cpp
+#include <scene/Scene3D.hpp>
+#include <ui/content/SceneView.hpp>
+#include <rendering/RenderBackend.hpp>
+
+struct GuideScene {
+  std::shared_ptr<scene::Scene3D> world = std::make_shared<scene::Scene3D>();
+  scene::ObjectId triangle;
+
+  GuideScene() {
+    auto mesh = scene::makeMesh({
+        {{{-1, -1, 0}}, {{1, -1, 0}}, {{0, 1, 0}}}, {0, 1, 2}});
+    triangle = world->create({.mesh = mesh,
+                              .material = {.baseColor = {80, 160, 255, 255}}});
+  }
+
+  std::unique_ptr<ui::SceneView> makeView() const {
+    return std::make_unique<ui::SceneView>(
+        ui::SceneViewProps{.scene = world, .preferredSize = {320, 240}},
+        layout::BoxProps{.width = layout::SizeRule::fill(),
+                         .height = layout::SizeRule::fill()});
+  }
+
+  void rotate(float radians) {
+    auto props = world->props(triangle);
+    props.transform.orientation = math::axisAngle({0, 1, 0}, radians);
+    world->setProps(triangle, props);
+  }
+};
+
+void renderGuideScene(GuideUI &guide, rendering::RenderFrame &frame) {
+  auto &painter = frame.paint2D();
+  guide.root.prepare({.pixelScale = painter.pixelScale(),
+                       .images = painter.imagePreparer(),
+                       .scenes = frame.scene3D(),
+                       .text = painter.textPreparer()});
+  guide.root.render(painter);
+}
+```
+
+For an affine 2D world, use Scene2D and Scene2DView instead. The camera maps world
+coordinates into the content box; item transforms remain world-authored. Neither
+scene class adds game rules, polling or another main loop.
+
+```cpp
+#include <scene/Scene2D.hpp>
+#include <ui/content/Scene2DView.hpp>
+
+std::unique_ptr<ui::Scene2DView> makeGuide2DScene(
+    std::shared_ptr<scene::Scene2D> world) {
+  world->create({.bounds = math::rect(20, 20, 80, 40),
+                  .paint = {.tint = {255, 160, 60, 255}}});
+  return std::make_unique<ui::Scene2DView>(
+      ui::Scene2DViewProps{.scene = std::move(world)});
+}
+```
+
+## Add authored vector geometry
+
+Use Path when you own the geometry and want solid fills or strokes without an
+intermediate SVG bitmap. The path's coordinates belong to its viewBox; layout
+assigns the box, and fit/alignment map that viewBox into it. A larger layout box
+does not change the authored points. Curves flatten to bounded segments at the
+current density, and either painter computes coverage from those segments.
+
+```cpp
+#include <ui/content/Path.hpp>
+
+std::unique_ptr<ui::Path> makeGuideCurve() {
+  math::Path2D outline;
+  outline.moveTo({4, 28}).cubicTo({4, 0}, {60, 0}, {60, 28})
+      .lineTo({60, 44}).lineTo({4, 44}).close();
+  return std::make_unique<ui::Path>(ui::PathProps{
+      .path = std::move(outline), .viewBox = math::rect(0, 0, 64, 48),
+      .paint = {.fill = math::ColorRGBA8{30, 100, 200, 255},
+                .stroke = math::ColorRGBA8{255, 255, 255, 255},
+                .strokeWidth = 2}});
+}
+```
+
+NonZero and EvenOdd select the fill rule; fill implicitly closes open contours.
+Strokes follow actual contour closure and use round joins/caps. Empty fill or
+stroke means no such operation. ViewBox clipping is deliberate, so leave room
+for strokes extending beyond their centerline. This is not an SVG/CSS importer:
+use Vector for documents requiring styles, filters, gradients or SVG parsing.
+
+## Further reading
 
 Use [the node index](REFERENCE.md#nodes) for available atoms and their exact properties,
 [runtime contracts](REFERENCE.md#runtime) for lifecycle and failure behavior, and

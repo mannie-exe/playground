@@ -1,5 +1,6 @@
 #include <climits>
 #include <limits>
+
 #include <platform/Presentation.hpp>
 #include <platform/sdl/UISession.hpp>
 #include <support/Test.hpp>
@@ -70,13 +71,13 @@ int main() {
                   "minimized mapping remains usable");
     props.scale = std::numeric_limits<float>::quiet_NaN();
     test::rejects([&] { props.validate(); }, "invalid scale rejected");
-    test::require(platform::RenderSettings{0.5f}.targetSize({101, 99}) ==
+    test::require(rendering::RenderSettings{0.5f}.targetSize({101, 99}) ==
                       math::Vec2i{51, 50},
                   "raster size rounds up");
-    test::rejects([] { platform::RenderSettings{0}.validate(); },
+    test::rejects([] { rendering::RenderSettings{0}.validate(); },
                   "zero render scale rejected");
     test::rejects<std::overflow_error>(
-        [] { platform::RenderSettings{4}.targetSize({INT_MAX, 1}); },
+        [] { rendering::RenderSettings{4}.targetSize({INT_MAX, 1}); },
         "extent overflow rejected");
 
     ui::UIRoot root;

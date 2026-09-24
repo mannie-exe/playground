@@ -1,10 +1,10 @@
 #pragma once
 
 #include <SDL3/SDL_events.h>
-#include <rendering/RenderBackend.hpp>
 
 #include <interfaces/IActivatable.hpp>
 #include <platform/sdl/EventResult.hpp>
+#include <rendering/RenderBackend.hpp>
 
 class AppContext;
 

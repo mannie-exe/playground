@@ -43,8 +43,8 @@ class Vector final : public Node {
   SurfaceHandle _intrinsic;
   layout::LayoutDirection _direction{layout::LayoutDirection::LeftToRight};
 
-  PaintImageHandle _source;
-  PaintImageHandle _raster;
+  rendering::PaintImageHandle _source;
+  rendering::PaintImageHandle _raster;
   math::Vec2i _rasterSize{};
   ResolvedContent _resolved{};
   bool _prepared{};

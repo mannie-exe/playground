@@ -1,8 +1,14 @@
 #pragma once
 
-#include <SDL3/SDL_gpu.h>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
+
+#include <SDL3/SDL_gpu.h>
+
+#include <platform/sdl/GPUResource.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <rendering/ImageData.hpp>
 #include <rendering/ImagePreparer.hpp>
@@ -10,62 +16,72 @@
 
 namespace playground::sdl {
 
-struct GPUDeviceProps {
-  SDL_GPUShaderFormat shaderFormats;
-  bool debug{true};
-  const char *driver{nullptr};
-};
-
-// Opt-in only: no device is created by AppHost yet. SDL initialization outlives
-// the device; resources retain it. Use on the renderer thread.
-class GPUDevice {
-  SDLResource<SDL_GPUDevice, SDL_DestroyGPUDevice> _device;
-
-public:
-  explicit GPUDevice(GPUDeviceProps props);
-  SDL_GPUDevice *get() const noexcept { return _device.get(); }
-  GPUDevice(const GPUDevice &) = delete;
-  GPUDevice &operator=(const GPUDevice &) = delete;
-};
-using GPUDeviceHandle = std::shared_ptr<GPUDevice>;
-
-class GPUImage final : public ui::PaintImage {
+class GPUImage final : public rendering::PaintImage {
   GPUDeviceHandle _device;
-  SDL_GPUTexture *_texture;
+  GPUTextureResource _texture;
   math::Vec2i _size;
   rendering::AlphaMode _alpha;
+  rendering::ColorEncoding _encoding;
+  std::size_t _bytesPerPixel{4};
+  rendering::ResourceLease _use;
 
 public:
   GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels);
-  ~GPUImage() override;
+  // Backend target under construction: initialize before publishing as a
+  // PaintImageHandle, then never modify while such a handle can be observed.
+  GPUImage(GPUDeviceHandle device, math::Vec2i size);
+  ~GPUImage() override = default;
   GPUImage(const GPUImage &) = delete;
   GPUImage &operator=(const GPUImage &) = delete;
 
   math::Size2 pixelSize() const noexcept override {
     return {static_cast<float>(_size.x), static_cast<float>(_size.y)};
   }
-  SDL_GPUTexture *get() const noexcept { return _texture; }
+  SDL_GPUTexture *get() const noexcept { return _texture.get(); }
+  std::size_t bytesPerPixel() const noexcept override { return _bytesPerPixel; }
   const GPUDeviceHandle &device() const noexcept { return _device; }
-  rendering::AlphaMode alphaMode() const noexcept { return _alpha; }
+  const rendering::ResourceLease &use() const noexcept { return _use; }
+  bool isLeased() const noexcept { return _use.use_count() > 1; }
+  rendering::SubmissionId lastSubmission() const noexcept {
+    return _use->lastSubmission;
+  }
+  rendering::AlphaMode alphaMode() const noexcept override { return _alpha; }
+  rendering::ColorEncoding colorEncoding() const noexcept override {
+    return _encoding;
+  }
 };
 
 rendering::RGBA8Image packSurfaceRGBA8(const SurfacePaintImage &source);
 
-class GPUImagePreparer final : public rendering::ImagePreparer {
+class GPUImagePreparer : public rendering::ImagePreparer {
+  struct Representation {
+    rendering::PaintImageHandle image;
+    std::size_t bytes{};
+    std::uint64_t lastUse{};
+  };
   struct Entry {
-    std::weak_ptr<const ui::PaintImage> straight, premultiplied;
+    std::array<Representation, 4> representations;
   };
 
   GPUDeviceHandle _device;
+  std::size_t _residentBytes{};
+  std::uint64_t _clock{};
 
   std::map<std::weak_ptr<SDL_Surface>, Entry,
            std::owner_less<std::weak_ptr<SDL_Surface>>>
       _cache;
 
+  void trim();
+
 public:
   explicit GPUImagePreparer(GPUDeviceHandle device);
-  ui::PaintImageHandle prepare(ui::PaintImageHandle source) override;
+  rendering::ResourceDomainId resourceDomain() const noexcept override {
+    return _device->resourceDomain();
+  }
+  rendering::PaintImageHandle
+  prepare(rendering::PaintImageHandle source) override;
   void prune();
+  std::size_t residentBytes() const noexcept { return _residentBytes; }
 };
 
 } // namespace playground::sdl

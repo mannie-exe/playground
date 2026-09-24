@@ -1,3 +1,9 @@
+#include <format>
+#include <stdexcept>
+#include <utility>
+
+#include <support/SDLError.hpp>
+
 #include <support/Font.hpp>
 
 FontInfo Font::getInfo(const FontResource &font) {
@@ -9,23 +15,25 @@ FontInfo Font::getInfo(const FontResource &font) {
 }
 
 void Font::setSize(float size) {
-  if (!TTF_SetFontSize(_font.get(), size)) {
-    throwSDLError(std::format(
-        "Font@{} Failed to update TTF_Font@{} size from {} to {}", (void *)this,
-        (void *)_font.get(), _props.style.size, size));
-  }
+  if (size != _props.style.size)
+    *this = cloneWith({.size = size});
+}
 
-  _props.style.size = size;
+void Font::setStyleFlags(TTF_FontStyleFlags format) {
+  if (format != _props.style.flags)
+    *this = cloneWith({.flags = format});
 }
 
 void Font::setOutline(int outline) {
-  if (!TTF_SetFontOutline(_font.get(), outline)) {
-    throwSDLError(std::format(
-        "Font@{} Failed to update TTF_Font@{} outline from {} to {}",
-        (void *)this, (void *)_font.get(), _props.style.outline, outline));
-  }
+  if (outline != _props.style.outline)
+    *this = cloneWith({.outline = outline});
+}
 
-  _props.style.outline = outline;
+void Font::setLineSpace(std::optional<int> lineSpace) {
+  if (lineSpace && *lineSpace <= 0)
+    throw std::invalid_argument("Font line spacing must be positive pixels");
+  TTF_SetFontLineSkip(_font.get(), lineSpace.value_or(_naturalLineSkip));
+  _props.layout.lineSpace = lineSpace;
 }
 
 void Font::setDirection(TTF_Direction direction) {
@@ -102,17 +110,19 @@ Font Font::cloneWith(FontPatch patch) const {
 }
 
 void Font::configureFont(const FontProps &props) {
-  setSize(props.style.size);
-  setStyleFlags(props.style.flags);
-  setOutline(props.style.outline);
+  TTF_SetFontStyle(_font.get(), props.style.flags);
+  if (!TTF_SetFontOutline(_font.get(), props.style.outline))
+    throwSDLError("Failed to configure font outline");
 
   setAlignment(props.layout.alignment);
   setDirection(props.layout.direction);
-  setLineSpace(props.layout.lineSpace);
 
   setHinting(props.render.hinting);
   setSDF(props.render.sdf);
   setKerning(props.render.kern);
+
+  _naturalLineSkip = TTF_GetFontLineSkip(_font.get());
+  setLineSpace(props.layout.lineSpace);
 }
 
 Font::Font(FontProps props)

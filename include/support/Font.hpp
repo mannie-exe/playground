@@ -1,6 +1,5 @@
 #pragma once
 
-#include <format>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,7 +8,6 @@
 
 #include <SDL3_ttf/SDL_ttf.h>
 
-#include <support/SDLError.hpp>
 #include <support/SDLResource.hpp>
 
 using FontResource = SDLResource<TTF_Font, TTF_CloseFont>;
@@ -30,7 +28,8 @@ struct FontStyleProps {
 struct FontLayoutProps {
   TTF_HorizontalAlignment alignment{TTF_HORIZONTAL_ALIGN_LEFT};
   TTF_Direction direction{TTF_DIRECTION_LTR};
-  int lineSpace{1};
+  // Baseline advance in pixels; absent uses the font's natural line skip.
+  std::optional<int> lineSpace;
 };
 
 struct FontRenderProps {
@@ -56,7 +55,7 @@ struct FontPatch {
 
   std::optional<TTF_HorizontalAlignment> alignment;
   std::optional<TTF_Direction> direction;
-  std::optional<int> lineSpace;
+  std::optional<std::optional<int>> lineSpace;
 
   std::optional<TTF_HintingFlags> hinting;
   std::optional<bool> sdf;
@@ -66,6 +65,7 @@ struct FontPatch {
 class Font {
   FontResource _font;
   FontProps _props;
+  int _naturalLineSkip{};
 
   static FontInfo getInfo(const FontResource &font);
 
@@ -85,7 +85,8 @@ public:
     return _props.layout.alignment;
   }
   TTF_Direction getDirection() const { return _props.layout.direction; }
-  int getLineSpace() const { return _props.layout.lineSpace; }
+  std::optional<int> getLineSpace() const { return _props.layout.lineSpace; }
+  int getLineSkip() const { return TTF_GetFontLineSkip(_font.get()); }
 
   TTF_HintingFlags getHinting() const { return _props.render.hinting; }
   bool isSDF() const { return _props.render.sdf; }
@@ -100,10 +101,7 @@ public:
 
   void setSize(float size);
 
-  void setStyleFlags(TTF_FontStyleFlags format) {
-    TTF_SetFontStyle(_font.get(), format);
-    _props.style.flags = format;
-  }
+  void setStyleFlags(TTF_FontStyleFlags format);
 
   void setOutline(int outline);
 
@@ -114,10 +112,7 @@ public:
 
   void setDirection(TTF_Direction direction);
 
-  void setLineSpace(int lineSpace) {
-    TTF_SetFontLineSkip(_font.get(), lineSpace);
-    _props.layout.lineSpace = lineSpace;
-  }
+  void setLineSpace(std::optional<int> lineSpace);
 
   void setHinting(TTF_HintingFlags hinting) {
     TTF_SetFontHinting(_font.get(), hinting);

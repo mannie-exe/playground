@@ -13,10 +13,17 @@
 #include <vector>
 
 #include <layout/LayoutPrimitives.hpp>
-#include <ui/PaintContext.hpp>
+#include <rendering/PaintContext.hpp>
 #include <ui/UITypes.hpp>
 
+namespace playground::scene {
+class SceneRenderer;
+}
+
 namespace playground::ui {
+using rendering::LayerScope;
+using rendering::PaintContext;
+using rendering::PaintScope;
 
 struct MeasureContext {
   layout::LayoutDirection direction{layout::LayoutDirection::LeftToRight};
@@ -32,6 +39,8 @@ struct PrepareContext {
   math::Vec2f pixelScale{1, 1};
   LayoutStats *stats{};
   rendering::ImagePreparer *images{};
+  scene::SceneRenderer *scenes{};
+  rendering::TextImagePreparer *text{};
 };
 
 class UIRoot;

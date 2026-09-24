@@ -8,6 +8,7 @@
 namespace math = playground::math;
 namespace layout = playground::layout;
 namespace ui = playground::ui;
+namespace rendering = playground::rendering;
 
 static void check(bool value, const char *message) {
   if (!value)
@@ -46,7 +47,7 @@ protected:
     if (failArrange)
       throw std::runtime_error("arrangement failure");
   }
-  void paint(ui::PaintContext &) const override {
+  void paint(rendering::PaintContext &) const override {
     if (failPaint)
       throw std::runtime_error("paint failure");
   }
@@ -84,7 +85,7 @@ public:
   std::unique_ptr<ui::Node> take() { return takeChildAt(0); }
 };
 
-class RecordingPaint : public ui::PaintContext {
+class RecordingPaint : public rendering::PaintContext {
 public:
   int saves{}, fills{};
   void save() override { ++saves; }

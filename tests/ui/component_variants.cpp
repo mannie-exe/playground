@@ -1,13 +1,14 @@
 #include <memory>
+#include <vector>
+
 #include <support/Test.hpp>
 #include <ui/Builders.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Boundaries.hpp>
-#include <vector>
 
 using namespace playground;
 
-class Paint final : public ui::PaintContext {
+class Paint final : public rendering::PaintContext {
 public:
   int depth{};
   void save() override { ++depth; }
@@ -51,7 +52,7 @@ int main() {
               [](ui::MeasureContext &, const layout::SizeConstraints &) {
                 return layout::MeasureResult{{20, 10}};
               },
-          .paint = [&, n](ui::PaintContext &) { order.push_back(n); }});
+          .paint = [&, n](rendering::PaintContext &) { order.push_back(n); }});
       view->setHitTestPolicy(ui::HitTestPolicy::Self);
       overlay->append(std::move(view));
     }

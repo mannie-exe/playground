@@ -10,6 +10,7 @@
 #include <math/Color.hpp>
 #include <math/GeometryFormatters.hpp>
 #include <platform/Settings.hpp>
+#include <rendering/RendererTypes.hpp>
 
 enum class AppId {
   Menu,
@@ -30,6 +31,7 @@ enum class AppCommandType {
   SetPresentation,
   ReloadSettings,
   SetUserSettings,
+  RecoverRenderer,
 };
 
 struct AppWindowProps {
@@ -48,6 +50,7 @@ struct AppInfo {
   AppWindowProps window;
   playground::platform::AppViewPolicy view;
   playground::platform::PresentationProps presentation;
+  playground::rendering::RendererRequirements rendererRequirements;
 };
 
 struct PendingAppCommand {
@@ -99,6 +102,8 @@ constexpr std::string_view toString(AppCommandType type) {
     return "ReloadSettings";
   case AppCommandType::SetUserSettings:
     return "SetUserSettings";
+  case AppCommandType::RecoverRenderer:
+    return "RecoverRenderer";
   default:
     return "Unknown";
   }

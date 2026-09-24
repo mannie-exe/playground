@@ -37,7 +37,7 @@ private `src` headers. Keep default arguments on declarations, not definitions.
 
 Register implementation files in `cmake/Modules.cmake` (or the application target
 for app-specific code). Link the module providing an API, not just its external
-dependencies: `playground_math`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
+dependencies: `playground_math`, `playground_runtime`, `playground_rendering`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
 `playground_ui_resources`, or `playground_sdl`. Use PUBLIC requirements for public
 headers, PRIVATE for implementation-only dependencies. Template and constexpr
 definitions stay visible where consumers instantiate/evaluate them.
@@ -68,6 +68,14 @@ CONTRACTS defines author/runtime obligations, and TESTING records coverage.
 Renderer contracts live separately in `docs/render/{GPU,2D,3D}.md`; distinguish
 implemented APIs from requirements for a future backend. Keep UI contracts
 backend-agnostic and place native adapter wiring in the rendering documents.
+`docs/render/CONTRACTS.md` defines capability negotiation, coordinate/color rules
+and the required implementation sequence. `SHADERS.md` covers optional offline
+tools. Software-only builds must not fetch a shader compiler. Adding a shader
+requires explicit input dependencies, stage, resource bindings and an install rule;
+report compilation and device execution separately from C++ build success.
+Shared image contracts belong to `rendering/PaintImage.hpp`, not UI. Changes to
+pixels must preserve or explicitly convert color encoding and alpha association.
+Never relabel legacy encoded-space blending as linear-light composition.
 Window policy, settings precedence/schema and filesystem guarantees live in
 `docs/platform/{WINDOWING,SETTINGS}.md`. Settings parsers are private dependencies
 (currently toml++); do not leak parser nodes into app/UI public interfaces. Keep
@@ -93,8 +101,8 @@ introduce it only if fixtures, parameterization or richer reporting justify it.
 
 `PLAYGROUND_BUILD_TESTS` defaults ON; turn it OFF for an application-only build.
 Changing this option requires configure, not install.
-Current automated testing is limited to the UI module and its constituents:
-math, layout, runtime, SDL adapters and resource support. Do not add app/game
+Automated testing covers UI and its constituents, plus rendering and scene
+contracts: math, layout, runtime, SDL adapters and resource support. Do not add app/game
 rule tests or executable smoke tests yet. Demo and Minesweeper remain production
 consumers, not test fixtures; generic resource tests may reuse checked-in assets.
 UI viewport/presentation settings are constituents: test their pure mapping,
@@ -120,7 +128,7 @@ ctest --test-dir build/debug -N
 ctest --test-dir build/debug --output-on-failure
 ```
 
-Build-only aggregate targets also exist: `playground_math_tests`,
+Build-only aggregate targets also exist: `playground_rendering_tests`, `playground_math_tests`,
 `playground_layout_tests` and `playground_ui_tests`.
 Use `cmake --build --preset debug --target playground_docs_check` after changing
 the UI guide or its APIs. This extracts its additive C++ blocks into the build
@@ -146,6 +154,13 @@ for new tests.
 Label by module (`math`, `layout`, `ui`) and useful feature (`input`,
 `cache`, `collections`, etc.). A label may belong to more than one test; it is not
 a dependency declaration. Timeouts catch hangs, not performance regressions.
+Renderer tests use the `rendering` module label and link playground_rendering;
+hardware tests must be explicitly opt-in, not silently run as ordinary UI tests.
+Use `-DPLAYGROUND_GPU_TESTS=ON` with compiled SPIR-V shaders to enable `gpu_device`
+and `gpu_shaders` (Vulkan only). These are renderer-module readback/lifetime
+checks, not program smoke tests. Unsupported drivers return skip code 77; a
+supported device failing an assertion is a failure, not a skip. Report shader
+compilation and each tested driver separately. Software-only builds remain valid.
 Do not assert wall-clock speed in ordinary unit tests.
 
 For a bug fix, first express the failure at the smallest useful boundary. Test
@@ -164,7 +179,7 @@ Geometry/layout values alone do not need those dependencies.
 Compiled 3D camera/matrix tests link playground_math; scene-contract tests link
 playground_scene. Ordinary UI tests must not require a GPU. GPU resource code is
 compiled with playground_sdl; deterministic tests cover CPU upload preparation and
-fake backend realization. Real-device uploads, atlas execution and future drawing
+fake backend realization. Real-device uploads, atlas execution and drawing
 need separately identified hardware verification, not a passing CPU test claim.
 Unicode vertical-orientation data is versioned with its
 license in docs/licenses/UNICODE.txt. Release all
@@ -237,6 +252,16 @@ the current scope; building the application still verifies that its consumers co
 - Prefer explicit typed props/patches and ownership. Do not hide resource ownership
   behind a raw pointer or introduce a second authoritative copy of derived bounds.
 - Keep required includes direct. Keep SDL types/conversions at adapter boundaries.
+- Group includes as standard library, external dependencies, then local/project
+  headers, separated by blank lines. Conditional/platform includes remain within
+  their original preprocessor branches. Check header self-containment rather
+  than relying on an implementation file's first include to hide missing inputs.
+- Keep worker publication bounded and owner-thread application explicit. A shared
+  handle preserves lifetime, not thread safety or GPU completion. Resource-domain
+  compatibility and completion fences solve different problems.
+- For shader changes, test reflected ABI rejection and failed-reload preservation,
+  then run native readback tests. For imports, test malformed/budget-exceeding input
+  and atomic scene publication separately from successful parsing.
 - Match existing formatting/editor conventions; do not add a competing formatter
   configuration as part of an unrelated change.
 - Keep each test focused on one feature or tightly related contract. Existing broad
@@ -244,6 +269,24 @@ the current scope; building the application still verifies that its consumers co
 - Update reference semantics/defaults and compile-checked examples with API changes.
 - Build affected targets, run the relevant tests, and use `git diff --check`.
 - Report what was actually verified, along with platform or deferred limitations.
+
+### Native rendering dependencies
+
+SDL and SDL_ttf are pinned and receive checked-in configure-time patches under
+`cmake/patches`; `cmake/SDLTimestamps.cmake` integrates the Vulkan timestamp
+extension. Never fix only the downloaded `_deps` copy. Dependency upgrades must
+review patch guards, repeat configuration to check idempotence, and run the
+focused `gpu_timing`/`text_pixels` tests plus opt-in native GPU tests. The timestamp
+table is a versioned project extension, not an upstream SDL API. CPU timing and
+GPU execution/completion measurements must remain labeled separately.
+
+Resource tests must distinguish recording, submitted, completed, canceled and
+ambiguous-failure states. Use injected timestamp tables and pure budget/recovery
+tests for deterministic failures; do not reset a real driver to test device loss.
+For native callbacks, declare sampled pooled images through `GPURecordingContext`
+and let the owning frame submit. A failed/unknown completion must not make a
+target or query slot reusable. Only native execution verifies timestamp support;
+ordinary unit tests do not claim hardware coverage.
 
 ### Pre-commit verification
 

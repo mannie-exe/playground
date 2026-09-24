@@ -1,8 +1,8 @@
-#include <platform/sdl/SurfacePainter.hpp>
-
 #include <algorithm>
 #include <cmath>
+
 #include <platform/sdl/SDLGeometry.hpp>
+#include <platform/sdl/SurfacePainter.hpp>
 
 namespace playground::sdl {
 
@@ -138,7 +138,7 @@ SurfacePainter::Pixel SurfacePainter::solid(math::ColorRGBA8 color) {
 
 void SurfacePainter::rasterImage(const SurfacePaintImage &image,
                                  math::Rect source, math::Rect destination,
-                                 ui::ImagePaint appearance) {
+                                 rendering::ImagePaint appearance) {
   auto &surface = *image.surface();
   const int left = std::max(0, int(std::floor(source.left())));
   const int top = std::max(0, int(std::floor(source.top())));
@@ -157,7 +157,7 @@ void SurfacePainter::rasterImage(const SurfacePaintImage &image,
                   std::clamp(py, top, bottom), image.isPremultiplied());
     };
     Pixel value;
-    if (appearance.sampling == ui::Sampling::Nearest)
+    if (appearance.sampling == rendering::Sampling::Nearest)
       value = fetch(int(std::floor(x + 0.5)), int(std::floor(y + 0.5)));
     else {
       const int ix = int(std::floor(x)), iy = int(std::floor(y));
@@ -292,12 +292,42 @@ void SurfacePainter::fill(math::Rect rectangle, math::ColorRGBA8 color) {
                                 &destination, SDL_SCALEMODE_NEAREST));
 }
 
-void SurfacePainter::drawImage(const ui::PaintImageHandle &image,
+void SurfacePainter::drawPath(const math::Path2D &path,
+                              const rendering::PathPaint &paint) {
+  paint.validate();
+  const auto scale = pixelScale();
+  const float tolerance = 0.25f / std::max(1.f, std::hypot(scale.x, scale.y));
+  const auto draw = [&](math::ColorRGBA8 color, bool stroke) {
+    const auto flat = math::flattenPath(path, {.tolerance = tolerance,
+                                               .maximumSegments = 255,
+                                               .closeOpenContours = !stroke});
+    if (flat.segments.empty() || !color.a)
+      return;
+    const float radius = stroke ? paint.strokeWidth / 2 : 0;
+    const auto bounds =
+        math::rect(flat.bounds.x() - radius, flat.bounds.y() - radius,
+                   flat.bounds.w() + 2 * radius, flat.bounds.h() + 2 * radius);
+    raster(bounds, [&](math::Point2 p) {
+      const bool inside = stroke ? flat.touchesStroke(p, radius)
+                                 : flat.contains(p, paint.fillRule);
+      return inside ? solid(color) : Pixel{};
+    });
+  };
+  if (paint.fill)
+    draw(*paint.fill, false);
+  if (paint.stroke && paint.strokeWidth > 0)
+    draw(*paint.stroke, true);
+}
+
+void SurfacePainter::drawImage(const rendering::PaintImageHandle &image,
                                math::Rect sourcePixels, math::Rect destination,
-                               ui::ImagePaint appearance) {
+                               rendering::ImagePaint appearance) {
   const auto *surface = dynamic_cast<const SurfacePaintImage *>(image.get());
   if (!surface)
     throw std::invalid_argument("Paint image belongs to another backend");
+  if (surface->colorEncoding() != rendering::ColorEncoding::SRGB)
+    throw std::invalid_argument(
+        "SurfacePainter requires sRGB-encoded source pixels");
   validate(sourcePixels);
   const auto size = image->pixelSize();
   if (sourcePixels.left() < 0 || sourcePixels.top() < 0 ||
@@ -306,8 +336,8 @@ void SurfacePainter::drawImage(const ui::PaintImageHandle &image,
   validate(destination);
   if (surface->surface().get() == _target)
     throw std::invalid_argument("Paint source cannot be the active target");
-  if (appearance.sampling != ui::Sampling::Nearest &&
-      appearance.sampling != ui::Sampling::Linear)
+  if (appearance.sampling != rendering::Sampling::Nearest &&
+      appearance.sampling != rendering::Sampling::Linear)
     throw std::invalid_argument("Unknown image sampling mode");
   if (!sourcePixels.hasArea() || !destination.hasArea())
     return;
@@ -320,8 +350,8 @@ void SurfacePainter::drawImage(const ui::PaintImageHandle &image,
   if (!src.w || !src.h || !dst.w || !dst.h || !appearance.tint.a ||
       !applyClip())
     return;
-  if (appearance.sampling != ui::Sampling::Nearest &&
-      appearance.sampling != ui::Sampling::Linear)
+  if (appearance.sampling != rendering::Sampling::Nearest &&
+      appearance.sampling != rendering::Sampling::Linear)
     throw std::invalid_argument("Unknown image sampling mode");
   auto *raw = surface->surface().get();
   if (raw == _target)
@@ -341,10 +371,11 @@ void SurfacePainter::drawImage(const ui::PaintImageHandle &image,
   require(SDL_SetSurfaceBlendMode(raw, surface->isPremultiplied()
                                            ? SDL_BLENDMODE_BLEND_PREMULTIPLIED
                                            : SDL_BLENDMODE_BLEND));
-  require(SDL_BlitSurfaceScaled(raw, &src, _target, &dst,
-                                appearance.sampling == ui::Sampling::Nearest
-                                    ? SDL_SCALEMODE_NEAREST
-                                    : SDL_SCALEMODE_LINEAR));
+  require(
+      SDL_BlitSurfaceScaled(raw, &src, _target, &dst,
+                            appearance.sampling == rendering::Sampling::Nearest
+                                ? SDL_SCALEMODE_NEAREST
+                                : SDL_SCALEMODE_LINEAR));
 }
 
 void SurfacePainter::beginLayer(math::Rect localBounds, float opacity) {
@@ -400,7 +431,7 @@ void SurfacePainter::endLayer() {
                        float(layer.surface->w), float(layer.surface->h)),
             {.tint = {255, 255, 255,
                       static_cast<Uint8>(std::lround(layer.opacity * 255))},
-             .sampling = ui::Sampling::Nearest});
+             .sampling = rendering::Sampling::Nearest});
       } catch (...) {
         _state.transform = oldTransform;
         throw;
@@ -437,9 +468,9 @@ void SurfacePainter::cancelLayer() noexcept {
   }
 }
 
-std::shared_ptr<const ui::PaintImage>
-SurfacePainter::capture(math::Rect bounds, math::Vec2f scale,
-                        const std::function<void(ui::PaintContext &)> &draw) {
+std::shared_ptr<const rendering::PaintImage> SurfacePainter::capture(
+    math::Rect bounds, math::Vec2f scale,
+    const std::function<void(rendering::PaintContext &)> &draw) {
   validate(bounds);
   if (!math::isFinite(scale) || !math::isPositive(scale))
     throw std::invalid_argument("Capture scale must be finite and positive");

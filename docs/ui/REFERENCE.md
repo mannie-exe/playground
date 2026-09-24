@@ -55,6 +55,19 @@ same image boundary, but replacing a painter does not replace shaping, text layo
 or asset decoding. This is backend-neutral composition, not a claim that every
 resource implementation has no platform dependencies.
 
+Scene viewport nodes bridge application models into this same layout tree:
+
+| Node | Properties and preparation contract |
+|---|---|
+| [`SceneView`](../../include/ui/content/SceneView.hpp) | Shared read access to a `scene::Scene3D`, camera, preferred size, clear color and resolution scale. Requires the frame's separate scene renderer; caches output by model revision, camera, logical aspect, pixel size and renderer domain. |
+| [`Scene2DView`](../../include/ui/content/Scene2DView.hpp) | Shared read access to a `scene::Scene2D`, affine camera and preferred size. Prepares ordered image/solid items and clips them to its content box through the 2D painter. |
+
+Both expose complete props and Keep/Set/Reset patches, honor box insets, and leave
+world interaction/model updates to the application. Their scenes do not become UI
+children. Pass `RenderFrame` to `UISession::render` when using SceneView so its
+preparation receives the scene renderer. See [scene contracts](../render/3D.md)
+and the [additive guide](GUIDE.md#add-a-scene-viewport-without-changing-ui-layout).
+
 | Term | Precise meaning |
 |---|---|
 | Props | Authored configuration, not mutable interaction state or calculated geometry |
@@ -315,7 +328,7 @@ callbacks and child ownership are configured separately.
 | Runtime/extensions | [UIRoot, Component, CustomView](#root-components) |
 | Linear/box | [Box, Stack, HStack, VStack, Spacer](#linear) |
 | Other arrangements | [ZStack, Grid, Flow, AnchorLayout](#arrangements), [ConstraintLayout](#constraint-layout) |
-| Content | [Rectangle, Text, Image, Vector](#content) |
+| Content | [Rectangle, Text, Image, Vector, Path](#content) |
 | Interaction | [Button](#button) |
 | Visual boundaries | [Transform, Clip, Layer](#boundaries) |
 | Viewports/collections | [ScrollView, AdaptiveStack, Repeat, VirtualList, VirtualGrid](#collections), [VirtualTrackGrid](#track-grid) |
@@ -388,7 +401,18 @@ Children do not drive intrinsic size; indefinite axes use minima with diagnostic
 Sibling references are not supported.
 
 <a id="content"></a>
-### Rectangle, Text, Image, Vector
+### Rectangle, Text, Image, Vector, Path
+
+[Path.hpp](../../include/ui/content/Path.hpp) is authored vector geometry, distinct
+from the SVG-document Vector node. PathProps contains Path2D, a required positive
+viewBox, PathPaint, ContentFit and alignment; PathPatch follows normal Keep/Set/Reset
+rules (viewBox Reset is invalid). Measure reports viewBox size, and paint maps it
+into the assigned content box with the selected fit/alignment and clipping.
+PathPaint has optional fill/stroke colors, strokeWidth and NonZero/EvenOdd fillRule.
+Curves flatten at output density with bounded work; fills close contours implicitly,
+strokes close only explicitly and use round caps/joins. GPU draws coverage directly
+from segments, not from a CPU raster. No SVG CSS/gradient/filter interpretation is
+implied. See [path rendering](../render/2D.md#vector-paths).
 
 [Rectangle.hpp](../../include/ui/content/Rectangle.hpp): RectangleProps/Patch
 fill required, border=nullopt; borderWidths come from BoxProps. Zero intrinsic
@@ -437,7 +461,9 @@ density; pure movement reuses the raster. Tint is whole-output modulation;
 
 Shared [ContentStyle](../../include/ui/content/ContentTypes.hpp):
 fit=Contain, alignment=Center/Center, paint.tint=opaque white,
-paint.sampling=Linear. ImagePaint comes from [PaintImage.hpp](../../include/ui/PaintImage.hpp).
+paint.sampling=Linear. ImagePaint and Sampling are in playground::rendering,
+from [PaintImage.hpp](../../include/rendering/PaintImage.hpp); their formatters
+are in rendering/RenderFormatters.hpp, also included by UIFormatters.hpp.
 None preserves natural size; Stretch independently scales axes; Contain preserves
 aspect inside the box; Cover fills and crops; Shrink only downsizes.
 Content alignment supports Start/Center/End, not Stretch (use fit=Stretch).
@@ -776,7 +802,13 @@ Only the delivered callback may access the node; stale root/handle/revision drop
 the result. Include any additional request-specific revision in your own job data.
 There is no built-in worker pool or automatic async resource loading.
 
-Completion delivery attempts only the queue length present at update entry.
+UIRoot's optional CompletionQueueProps defaults to 4096 pending callbacks and
+256 attempts per update. post returns false when the mailbox is closed or full;
+the producer must choose whether to drop, retry or report the undelivered result.
+The UI wrapper delegates storage to runtime::CompletionQueue and adds node/revision
+validation; the runtime queue itself can also deliver non-UI results.
+Completion delivery attempts at most the configured budget and the queue length
+present at update entry. Newly posted callbacks wait for a later update.
 Each callback is removed immediately before invocation, outside the mailbox lock.
 If it throws, the exception propagates and unattempted callbacks remain queued,
 ahead of callbacks posted in the meantime. The failed callback is not retried;
@@ -903,8 +935,8 @@ an implemented renderer, node or host policy.
 | More controls | Checkbox, slider, tree, menus/dialogs, text editing/selection and spreadsheet interaction; keyboard/focus and accessibility contracts |
 | Idle/damage rendering | Exposure/resize/input/asset/animation wakeups, old/new damage bounds, overlap-correct partial repaint and presentation |
 | Native accessibility | OS bridges for semantics, values, actions, focus and lifecycle |
-| GPU renderer | GPUImage uploads and GPUText atlas ownership exist; shaders, pipelines, GPU painting/compositing, presentation and resource scheduling remain. |
-| 3D/SceneView | Geometry/camera math and a separate SceneRenderer submission interface exist; renderer, viewport node, clipping, depth/transparency, picking and resource budgets remain. |
+| GPU extensions | GPU 2D/3D, atlas text and presentation exist. Device-loss recovery, general render graphs, GPU timing, dynamic residency budgets and batching optimizations remain. |
+| 3D extensions | Scene/SceneView, software/GPU unlit triangles, clipping, depth, alpha modes and picking exist. PBR, lighting, shadows, instancing, animation and spatial acceleration remain. |
 | 2D panels in 3D | Independent 2D layout, per-viewport camera and ray-to-panel input conversion |
 
 Whole-description reconciliation is outside the design scope. Stable-key collection

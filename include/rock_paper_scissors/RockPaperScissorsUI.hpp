@@ -1,7 +1,6 @@
 #pragma once
 
 #include <math/Geometry2D.hpp>
-
 #include <rock_paper_scissors/Config.hpp>
 
 enum class GameState {

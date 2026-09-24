@@ -1,5 +1,6 @@
 #include <memory>
 #include <string>
+
 #include <support/AssetRegistry.hpp>
 #include <support/Test.hpp>
 

@@ -170,6 +170,10 @@ callback) enqueues delivery to the UI thread. Receipt checks attachment and sour
 revision; stale results are dropped. Add a request-specific generation when node
 revision alone does not express the lifetime of your job. No automatic async asset
 loader, cancellation of external computation, or worker executor is implied.
+The mailbox is bounded: post returns false on a full or closed queue. Its producer
+owns backpressure/drop policy. UIRoot accepts CompletionQueueProps; default limits
+are 4096 pending callbacks and 256 attempts per update. Delivery never holds the
+mailbox lock while invoking user code or destroying discarded callback captures.
 
 ## 8. Failure and recovery boundaries
 

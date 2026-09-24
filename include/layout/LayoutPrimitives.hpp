@@ -1,8 +1,5 @@
 #pragma once
 
-#include "math/Geometry2D.hpp"
-#include "ui/Patch.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -11,6 +8,9 @@
 #include <stdexcept>
 #include <variant>
 #include <vector>
+
+#include "math/Geometry2D.hpp"
+#include "ui/Patch.hpp"
 
 namespace playground::layout {
 

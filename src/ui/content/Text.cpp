@@ -1,3 +1,4 @@
+#include <platform/sdl/FontTextSource.hpp>
 #include <platform/sdl/SDLGeometry.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <ui/content/Text.hpp>
@@ -50,8 +51,10 @@ Text::Measurement Text::atSize(float size,
   fontProps.style.size = size * scale;
   fontProps.style.outline =
       sdl::checkedPixel(static_cast<double>(fontProps.style.outline) * scale);
-  fontProps.layout.lineSpace = sdl::checkedPixel(
-      static_cast<double>(fontProps.layout.lineSpace) * scale);
+  if (fontProps.layout.lineSpace)
+    fontProps.layout.lineSpace = std::max(
+        1, sdl::checkedPixel(static_cast<double>(*fontProps.layout.lineSpace) *
+                             scale));
   fontProps.layout.alignment =
       _props.paragraphAlignment == layout::Align::Center
           ? TTF_HORIZONTAL_ALIGN_CENTER
@@ -285,6 +288,31 @@ void Text::prepareContent(PrepareContext &context) {
              std::to_string(run.bounds.x()) + ":" +
              std::to_string(run.bounds.y());
   key += ":" + std::to_string(m.value.size()) + ":" + m.value;
+  auto *textPreparer = context.text;
+  if (textPreparer && textPreparer->isEnabled() &&
+      _props.method == TextMethod::Blended && !m.columns && !m.font->isSDF()) {
+    const auto imageDomain = context.images
+                                 ? context.images->resourceDomain()
+                                 : rendering::ResourceDomainId::cpu();
+    if (!_raster || !_atlasRaster || key != _rasterKey ||
+        _rasterDomain != textPreparer->resourceDomain() ||
+        _rasterImageDomain != imageDomain) {
+      auto raster = rendering::prepareTextImage(
+          sdl::FontTextSource{m.font, m.value, m.wrap, _props.foreground},
+          *textPreparer);
+      _raster = rendering::prepareImage(std::move(raster), context.images);
+      _rasterKey = key;
+      _rasterDomain = textPreparer->resourceDomain();
+      _rasterImageDomain = imageDomain;
+      _atlasRaster = true;
+      _source.reset();
+    }
+    _destination = layout::alignBounds(bounds, _raster->pixelSize() / scale,
+                                       _props.contentAlignment, {}, _direction);
+    _prepared = true;
+    return;
+  }
+  _atlasRaster = false;
   if (!_source || key != _rasterKey) {
     auto raster = sdl::makeSurfaceImage(
         _assets.getText(key, [&] { return rasterize(m); }));
