@@ -7,11 +7,13 @@ namespace {
 class MillionItems final : public playground::ui::CollectionSource {
 public:
   std::size_t size() const override { return 1'000'000; }
+
   playground::ui::ItemKey keyAt(std::size_t i) const override {
     return std::to_string(i);
   }
 };
 } // namespace
+
 int main() {
   return playground::test::run([] {
     using namespace playground;

@@ -4,6 +4,9 @@
 #include <functional>
 #include <memory>
 #include <thread>
+#include <utility>
+
+#include <runtime/ActivationLifetime.hpp>
 
 namespace playground::runtime {
 namespace detail {
@@ -24,6 +27,21 @@ class CompletionSink {
 
 public:
   bool post(std::move_only_function<void()> callback) const;
+  bool post(ActivationToken owner,
+            std::move_only_function<void()> callback) const;
+};
+
+class ActivationSink {
+  CompletionSink _sink;
+  ActivationToken _owner;
+
+public:
+  ActivationSink(CompletionSink sink, ActivationToken owner)
+      : _sink{std::move(sink)}, _owner{owner} {}
+
+  bool post(std::move_only_function<void()> callback) const {
+    return _sink.post(_owner, std::move(callback));
+  }
 };
 
 // Many posting threads, one draining owner. Not a worker executor or GPU queue.
@@ -39,8 +57,10 @@ public:
   CompletionQueue &operator=(const CompletionQueue &) = delete;
 
   CompletionSink sink() const { return CompletionSink{_state}; }
+
   CompletionQueueProps props() const;
   std::size_t pending() const;
+  void setWakeCallback(std::function<void()> callback);
   std::size_t drain();
   void close();
 };

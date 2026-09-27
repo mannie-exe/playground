@@ -10,6 +10,7 @@ void finite(Point2 p) {
   if (!isFinite(p))
     throw std::invalid_argument("Path coordinates must be finite");
 }
+
 double distanceSquared(Point2 p, Point2 a, Point2 b) {
   const double dx = double(b.x) - a.x, dy = double(b.y) - a.y;
   const double length = dx * dx + dy * dy;
@@ -23,6 +24,7 @@ double distanceSquared(Point2 p, Point2 a, Point2 b) {
   const double y = double(p.y) - a.y - t * dy;
   return x * x + y * y;
 }
+
 Point2 middle(Point2 a, Point2 b) {
   return {float((double(a.x) + b.x) / 2), float((double(a.y) + b.y) / 2)};
 }
@@ -33,17 +35,20 @@ Path2D &Path2D::moveTo(Point2 point) {
   _commands.push_back({PathVerb::Move, point, {}, {}});
   return *this;
 }
+
 Path2D &Path2D::lineTo(Point2 point) {
   finite(point);
   _commands.push_back({PathVerb::Line, point, {}, {}});
   return *this;
 }
+
 Path2D &Path2D::quadraticTo(Point2 control, Point2 end) {
   finite(control);
   finite(end);
   _commands.push_back({PathVerb::Quadratic, end, control, {}});
   return *this;
 }
+
 Path2D &Path2D::cubicTo(Point2 first, Point2 second, Point2 end) {
   finite(first);
   finite(second);
@@ -51,6 +56,7 @@ Path2D &Path2D::cubicTo(Point2 first, Point2 second, Point2 end) {
   _commands.push_back({PathVerb::Cubic, end, first, second});
   return *this;
 }
+
 Path2D &Path2D::close() {
   _commands.push_back({PathVerb::Close, {}, {}, {}});
   return *this;
@@ -153,6 +159,7 @@ bool FlattenedPath::contains(Point2 point, FillRule rule) const {
   }
   return rule == FillRule::EvenOdd ? winding % 2 != 0 : winding != 0;
 }
+
 bool FlattenedPath::touchesStroke(Point2 point, float radius) const {
   const double squared = double(radius) * radius;
   return std::ranges::any_of(segments, [&](const auto &s) {

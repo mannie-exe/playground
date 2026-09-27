@@ -45,8 +45,9 @@ int main() {
     test::require(modes.props() == defaults,
                   "invalid replacement preserves live rules");
     modes.applyPatch(
-        {.rules = ui::Patch<std::vector<layout::Breakpoint<Mode>>>::set({}),
-         .fallback = ui::Patch<Mode>::set(Mode::Compact)},
+        {.rules =
+             playground::Patch<std::vector<layout::Breakpoint<Mode>>>::set({}),
+         .fallback = playground::Patch<Mode>::set(Mode::Compact)},
         defaults);
     test::require(modes.select(math::Size2{900, 50}) == Mode::Compact,
                   "empty rule set selects authored fallback");
@@ -54,8 +55,9 @@ int main() {
     test::require(modes.props().rules.empty(),
                   "Keep does not restore defaults");
     modes.applyPatch(
-        {.rules = ui::Patch<std::vector<layout::Breakpoint<Mode>>>::reset(),
-         .fallback = ui::Patch<Mode>::reset()},
+        {.rules =
+             playground::Patch<std::vector<layout::Breakpoint<Mode>>>::reset(),
+         .fallback = playground::Patch<Mode>::reset()},
         defaults);
     test::require(modes.props() == defaults,
                   "Reset uses explicit caller policy");

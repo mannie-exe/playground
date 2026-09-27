@@ -59,7 +59,7 @@ Scene viewport nodes bridge application models into this same layout tree:
 
 | Node | Properties and preparation contract |
 |---|---|
-| [`SceneView`](../../include/ui/content/SceneView.hpp) | Shared read access to a `scene::Scene3D`, camera, preferred size, clear color and resolution scale. Requires the frame's separate scene renderer; caches output by model revision, camera, logical aspect, pixel size and renderer domain. |
+| [`SceneView`](../../include/ui/content/SceneView.hpp) | Shared read access to a `scene::Scene3D`, camera, preferred size, clear color, resolution scale, lighting, exposure and tone mapping. Requires the frame's separate scene renderer; caches output by model revision, view properties, logical aspect, pixel size and renderer domain. See [materials](../render/MATERIALS.md) for GPU requirements. |
 | [`Scene2DView`](../../include/ui/content/Scene2DView.hpp) | Shared read access to a `scene::Scene2D`, affine camera and preferred size. Prepares ordered image/solid items and clips them to its content box through the 2D painter. |
 
 Both expose complete props and Keep/Set/Reset patches, honor box insets, and leave
@@ -163,7 +163,14 @@ direction rather than encoding physical Left/Right.
 <a id="properties"></a>
 ## Properties, patches and invalidation
 
-Source: [NodeProps.hpp](../../include/ui/NodeProps.hpp), [Patch.hpp](../../include/ui/Patch.hpp).
+Source: [NodeProps.hpp](../../include/ui/NodeProps.hpp), [Patch.hpp](../../include/support/Patch.hpp).
+
+Operation-only `playground::Patch<T>`, `Keep` and `Reset` live below both layout
+and UI. Common Node values use `settings()/setSettings()/applySettingsPatch()`.
+Reusable groups use `contentProps/setContentProps/applyContentPatch` (Box),
+`buttonProps/setButtonProps/applyButtonPatch` (Button), and
+`gridProps/setGridProps/applyGridPatch` (Grid). Leaf/app-specific values use
+`props/setProps/applyPatch`; there is no inherited ambiguous `Node::props`.
 
 | Common group | Fields / baseline |
 |---|---|
@@ -171,24 +178,26 @@ Source: [NodeProps.hpp](../../include/ui/NodeProps.hpp), [Patch.hpp](../../inclu
 | BoxProps | width/height=Content; minWidth/minHeight=0; maxWidth/maxHeight=nullopt; padding/borderWidths=0; aspectRatio=nullopt |
 | PaintStyle | background/borderColor=nullopt; opacity=1, within [0,1] |
 | VisualProps | transform=identity; pivot={0.5,0.5}; overflow=Visible; clipRect=nullopt |
-| InputProps | hitTest=ChildrenOnly; focusable=false |
-| SemanticProps | role=None; name/description empty; value=nullopt; enabled=true |
+| InputProps | hitTest=ChildrenOnly; focusable/focusScope/modal=false; wrapNavigation=true; optional next/previous/left/right/up/down neighbors |
+| SemanticProps | role=None; name/description empty; value=nullopt; enabled=true; exposure=Auto; optional labelledBy/describedBy NodeIds |
 
 Passive content leaves set hitTest=None. Button sets SelfAndChildren, focusable,
-and role=Button. Semantic enabled=false excludes a subtree from input; use
-Button::setEnabled for its full state/color/capture cleanup as well.
-Semantics are metadata, not an OS accessibility bridge.
+and role=Button. Concrete controls derive enabled/value/action semantics from
+their own props; use Button::setEnabled for state/color/capture cleanup. On a
+generic node, semantic enabled=false disables its subtree. Pointer hit testing
+does not control keyboard or assistive eligibility. WindowServices publishes
+UIRoot snapshots through AccessKit; see [accessible interaction](ACCESSIBILITY.md).
 
 Common APIs: nodeProps/setNodeProps/applyNodePatch, boxProps/setBoxProps/
 applyBoxPatch, paintStyle/setPaintStyle/applyPaintPatch, visualProps/setVisualProps/
 applyVisualPatch, inputProps/setInputProps/applyInputPatch,
 semanticProps/setSemanticProps/applySemanticPatch.
 
-`Node::props()/setProps()/applyPatch()` uses combined NodeSettings/NodeSettingsPatch.
-Concrete nodes hide those names with their own Props/Patch group; use qualified
-`node.Node::applyPatch(...)` or a Node reference for a combined common update.
+`Node::settings()/setSettings()/applySettingsPatch()` uses combined NodeSettings/NodeSettingsPatch.
+Concrete nodes use separate names for their own Props/Patch group; use qualified
+`node.Node::applySettingsPatch(...)` or a Node reference for a combined common update.
 A Button inherits Box's setContentAlignment; to edit BoxContentProps explicitly,
-qualify Box::setProps/applyPatch rather than accidentally passing ButtonProps.
+qualify Box::setContentProps/applyPatch rather than accidentally passing ButtonProps.
 
 ### Patch operations
 
@@ -330,7 +339,7 @@ callbacks and child ownership are configured separately.
 | Other arrangements | [ZStack, Grid, Flow, AnchorLayout](#arrangements), [ConstraintLayout](#constraint-layout) |
 | Content | [Rectangle, Text, Image, Vector, Path](#content) |
 | Interaction | [Button](#button) |
-| Visual boundaries | [Transform, Clip, Layer](#boundaries) |
+| Boundaries | [Transform, Clip, Layer, LayoutBoundary](#boundaries) |
 | Viewports/collections | [ScrollView, AdaptiveStack, Repeat, VirtualList, VirtualGrid](#collections), [VirtualTrackGrid](#track-grid) |
 
 <a id="root-components"></a>
@@ -361,6 +370,12 @@ at limits. Fixed sizing locks its axis; zero basis has no shrinkable extent.
 Children remeasure at assigned widths; wrapped height/baselines remain correct.
 Unresolved negative space overflows; SpaceBetween with one child means Start.
 Stretch respects flexible sizing limits; vertical baseline alignment is rejected.
+Horizontal stacks export the topmost and bottommost positioned child baselines,
+independent of child order or RTL direction. Either available child baseline
+contributes to this envelope. Explicit baseline alignment synthesizes a missing
+baseline at the child's bottom edge; otherwise baseline-free children contribute
+none. Collapsed children are excluded. Alignment groups position children but do
+not override the exported envelope. Vertical stacks export no baseline.
 Bound-freezing can be O(n²), not guaranteed linear.
 
 Spacer is an empty passive leaf configured through BoxProps. Plain Stack::append
@@ -455,7 +470,10 @@ size is source pixels / assetDensity, not current display density.
 [Vector.hpp](../../include/ui/content/Vector.hpp): AssetRegistry& plus VectorProps/Patch
 source required (asset-path string or SVGDocumentHandle), styles={},
 intrinsicSize=nullopt, content defaults, rasterScale=1,
-maximumRasterPixels=16×1024². Raster size follows final dimensions and display
+maximumRasterPixels=16×1024², useTheme=false. Opting into useTheme replaces paint
+tint with theme text/mutedText (including disabled ancestors); use white monochrome
+SVGs for icons. It does not replace arbitrary SVG fills or recolor artwork intelligently.
+Raster size follows final dimensions and display
 density; pure movement reuses the raster. Tint is whole-output modulation;
 [styles](#svg-styling) edits supported element properties in an immutable variant.
 
@@ -475,17 +493,134 @@ ContentStyle is replaced as a group via its parent's patch, not a property casca
 [controls/Button.hpp](../../include/ui/controls/Button.hpp).
 Single arbitrary content subtree, centered by default. ButtonProps/ButtonPatch:
 enabled=true; normal={70,70,70,255}, hover={95,95,95,255},
-pressed={45,45,45,255}, disabled={60,60,60,255}.
+pressed={45,45,45,255}, disabled={60,60,60,255};
+focus={255,215,80,255}, focusWidth=2 logical units (finite and nonnegative).
+The focus border is drawn after child content and does not change layout size.
 setEnabled/isEnabled/isHovered/isPressed; onActivate returns a Connection to retain.
 
 Primary press captures its pointer and button; matching release inside activates,
 outside release cancels; unrelated release does not activate. Focused Space/Enter
 activates on matching key release, ignoring repeat. Disable/cancel/detach never
 activates. Compose icon/text with an HStack rather than hard-coded label/icon slots.
+
+### Stepper
+
+[controls/Stepper.hpp](../../include/ui/controls/Stepper.hpp) composes two Buttons
+and a caller-supplied readout. No font or asset acquisition is hidden in the control.
+Buttons are 40 logical units wide and at least 40 high, with centered content;
+the row gap is 8. Demo 2D supplies decorative Material add/remove SVGs, not glyphs.
+StepperProps/StepperPatch: value=0, minimum=0, maximum=100, step=1, enabled=true,
+name empty. The range is inclusive; step must be positive. Invalid setters/patches
+are rejected before changes. A caller changing limits must supply a valid value.
+
+`props/setProps/applyPatch`, `value`, `stepBy` and `onValueChanged` are public.
+stepBy uses direction's sign and saturates at bounds using widened arithmetic.
+Programmatic setters update state/semantics without emitting a user-action signal.
+User steps emit only after a changed value is committed; throwing observers do
+not roll it back. Retain the returned Connection and update readout content in
+that callback. Limits disable the corresponding button; disable makes both inert.
+Arrow keys adjust the focused stepper, while Enter/Space activate its buttons.
+Names, range and value are exposed through SemanticState; WindowServices
+translates range, increment/decrement and set-value operations to AccessKit.
 Secondary-button behavior requires a subclass/event policy, not onActivate.
 
+### Accessible controls and editing
+
+Contracts and platform limits are in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+All controls are retained nodes; they do not create native widgets or windows.
+Programmatic setters are silent; user/native operations commit state before signals.
+
+| Header / nodes | Properties and behavior |
+|---|---|
+| `controls/Choice.hpp`: ToggleButton, Checkbox, Switch | ToggleProps/TogglePatch: checked, allowMixed, name; inherits ButtonProps. Switch rejects Mixed. |
+| `controls/Choice.hpp`: ListBox, RadioGroup, Menu | SelectionProps/SelectionPatch: selected key, enabled, required, name; ChoiceItems have keys, labels, content and enabled flags. List/radio arrows select; menu arrows move the active item, Enter/Space invokes. |
+| `controls/Slider.hpp`: Slider | SliderProps/SliderPatch: RangeValue, enabled, readOnly, axis, name, colors. Drag, arrows, Home/End and numeric actions. |
+| `controls/Slider.hpp`: ProgressBar | ProgressProps: read-only range, name, track/fill colors. |
+| `controls/TextField.hpp`: TextField, TextArea | TextFieldProps/TextFieldPatch: FontHandle, TextEditProps, enabled/required, name/placeholder/validation message, colors. TextArea starts multiline. |
+| `controls/TextField.hpp`: NumberField | NumberFieldProps: range and integer; drafts do not change the committed number until valid commit. |
+| `controls/Composite.hpp`: Disclosure | ExpansionProps/ExpansionPatch: expanded, enabled, name. Retained header/body; closed body is collapsed. |
+| `controls/Composite.hpp`: Select | Noneditable trigger plus root-presented scrollable ListBox; SelectionProps and setExpanded. Arrows preview, Enter/click commits, Escape cancels, Tab closes. Supply/update visible trigger content. |
+| `controls/Composite.hpp`: Tabs | Keyed TabItems, SelectionProps; retained panels, roving tab stop, arrows/Home/End. Only selected panel participates in layout. |
+| `controls/Composite.hpp`: Dialog | DialogProps/DialogPatch: open, modal, dismissOnEscape, name/description. Centered root portal with modal backdrop; UIRoot traps/restores focus. Retain with its logical owner. |
+| `controls/Composite.hpp`: Field, FieldGroup | FieldProps/FieldPatch: label/description; supplied visible label/control/help nodes. Field links IDs after arrangement; FieldGroup supplies named grouping. |
+| `controls/Composite.hpp`: Status, Tooltip | Supplied content and semantic message. Status is a polite live region. Tooltip is a passive anchored popup; owner controls anchor, open state and timing. |
+
+`Theme.hpp` provides ColorSchemePreference, ContrastPreference, ThemePalette,
+SystemAppearance and resolveTheme. `UIRoot::setTheme` publishes the palette;
+`Node::setTheme` optionally overrides a subtree (root high contrast wins).
+Text and controls default to `useTheme=true`; explicit artwork colors require
+false. `PaintStyle::themeBackground` opts a node into the palette surface fill,
+without forcing all sessions to cover underlying scenes. Background color, when
+provided, takes precedence. Palette changes invalidate prepared color resources.
+
+`containers/Popup.hpp` defines Portal and Popup. `PopupProps/PopupPatch` contain
+open, anchor NodeId, placement/fallbacks (Below/Above Start/End or Center),
+Content/MatchAnchor width, gap=4, viewportPadding=8, maximumHeight=320,
+dismissOutside/dismissOnEscape/closeOnTab/autoFocus=true, and optional backdrop.
+Use popupProps/setPopupProps/applyPopupPatch, setOpen/setAnchor, onDismissed.
+UIRoot places and paints portals outside ordinary flow/ancestor clips, within
+the usable viewport; logical ownership, event bubbling and semantics are retained.
+Outside dismissal consumes down through up/cancel; Escape respects IME composition.
+Dialogs retain their separate DialogProps and set policy for centered modal use.
+See [appearance and overlays](ACCESSIBILITY.md#appearance-and-transient-surfaces)
+for platform defaults, focus, placement and ownership contracts.
+
+### Concrete control appearance and layout defaults
+
+These are the implemented defaults, not a native-widget or Material Design theme.
+All dimensions below are logical units. Theme affects paint, not spacing or fonts.
+
+| Element | Appearance | Layout / behavior |
+|---|---|---|
+| Box, Stack, Flow, Grid, groups | Transparent; no implicit border | Content-sized unless constrained; zero box padding/border and zero stack gap; Start alignment by default. Parent placement controls stretching. |
+| Button | Elevated fill; hover/pressed fills; disabled surface/muted outline; 1-unit border (2 in high contrast); 2-unit keyboard focus outline over children | Centered content; no implicit padding. Demo action buttons supply padding 10. |
+| ToggleButton | Button chrome; inset accent outline when checked | Padding 10 if caller supplied none; leading/vertically centered label. |
+| Checkbox / Switch | No resting outer button border; hover/pressed row fill; checkbox square/check/mixed bar or switch track/thumb; disabled indicator muted | Padding 10, plus 30/48 leading units for indicator. Indicators vertically center even with wrapped labels. |
+| ListBox / Select options / Menu | No resting per-option border or button background; full-row selected, hover, pressed fills; one leading marker per row, active color taking precedence over selected color | Rows stretch to parent width, padding 10, leading/vertically centered content. Short labels do not shrink hit areas. Focus does not add nested Button chrome. |
+| RadioGroup | Borderless rows plus ring/dot indicator | Same stretching rows; leading padding 40. |
+| Select / Disclosure trigger | Bordered button with vector chevron, muted when disabled | Stretch to owning component width; padding 10, right padding 34; vertically centered chevron. |
+| Tabs | Padded buttons, selected accent underline | Padding 10; horizontal labels; retained active panel. |
+| Stepper | Two ordinary themed buttons with caller-owned content | Width 40/min-height 40 per button, row gap 8, expanding readout. SVGs avoid font coverage/baseline dependence. |
+| Slider | Thin border-color track, accent thumb; hover outline, thicker drag outline, outer keyboard focus; disabled/read-only thumb muted | Natural size 160×24 (or 24×160), track thickness 4, thumb 16×20; geometry clamps in tiny bounds. Hover/drag reset on cancellation. |
+| ProgressBar | Border-color track and accent fill | Natural 160×16, read-only. |
+| TextField / TextArea / NumberField | Elevated input surface, themed text/selection/caret/focus; high-contrast selection outline preserves text readability | Text layout and caret scrolling belong to field; TextArea enables multiline; Field composes caller-supplied label/help. |
+| Text / monochrome Vector | Text uses inherited ink by default; Vector must opt into useTheme; disabled ancestors select muted ink | Text needs an explicit font; wrap/fit are explicit. Vector defaults to centered Contain and linear sampling. |
+| ScrollView | Authored gray scrollbar, not palette-derived | Vertical, Fill sizing, Auto scrollbar, thickness 8, minimum thumb 16, wheel step 32; Content sizing is opt-in. |
+| Popup / Tooltip / Dialog | Elevated surface; dialog optionally dims background | Root portal, viewport-clamped. Popup defaults: match anchor width, gap 4, viewport inset 8, maximum height 320. Dialog centers; Tooltip is passive. |
+| Status / FieldGroup | No extra chrome | Status is a polite live region; grouping is semantic, not a forced box decoration. |
+
+Normal palette values (opaque sRGB):
+
+| Role | Light | Dark |
+|---|---|---|
+| surface / elevated | #f2f4f7 / #ffffff | #181c22 / #252c36 |
+| text / mutedText | #17212e / #506074 | #f0f3f7 / #aeb9c8 |
+| border / accent | #687a90 / #195bb5 | #748297 / #90bfff |
+| hover / pressed | #e0e9f5 / #cbdaf0 | #344153 / #435570 |
+| focus / selection | #754400 / #d4e4fa | #ffdb80 / #344d70 |
+| onAccent | #ffffff | #102340 |
+
+System appearance is the default. High contrast uses the supplied native palette
+when available, otherwise black/white with contrasting accent/focus colors; root
+high contrast overrides local palettes. Explicit authored artwork remains opt-out.
+
+Demo 2D keeps help/status outside the controls' scroll view. At width >=800 it
+reserves a 300-unit right column; below that, the panel spans available width
+above the controls. Outer inset/gap are 16. On short windows the information
+panel can scroll independently (narrow mode caps it at 45% of usable height),
+so it never obscures controls or consumes their entire viewport. The status
+precedes the longer help text. Modal/popup portal ordering is unchanged.
+
+TextEditModel (`ui/TextEdit.hpp`) is SDL-independent. Selections are UTF-8 byte
+offsets at ICU grapheme boundaries. Controls and native adapters exchange UIAction
+values through UIRoot::performAction. Native queries never traverse live nodes.
+
 <a id="boundaries"></a>
-### Transform, Clip, Layer
+### Transform, Clip, Layer, LayoutBoundary
+
+LayoutBoundary takes a fixed logical extent and one child. `extent/setExtent`
+changes its border-box reservation. It exports no descendant baseline and does
+not clip; see [cache and isolation contracts](#rendering) for dirty-work behavior.
 
 [Boundaries.hpp](../../include/ui/containers/Boundaries.hpp), all single-child Boxes:
 
@@ -512,15 +647,32 @@ Secondary-button behavior requires a subclass/event policy, not onActivate.
 [ScrollView.hpp](../../include/ui/collections/ScrollView.hpp) owns one optional child.
 ScrollProps/ScrollPatch: axes=Vertical (Horizontal/Both supported), wheelStep=32,
 scrollbar=Auto (Never/Always supported), scrollbarThickness=8, minimumThumb=16,
-scrollbarColor={160,160,160,220}. Overlay scrollbars do not change layout space.
+scrollbarColor={160,160,160,220}, sizing=Fill. Visible scrollbars reserve gutters
+inside the border/padding-adjusted area. Content is clipped to the remaining
+viewport; tracks and thumbs paint afterward in the scroll view's chrome pass.
+`viewportExtent()` excludes gutters; the node's bounds still include them.
+Auto gutters are resolved in a bounded pass because one axis can induce overflow
+on the other; resizing to fit removes them. Never/zero thickness reserves no space.
 setChild/takeChild/child, setOffset/scrollBy, offset/viewportExtent/contentExtent.
 scrollIntoView accepts a content-space Rect or descendant Node and optional
 Alignment; absent alignment means minimal movement. Here Start/End on x mean
 physical left/right because offsets are physical content coordinates.
-Content measures unbounded on scrollable axes; viewport must be finite there.
-Offsets clamp; scrollbar drag captures input ahead of content. Nested wheel
+Content measures unbounded on scrollable axes. Fill requires finite viewport
+constraints there. Content sizing reports the child's natural extent clamped to
+the offered constraints and also accepts unbounded measurement. Use Content for
+content-fitting windows: scrolling is needed only after real viewport constraints
+reduce the available size. This does not choose a monitor or resize a window.
+Offsets clamp; the entire gutter intercepts hits ahead of content, not only its
+thumb. Track clicks move the thumb toward the pointer and can continue as a drag;
+cancellation releases capture. Nested wheel
 handlers consume available delta and pass residual movement upward.
 Clipping all children is not virtualization.
+
+Popups stretch their child to the presented content box. MatchAnchor fixes the
+popup width before measuring wrapped content; option rows stretch to the inner
+scroll viewport, excluding its gutter. Root portals remain above the underlying
+page (including page scrollbars); each portal's own scrollbar is above its own
+content. There is no global scrollbar layer above dialogs.
 
 [AdaptiveStack.hpp](../../include/ui/collections/AdaptiveStack.hpp):
 AdaptiveStackProps: breakpoints={rules={}, fallback=Vertical}, stack=StackProps{}.
@@ -818,8 +970,17 @@ AppHost's current top-level failure policy still exits the application.
 Platform error translation and AppHost's failure policy are documented in
 [the runtime boundary](../render/GPU.md#runtime-contract).
 
-LayoutStats is cumulative: measured, measureCacheHits, arranged, prepared,
-painted and realized (attachments, **not** current live population).
+UIWorkStats is cumulative: requests, executed measurements/arrangements, cache
+hits/evictions, arrangement skips, invalidation visits, container-plan builds,
+text-layout work, font-fit attempts, preparation, painting and realization.
+Realized counts attachments, **not** live population. Scratch counters currently
+instrument Stack plan/flex reservations only; peak is the largest individual
+instrumented plan's capacity, not total live memory or all heap allocations.
+`UIRoot::workSample()` includes its stable diagnostic root identity and optional
+root-phase timings. UISession supplies deltas to PerformanceMonitor when given
+its borrowed monitor in `synchronize`; bounded frame history keeps roots separate.
+`reportEveryFrames` controls reporting, not sampling. UI timings overlap host
+CPU phases and one another; never add them to the total frame duration.
 LayoutDiagnostics retains at most 256 entries: node ID, phase, issue, message.
 Invalid inputs generally throw. Ordinary sizing conflicts diagnose and apply their
 documented fallback; required ConstraintLayout conflicts and nonconvergence throw,
@@ -858,6 +1019,23 @@ Keep these caches separate:
 | AssetRegistry | Equal authored resource requests and output-affecting properties | Shared handles pin resources; trimming is not a hard total-memory cap |
 | Layer | Subtree visual/geometry changes, bounds and density | Root reservation defaults to 64 MiB; per-layer policy applies |
 | Backend realization | Source identity and backend/device compatibility | Backend-owned policy; not the root's raster budget |
+
+Node normally retains one measurement. `canReuseMeasurementOffers()` opts a
+stateless implementation into two exact offers (currently Rectangle); custom and
+virtualized nodes remain conservative. A completed arrangement is reused only
+with identical bounds, environment/direction/density and layout revisions.
+Text separately retains two density-keyed resolved layouts and one preparation-density
+layout. Geometry changes discard them; paint-only color changes do not reshape.
+Entry counts are bounded, not a hard total-byte budget on user-supplied strings.
+
+`LayoutBoundary(extent, child)` in `containers/Boundaries.hpp` is a single-child
+fixed border-box boundary. It exports no child baseline and accepts nonnegative
+finite extents. Children can overflow unless separately clipped. Descendant
+layout changes queue the boundary by generation-checked identity; painting,
+ancestor layer revisions and overflow still propagate. Extent/box changes on
+the boundary itself propagate normally. Nested queued boundaries coalesce under
+an ancestor; failed work stays queued. Root traversal/dirty clearing and overflow
+maintenance still exist: this is not an O(changed-nodes) scheduler.
 
 Retained raster capture is optional; group opacity is a visual correctness
 requirement. If a retained-cache budget refuses an allocation, draw uncached.
@@ -920,7 +1098,7 @@ performance promises or measured asymptotic benchmarks.
 | Caches | Hash lookup plus key construction; current LRU trimming repeatedly scans candidates and may be O(e²) when removing many entries. Layer backing cost follows pixels; referenced assets can exceed the nominal budget. |
 | ConstraintLayout | Local Kiwi solver rebuilt for each bounded intrinsic pass; no constant-time or global incremental-solver claim. |
 | Painting backend | Pixel coverage, clipping, compositing and upload costs are backend-specific; see [2D](../render/2D.md) and [GPU](../render/GPU.md). |
-| Host frame | AppHost still clears/draws/presents frames. Retaining nodes or caching pixels does not itself implement event-driven/partial redraw. |
+| Host frame | Explicit app activity/demand allows whole-frame idle skipping. A requested frame still clears/draws/presents completely; no partial damage rendering. See [activity](../platform/ACTIVITY.md). |
 
 <a id="scope"></a>
 ## Scope and extension boundaries
@@ -932,11 +1110,11 @@ an implemented renderer, node or host policy.
 
 | Future family | Retained requirements |
 |---|---|
-| More controls | Checkbox, slider, tree, menus/dialogs, text editing/selection and spreadsheet interaction; keyboard/focus and accessibility contracts |
-| Idle/damage rendering | Exposure/resize/input/asset/animation wakeups, old/new damage bounds, overlap-correct partial repaint and presentation |
-| Native accessibility | OS bridges for semantics, values, actions, focus and lifecycle |
+| More controls | Tree view, editable autocomplete, calendar/date inputs, rich editing and spreadsheet interaction remain extensions; the core controls above exist. |
+| Partial damage rendering | Whole-frame idle/wake is implemented. Old/new damage bounds, overlap-correct regional repaint and persistent-target ownership remain extensions. |
+| Native accessibility | Desktop AccessKit adapters exist; screen-reader acceptance remains platform-specific verification. Mobile bridges and virtualized offscreen item realization are extensions. |
 | GPU extensions | GPU 2D/3D, atlas text, bounded recovery, asynchronous timing, ordered batching and budgeted target/residency caches exist. General render graphs, adaptive hardware-memory budgets and further batching optimizations remain. |
-| 3D extensions | Scene3D/SceneView, static model import, software/GPU unlit triangles, clipping, depth, alpha modes and picking exist. PBR, lighting, shadows, GPU instancing, animation and spatial acceleration remain. |
+| 3D extensions | Scene3D/SceneView, model and rigid-clip import/playback, software/GPU unlit triangles, GPU PBR/IBL, clipping, depth, alpha modes and picking exist. Shadows, skinning, VAT, GPU instancing and spatial acceleration remain. |
 | 2D panels in 3D | Independent 2D layout, per-viewport camera and ray-to-panel input conversion |
 
 Whole-description reconciliation is outside the design scope. Stable-key collection
@@ -949,10 +1127,10 @@ These additions are not required to use the public API.
 | Area | Optional work |
 |---|---|
 | Layout policies | AdaptiveStack hysteresis, unsafe alignment, subgrid/named areas |
-| Throughput | Cached Grid/Flow plans and world transforms, targeted dirty-subtree scheduling, more efficient eviction |
+| Throughput | Cached Grid/Flow plans and UI world transforms, broader dirty-subtree scheduling, more efficient eviction; explicit LayoutBoundary scheduling already exists |
 | Allocation | Measured use of PMR/pools/packed storage and lifetime-safe reusable scratch |
 | Resource lifecycle | Asset watching/revisions, broader memory accounting, backend-independent content providers |
-| API/runtime convenience | editProps helpers, animation abstractions; explicit worker-pool and asynchronous-loading contracts |
+| API/runtime convenience | editProps helpers and animation abstractions; bounded Executor and ModelPreparation already exist, further asynchronous loaders need explicit owner-publication contracts |
 | Collection reuse | Opt-in recycling keyed by compatible node kind with explicit rebind/reset and subscription cleanup |
 
 <a id="references"></a>

@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_scancode.h>
 
 #include <app/IApp.hpp>
 #include <snake/Config.hpp>
@@ -11,6 +11,12 @@ namespace snake = playground::snake::config;
 
 class SnakeApp : public IApp {
 public:
+  SnakeApp() {
+    input().addContext({.name = "navigation",
+                        .stage = playground::input::InputStage::BeforeUI},
+                       {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
+  }
+
   static AppInfo staticInfo() {
     return AppInfo{.id = AppId::Snake,
                    .name = snake::gameName,
@@ -23,12 +29,9 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
-  EventResult handleEvent(AppContext &ctx, const SDL_Event &event) override {
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
+  void onActions(AppContext &ctx,
+                 const playground::input::InputSnapshot &actions) override {
+    if (actions["back"].pressed)
       ctx.requestMenu();
-      return EventResult::Consumed;
-    }
-
-    return EventResult::Ignored;
   }
 };

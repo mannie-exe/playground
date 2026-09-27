@@ -15,15 +15,18 @@ resolveRenderer(rendering::RendererPreferences requested,
 }
 
 std::unique_ptr<rendering::RenderBackend>
-createRenderBackend(SDL_Window &window, const rendering::RendererState &state) {
+createRenderBackend(SDL_Window &window, const rendering::RendererState &state,
+                    const rendering::RenderBackendProps &props) {
+  props.validate();
   state.requested.validate();
   state.selected.validate();
   if (state.selected.backend == rendering::RendererKind::SDLGPU) {
     if (state.selected.capabilities !=
-        rendering::RendererCapabilities{true, true,
-                                        rendering::CompositionSpace::Linear})
+        rendering::RendererCapabilities{
+            true, true, rendering::CompositionSpace::Linear, true})
       throw std::invalid_argument("GPU selection has invented capabilities");
-    return std::make_unique<GPURenderBackend>(window, state.selected.driver);
+    return std::make_unique<GPURenderBackend>(window, state.selected.driver,
+                                              props);
   }
   const auto available = SurfaceRenderBackend::availableDescription();
   if (state.selected.backend != available.backend ||
@@ -31,13 +34,15 @@ createRenderBackend(SDL_Window &window, const rendering::RendererState &state) {
       state.selected.capabilities != available.capabilities)
     throw std::invalid_argument(
         "Renderer selection is not available in this build");
-  return std::make_unique<SurfaceRenderBackend>(window);
+  return std::make_unique<SurfaceRenderBackend>(window, props);
 }
 
 RenderBackendResult
 createRenderBackend(SDL_Window &window,
                     rendering::RendererPreferences preferences,
-                    rendering::RendererRequirements requirements) {
+                    rendering::RendererRequirements requirements,
+                    const rendering::RenderBackendProps &props) {
+  props.validate();
   auto candidates = availableGPURenderers();
   candidates.push_back(SurfaceRenderBackend::availableDescription());
   std::string failures;
@@ -53,7 +58,7 @@ createRenderBackend(SDL_Window &window,
       }
     }();
     try {
-      auto backend = createRenderBackend(window, selection.state);
+      auto backend = createRenderBackend(window, selection.state, props);
       backend->prepare(requirements);
       if (!failures.empty())
         selection.state.fallbackReason = failures;

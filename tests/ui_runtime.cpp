@@ -24,8 +24,10 @@ public:
   bool invalidateDuringMeasure{};
   bool failArrange{};
   bool failPaint{};
+  bool repaintDuringPaint{};
   layout::SizeConstraints lastConstraints;
   ui::UIRoot *root{};
+
   explicit Probe(layout::BoxProps props = {}) : Node{std::move(props)} {
     setHitTestPolicy(ui::HitTestPolicy::Self);
     setFocusable(true);
@@ -42,15 +44,21 @@ protected:
     const float width = constraints.width.maximum.value_or(80);
     return {{width, width < 40 ? 40.0f : 20.0f}, 10.0f, 10.0f};
   }
+
   void onDetach() noexcept override { ++detachments; }
+
   void arrangeChildren(ui::ArrangeContext &, math::Rect) override {
     if (failArrange)
       throw std::runtime_error("arrangement failure");
   }
+
   void paint(rendering::PaintContext &) const override {
     if (failPaint)
       throw std::runtime_error("paint failure");
+    if (repaintDuringPaint && root)
+      root->requestPaint();
   }
+
   void onEvent(ui::UIEvent &event) override {
     if (event.phase != ui::EventPhase::Target)
       return;
@@ -72,6 +80,7 @@ protected:
     return children().empty() ? layout::MeasureResult{}
                               : children()[0]->measure(context, offered);
   }
+
   void arrangeChildren(ui::ArrangeContext &context,
                        math::Rect bounds) override {
     for (const auto &child : children())
@@ -82,16 +91,22 @@ public:
   ui::Node &append(std::unique_ptr<ui::Node> child) {
     return appendChild(std::move(child));
   }
+
   std::unique_ptr<ui::Node> take() { return takeChildAt(0); }
 };
 
 class RecordingPaint : public rendering::PaintContext {
 public:
   int saves{}, fills{};
+
   void save() override { ++saves; }
+
   void restore() noexcept override { --saves; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override { ++fills; }
 };
 
@@ -195,18 +210,18 @@ int main() {
       owner->setVisibility(ui::Visibility::Hidden);
       ui::UIEvent key{.type = ui::EventType::KeyDown};
       root.dispatch(key);
-      check(pointer->events == 2,
+      check(pointer->events == 3,
             "hidden ancestor cancels capture and prevents key delivery");
       owner->setVisibility(ui::Visibility::Visible);
       pointer->requestFocus();
       pointer->setFocusable(false);
       root.dispatch(key);
-      check(pointer->events == 2,
+      check(pointer->events == 4,
             "nonfocusable node cannot retain keyboard focus");
       root.dispatch(down);
       owner->setHitTestPolicy(ui::HitTestPolicy::None);
       root.dispatch(key);
-      check(pointer->events == 4, "disabled hit-test subtree cancels capture");
+      check(pointer->events == 6, "disabled hit-test subtree cancels capture");
       owner->setHitTestPolicy(ui::HitTestPolicy::ChildrenOnly);
       pointer->failPaint = true;
       RecordingPaint paint;
@@ -253,6 +268,14 @@ int main() {
       RecordingPaint paint;
       root.render(paint);
       check(paint.saves == 0 && paint.fills == 1, "paint state balanced");
+      pointer->root = &root;
+      pointer->repaintDuringPaint = true;
+      root.render(paint);
+      check(root.needsPaint(),
+            "paint-time request survives dirty acknowledgement");
+      pointer->repaintDuringPaint = false;
+      root.render(paint);
+      check(!root.needsPaint(), "stable subsequent paint clears root demand");
       ui::UIEvent down{.type = ui::EventType::PointerDown,
                        .position = {10, 10},
                        .pointer = 7,

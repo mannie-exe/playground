@@ -2,9 +2,8 @@
 #include <stdexcept>
 #include <utility>
 
-#include <support/SDLError.hpp>
-
 #include <support/Font.hpp>
+#include <support/SDLError.hpp>
 
 FontInfo Font::getInfo(const FontResource &font) {
   TTF_Font *sdlFont = font.get();
@@ -86,6 +85,7 @@ void Font::applyProps(FontPatch patch) {
 Font Font::cloneWith(FontPatch patch) const {
   FontProps cloneProps{
       .path = patch.path ? *patch.path : _props.path,
+      .cacheIdentity = patch.path ? std::string{} : _props.cacheIdentity,
       .style =
           {
               .size = patch.size ? *patch.size : _props.style.size,

@@ -76,9 +76,16 @@ void Vector::paint(PaintContext &context) const {
   if (!_prepared)
     throw std::logic_error(
         "Vector must be prepared after layout and property changes");
-  if (_raster && _resolved.destination.hasArea())
-    context.drawImage(_raster, _resolved.source, _resolved.destination,
-                      _props.content.paint);
+  if (_raster && _resolved.destination.hasArea()) {
+    auto paint = _props.content.paint;
+    if (_props.useTheme) {
+      bool enabled = true;
+      for (const Node *node = this; node; node = node->parent())
+        enabled = enabled && node->isInteractionEnabled();
+      paint.tint = enabled ? theme().text : theme().mutedText;
+    }
+    context.drawImage(_raster, _resolved.source, _resolved.destination, paint);
+  }
 }
 
 Vector::Vector(AssetRegistry &assets, VectorProps props, layout::BoxProps box)
@@ -127,7 +134,8 @@ void Vector::applyPatch(const VectorPatch &patch) {
        patch.content.appliedTo(_props.content, defaults.content),
        patch.rasterScale.appliedTo(_props.rasterScale, defaults.rasterScale),
        patch.maximumRasterPixels.appliedTo(_props.maximumRasterPixels,
-                                           defaults.maximumRasterPixels)});
+                                           defaults.maximumRasterPixels),
+       patch.useTheme.appliedTo(_props.useTheme, defaults.useTheme)});
 }
 
 } // namespace playground::ui

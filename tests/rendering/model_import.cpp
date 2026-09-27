@@ -26,6 +26,7 @@ const std::string fixture = R"({
 std::span<const std::byte> bytes(std::string_view value) {
   return {reinterpret_cast<const std::byte *>(value.data()), value.size()};
 }
+
 std::string replaced(std::string value, std::string_view from,
                      std::string_view to) {
   const auto position = value.find(from);
@@ -33,6 +34,7 @@ std::string replaced(std::string value, std::string_view from,
   value.replace(position, from.size(), to);
   return value;
 }
+
 class TestImage final : public rendering::PaintImage {
 public:
   math::Size2 pixelSize() const noexcept override { return {1, 1}; }
@@ -43,16 +45,28 @@ int main() {
   return test::run([] {
     int decodes{};
     const scene::ModelImportServices services{
-        .decodeImage = [&](std::span<const std::byte> input, std::string_view) {
+        .decodeTexture = [&](std::span<const std::byte> input, std::string_view,
+                             rendering::TextureRole role) {
           test::require(input.size() == 1 && input[0] == std::byte{},
                         "data image bytes reach explicit decoder");
           ++decodes;
-          return std::make_shared<const TestImage>();
+          return rendering::makeTexture({{1, 1}, {{1, 1, 1, 1}}}, role,
+                                        rendering::MipPolicy::None);
         }};
     auto model =
         scene::importGLTF(bytes(fixture), services, {.unitsPerMeter = 2});
     test::require(model->nodes().size() == 3 && decodes == 1,
                   "selected hierarchy imported and texture decoded once");
+    auto basisFixture =
+        replaced(fixture, "\"KHR_texture_transform\"]",
+                 "\"KHR_texture_transform\",\"KHR_texture_basisu\"]");
+    basisFixture = replaced(
+        basisFixture, "\"source\":0,\"sampler\":0",
+        "\"extensions\":{\"KHR_texture_basisu\":{\"source\":0}},\"sampler\":0");
+    auto basisModel = scene::importGLTF(bytes(basisFixture), services);
+    test::require(!basisModel->nodes().empty() && decodes == 2,
+                  "required Basis extension resolves through explicit decoder "
+                  "once per model");
     test::require(model->warnings().empty(),
                   "supported unlit import is lossless within color precision");
     const auto &first = model->nodes()[1].primitives.front();
@@ -61,17 +75,22 @@ int main() {
                   "instanced source mesh shares immutable geometry");
     test::require(
         first.mesh->data().vertices[0].position == math::Vec3f{-2, -2, -2} &&
-            first.mesh->data().indices == std::vector<std::uint32_t>{0, 2, 1},
+            first.mesh->data().vertices[1].position == math::Vec3f{0, 2, -2},
         "RH meters convert to LH units with reflected winding");
-    test::require(first.mesh->data().vertices[0].uv == math::Vec2f{.25f, .5f},
-                  "texture-transform extension is baked into UVs");
     test::require(
-        !first.material.doubleSided &&
-            first.material.alpha == scene::MaterialProps::Alpha::Mask &&
-            first.material.alphaCutoff == .3f &&
-            first.material.addressV == scene::TextureAddress::MirroredRepeat &&
-            first.material.sampling == rendering::Sampling::Nearest,
-        "alpha, culling and sampler semantics retained");
+        first.mesh->data().vertices[0].uv == math::Vec2f{} &&
+            first.material.colorTexture.transform.apply({}) ==
+                math::Vec2f{.25f, .5f},
+        "texture transform is binding-local, not baked into geometry");
+    test::require(!first.material.doubleSided &&
+                      first.material.alpha ==
+                          scene::MaterialProps::Alpha::Mask &&
+                      first.material.alphaCutoff == .3f &&
+                      first.material.colorTexture.sampler.addressV ==
+                          scene::TextureAddress::MirroredRepeat &&
+                      first.material.colorTexture.sampler.magnification ==
+                          rendering::Sampling::Nearest,
+                  "alpha, culling and sampler semantics retained");
     scene::Scene3D world;
     const auto instance = model->instantiate(world);
     test::require(world.worldTransform(instance.nodes[1]).at(2, 3) == -8 &&

@@ -239,10 +239,13 @@ SDL_DisplayID Window::resolveDisplay(
     auto *displays = SDL_GetDisplays(&count);
     if (!displays)
       throwSDLError("Failed to enumerate displays");
+
     struct Guard {
       SDL_DisplayID *values;
+
       ~Guard() { SDL_free(values); }
     } guard{displays};
+
     for (int i = 0; i < count; ++i)
       if (const char *name = SDL_GetDisplayName(displays[i]);
           name && preference.name == name)
@@ -280,10 +283,13 @@ void Window::applyPreferences(
   const auto normalSize = _state.windowedSize;
   const auto normalPosition = _state.windowedPosition;
   _applyingPreferences = true;
+
   struct TransitionGuard {
     bool &active;
+
     ~TransitionGuard() { active = false; }
   } transition{_applyingPreferences};
+
   _requestedMode = preferences.mode;
   if (_state.fullscreen || previousMode == WindowMode::DesktopFullscreen ||
       previousMode == WindowMode::ExclusiveFullscreen)
@@ -354,6 +360,7 @@ WindowResource Window::createWindow(void *owner, const WindowConfig &config) {
 
   struct PropertiesGuard {
     SDL_PropertiesID value;
+
     ~PropertiesGuard() { SDL_DestroyProperties(value); }
   } propertiesGuard{properties};
 

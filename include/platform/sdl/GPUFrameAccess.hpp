@@ -12,6 +12,7 @@ struct GPUOffscreenProps {
   math::ColorRGBA8 clearColor{};
   bool depth{};
 };
+
 struct GPURecordingContext {
   SDL_GPUCommandBuffer *commands;
   SDL_GPURenderPass *pass;
@@ -20,7 +21,7 @@ struct GPURecordingContext {
   // Declare every sampled project image before issuing native draw calls.
   // This keeps pooled textures leased through recording and GPU completion.
   void use(const GPUImage &image) const {
-    device.recordUse(commands, image.use());
+    device.recordUse(commands, image._use);
   }
 };
 

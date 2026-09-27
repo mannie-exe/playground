@@ -18,15 +18,18 @@ public:
   virtual ~CollectionSource() = default;
   virtual std::size_t size() const = 0;
   virtual ItemKey keyAt(std::size_t index) const = 0;
+
   virtual Revision revision() const { return 0; }
 };
 
 enum class CollectionOperation { Insert, Erase, Move, Update };
+
 struct CollectionChange {
   CollectionOperation operation;
   ItemKey key;
   std::size_t index{};
 };
+
 struct CollectionChangeSet {
   Revision expectedRevision{};
   Revision resultingRevision{};
@@ -84,10 +87,13 @@ public:
     const auto it = _realized.find(key);
     return it == _realized.end() ? nullptr : it->second;
   }
+
   std::span<const ItemKey> realizedKeys() const noexcept {
     return _realizedKeys;
   }
+
   std::span<const ItemKey> itemKeys() const noexcept { return _keys; }
+
   virtual void refreshItem(const ItemKey &key);
 };
 } // namespace detail

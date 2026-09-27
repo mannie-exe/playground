@@ -12,25 +12,31 @@
 namespace ui = playground::ui;
 namespace math = playground::math;
 namespace layout = playground::layout;
+
 static void check(bool v, const char *m) {
   if (!v)
     throw std::runtime_error(m);
 }
+
 class Source : public ui::CollectionSource {
 public:
   std::size_t count{10000};
   bool reversed{};
+
   std::size_t size() const override { return count; }
+
   ui::ItemKey keyAt(std::size_t i) const override {
     return std::to_string(reversed ? count - 1 - i : i);
   }
 };
+
 static std::unique_ptr<ui::Node> leaf() {
   return std::make_unique<ui::CustomView>(ui::CustomViewCallbacks{
       .measure = [](ui::MeasureContext &, const layout::SizeConstraints &) {
         return layout::MeasureResult{{20, 20}};
       }});
 }
+
 int main() {
   try {
     ui::detail::ExtentIndex extents{std::vector<double>{10, 20, 30}};

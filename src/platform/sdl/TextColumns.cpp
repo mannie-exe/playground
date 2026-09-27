@@ -47,15 +47,17 @@ TextColumns layoutTextColumns(AssetRegistry &assets, FontHandle font,
   TextColumns result;
   if (value.empty())
     return result;
-  auto horizontalProps = font->getProps(), verticalProps = horizontalProps;
+  auto horizontalProps = font->props(), verticalProps = horizontalProps;
   horizontalProps.layout.direction = TTF_DIRECTION_LTR;
   verticalProps.layout.direction = TTF_DIRECTION_TTB;
   const auto horizontal = assets.getFont(horizontalProps),
              vertical = assets.getFont(verticalProps);
+
   struct Column {
     math::Size2 size;
     std::vector<TextColumnRun> runs;
   };
+
   auto shape = [&](std::string_view text) {
     Column column;
     const auto boundaries = ui::graphemeBoundaries(text);

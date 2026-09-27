@@ -1,15 +1,29 @@
 #include <algorithm>
+#include <cmath>
 
+#include <math/ColorSpace.hpp>
 #include <scene/SceneRenderer.hpp>
 
 namespace playground::scene {
+MaterialProps unlitPreview(MaterialProps material) {
+  validate(material);
+  if (material.pbr) {
+    const auto &p = *material.pbr;
+    material.baseColor = math::toSRGB(
+        {p.baseColor.x, p.baseColor.y, p.baseColor.z, p.baseColor.w});
+    material.colorTexture = p.baseColorTexture;
+    material.pbr.reset();
+  }
+  return material;
+}
 
 void MeshData::validate() const {
   if (vertices.empty() || indices.empty() || indices.size() % 3 != 0)
     throw std::invalid_argument("Scene mesh requires indexed triangles");
   for (const auto &v : vertices)
     if (!math::isFinite(v.position) || !math::isFinite(v.normal) ||
-        !math::isFinite(v.uv))
+        !math::isFinite(v.uv) || !math::isFinite(v.uv1) ||
+        !math::isFinite(v.tangent) || !math::isFinite(v.color))
       throw std::invalid_argument("Nonfinite mesh vertex");
   for (auto index : indices)
     if (index >= vertices.size())
@@ -34,6 +48,42 @@ MeshHandle makeMesh(MeshData data) {
 }
 
 void validate(const MaterialProps &material) {
+  material.colorTexture.validate();
+  if ((material.pbr &&
+       (material.baseColorImage || material.colorTexture.texture)) ||
+      (material.baseColorImage && material.colorTexture.texture))
+    throw std::invalid_argument(
+        "Material must select one texture representation");
+  if (material.colorTexture.texture &&
+      material.colorTexture.texture->role() != rendering::TextureRole::Color)
+    throw std::invalid_argument(
+        "Unlit color binding requires color texture interpretation");
+  if (material.pbr) {
+    const auto &p = *material.pbr;
+    const auto unit = [](float v) {
+      return std::isfinite(v) && v >= 0 && v <= 1;
+    };
+    if (!math::isFinite(p.baseColor) || !unit(p.baseColor.x) ||
+        !unit(p.baseColor.y) || !unit(p.baseColor.z) || !unit(p.baseColor.w) ||
+        !unit(p.metallic) || !unit(p.roughness) || !unit(p.occlusionStrength) ||
+        !std::isfinite(p.normalScale) || p.normalScale < 0 ||
+        !math::isFinite(p.emissive) || p.emissive.x < 0 || p.emissive.y < 0 ||
+        p.emissive.z < 0)
+      throw std::invalid_argument(
+          "Invalid metallic-roughness material factors");
+    const rendering::TextureBinding *bindings[]{
+        &p.baseColorTexture, &p.metallicRoughnessTexture, &p.normalTexture,
+        &p.occlusionTexture, &p.emissiveTexture};
+    const rendering::TextureRole roles[]{
+        rendering::TextureRole::Color, rendering::TextureRole::Data,
+        rendering::TextureRole::Normal, rendering::TextureRole::Data,
+        rendering::TextureRole::Emission};
+    for (int i = 0; i < 5; ++i) {
+      bindings[i]->validate();
+      if (bindings[i]->texture && bindings[i]->texture->role() != roles[i])
+        throw std::invalid_argument("Material texture interpretation mismatch");
+    }
+  }
   const auto validAddress = [](TextureAddress address) {
     return address == TextureAddress::Clamp ||
            address == TextureAddress::Repeat ||
@@ -57,6 +107,24 @@ void validate(const MaterialProps &material) {
 }
 
 void validate(const SceneRenderProps &view, std::span<const MeshDraw> draws) {
+  const auto &light = view.lighting;
+  if (!std::isfinite(view.exposure) || view.exposure < 0 ||
+      !math::isFinite(light.directionToLight) ||
+      math::dot(light.directionToLight, light.directionToLight) <= 0 ||
+      !math::isFinite(light.irradiance) || light.irradiance.x < 0 ||
+      light.irradiance.y < 0 || light.irradiance.z < 0 ||
+      !std::isfinite(light.environmentIntensity) ||
+      light.environmentIntensity < 0 ||
+      (bool(light.diffuseEnvironment) != bool(light.specularEnvironment)) ||
+      (bool(light.brdf) != bool(light.specularEnvironment)))
+    throw std::invalid_argument("Invalid scene lighting/exposure");
+  if (light.diffuseEnvironment &&
+      (light.diffuseEnvironment->role() !=
+           rendering::TextureRole::Environment ||
+       light.specularEnvironment->role() !=
+           rendering::TextureRole::Environment ||
+       light.brdf->role() != rendering::TextureRole::Data))
+    throw std::invalid_argument("Environment resource interpretation mismatch");
   if (!math::hasArea(view.pixelSize) || !math::isFinite(view.camera.view) ||
       !math::isFinite(view.camera.projection))
     throw std::invalid_argument("Invalid scene view");
@@ -87,10 +155,12 @@ std::vector<MeshDraw> orderedDraws(const CameraView &camera,
       order != TransparentOrder::Submission)
     throw std::invalid_argument("Invalid transparency ordering policy");
   validate({camera, {1, 1}, {}}, draws);
+
   struct Submission {
     MeshDraw draw;
     float depth;
   };
+
   std::vector<Submission> sorted;
   sorted.reserve(draws.size());
   for (const auto &draw : draws) {

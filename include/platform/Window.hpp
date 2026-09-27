@@ -30,17 +30,27 @@ public:
   bool isResizable() const { return _state.resizable; }
 
   bool isFullscreen() const { return _state.fullscreen; }
+
   bool isBorderless() const { return _state.borderless; }
+
   bool isAlwaysOnTop() const { return _state.alwaysOnTop; }
+
   bool isFocusable() const { return _state.focusable; }
+
   bool isHighPixelDensity() const { return _state.highPixelDensity; }
+
   bool isHidden() const { return _state.hidden; }
+
   bool isMaximized() const { return _state.maximized; }
+
   bool isMinimized() const { return _state.minimized; }
+
   bool isTransparent() const { return _state.transparent; }
+
   bool isMouseGrabbed() const { return _state.mouseGrabbed; }
 
   SDL_Window *get() const noexcept { return _window.get(); }
+
   playground::math::Vec2i getWindowSize() const;
 
   void setTitle(const std::string &title);

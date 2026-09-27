@@ -17,6 +17,7 @@ void checked(SpvReflectResult result) {
     throw std::invalid_argument("SPIR-V reflection failed: " +
                                 std::to_string(result));
 }
+
 ShaderValueType valueType(SpvReflectFormat format) {
   switch (format) {
   case SPV_REFLECT_FORMAT_R32_SFLOAT:
@@ -48,6 +49,7 @@ ShaderValueType valueType(SpvReflectFormat format) {
         "Shader interfaces currently require 32-bit scalar/vector values");
   }
 }
+
 ShaderBindingKind kind(SpvReflectDescriptorType type) {
   switch (type) {
   case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
@@ -66,6 +68,7 @@ ShaderBindingKind kind(SpvReflectDescriptorType type) {
     throw std::invalid_argument("Unsupported shader descriptor kind");
   }
 }
+
 void interfaceVariable(const SpvReflectInterfaceVariable &value,
                        std::vector<ShaderInterface> &out) {
   if (value.decoration_flags & SPV_REFLECT_DECORATION_BUILT_IN)
@@ -86,12 +89,14 @@ void interfaceVariable(const SpvReflectInterfaceVariable &value,
         "Shader interface has unsupported numeric format");
   out.push_back({value.location, valueType(value.format)});
 }
+
 void sortInterfaces(std::vector<ShaderInterface> &values) {
   std::ranges::sort(values, {}, &ShaderInterface::location);
   for (std::size_t i = 1; i < values.size(); ++i)
     if (values[i - 1].location == values[i].location)
       throw std::invalid_argument("Duplicate shader interface location");
 }
+
 void blockLayout(const SpvReflectBlockVariable &block,
                  std::vector<std::uint32_t> &out) {
   out.insert(
@@ -125,10 +130,13 @@ ShaderReflection reflectSPIRV(std::span<const std::uint32_t> words,
   SpvReflectShaderModule module{};
   checked(
       spvReflectCreateShaderModule(words.size_bytes(), words.data(), &module));
+
   struct Guard {
     SpvReflectShaderModule *module;
+
     ~Guard() { spvReflectDestroyShaderModule(module); }
   } guard{&module};
+
   const auto *entry = spvReflectGetEntryPoint(&module, entryPoint.c_str());
   if (!entry)
     throw std::invalid_argument("Shader entry point not found");
@@ -275,6 +283,7 @@ void validateShaderLink(const ShaderReflection &vertex,
           "Shader stage interface location/type mismatch");
   }
 }
+
 bool isShaderABICompatible(const ShaderReflection &previous,
                            const ShaderReflection &replacement) {
   return previous.stage == replacement.stage &&

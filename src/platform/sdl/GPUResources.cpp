@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,10 +17,128 @@
 #include <platform/sdl/GPUResources.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <rendering/Submission.hpp>
+#include <support/PreparationBudget.hpp>
 #include <support/SDLError.hpp>
 #include <support/SDLResource.hpp>
 
 namespace playground::sdl {
+
+GPUTextureData::GPUTextureData(GPUDeviceHandle device,
+                               const rendering::Texture &source,
+                               bool ignoreAlpha)
+    : _device{std::move(device)} {
+  if (!_device)
+    throw std::invalid_argument("Material texture requires a GPU device");
+  _device->checkOwnerThread();
+  if (source.alphaMode() != rendering::AlphaMode::Straight)
+    throw std::invalid_argument("Material source must retain straight alpha");
+  const auto size = source.levels().front().size;
+  const auto &limits = _device->limits();
+  _bytes = source.bytes();
+  if (unsigned(size.x) > limits.maxTextureDimension ||
+      unsigned(size.y) > limits.maxTextureDimension ||
+      _bytes > limits.maxMaterialTextureBytes)
+    throw std::length_error("Material mip chain exceeds allocation policy");
+  const auto &first = source.levels().front().texels;
+  SDL_GPUTextureFormat format{};
+  switch (first.format()) {
+  case rendering::TextureFormat::RGBA8:
+    format = first.encoding() == rendering::ColorEncoding::SRGB
+                 ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB
+                 : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    break;
+  case rendering::TextureFormat::R8:
+    format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
+    break;
+  case rendering::TextureFormat::RGBA16F:
+    format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+    break;
+  case rendering::TextureFormat::RGBA32F:
+    format = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+    break;
+  }
+  SDL_GPUTextureCreateInfo info{};
+  info.type = SDL_GPU_TEXTURETYPE_2D;
+  info.format = format;
+  info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+  info.width = Uint32(size.x);
+  info.height = Uint32(size.y);
+  info.layer_count_or_depth = 1;
+  info.num_levels = Uint32(source.levels().size());
+  if (!SDL_GPUTextureSupportsFormat(_device->get(), info.format, info.type,
+                                    info.usage))
+    throw std::runtime_error("Device lacks requested material texture format");
+  std::vector<Uint32> offsets;
+  std::size_t transferBytes{};
+  for (const auto &level : source.levels()) {
+    if (transferBytes > std::numeric_limits<Uint32>::max() - 15)
+      throw std::length_error("Material upload alignment overflow");
+    transferBytes = (transferBytes + 15) & ~std::size_t{15};
+    offsets.push_back(Uint32(transferBytes));
+    if (level.texels.data().size() >
+        std::numeric_limits<Uint32>::max() - transferBytes)
+      throw std::length_error("Material upload byte count overflow");
+    transferBytes += level.texels.data().size();
+  }
+  limits.validateUpload(transferBytes);
+  if (source.role() == rendering::TextureRole::Color &&
+      _bytes > (std::numeric_limits<std::size_t>::max() - transferBytes) / 2)
+    throw std::length_error("Material preparation estimate overflow");
+  const auto temporaryBytes =
+      source.role() == rendering::TextureRole::Color ? _bytes * 2 : 0;
+  const auto preparationLease =
+      resourcePreparationBudget().acquire(transferBytes + temporaryBytes);
+  rendering::TextureHandle prepared;
+  if (source.role() == rendering::TextureRole::Color)
+    prepared = ignoreAlpha
+                   ? rendering::makeOpaqueTexture(source)
+                   : rendering::packTexture(source, first.format(),
+                                            first.encoding(), true, _bytes);
+  const auto &upload = prepared ? *prepared : source;
+  _use = std::make_shared<rendering::ResourceUse>(_device->resourceDomain());
+  GPUTextureResource texture{_device,
+                             SDL_CreateGPUTexture(_device->get(), &info)};
+  SDL_GPUTransferBufferCreateInfo transferInfo{
+      SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, Uint32(transferBytes)};
+  gpu_detail::Transfer transfer{
+      _device, SDL_CreateGPUTransferBuffer(_device->get(), &transferInfo)};
+  auto *mapped = static_cast<std::byte *>(
+      SDL_MapGPUTransferBuffer(_device->get(), transfer.get(), false));
+  if (!mapped)
+    throwSDLError("Cannot map material texture upload");
+  const auto unmap = [device = _device->get(),
+                      buffer = transfer.get()](std::byte *) {
+    SDL_UnmapGPUTransferBuffer(device, buffer);
+  };
+  std::unique_ptr<std::byte, decltype(unmap)> mapping{mapped, unmap};
+  for (std::size_t i = 0; i < upload.levels().size(); ++i) {
+    const auto bytes = upload.levels()[i].texels.data();
+    std::memcpy(mapped + offsets[i], bytes.data(), bytes.size());
+  }
+  mapping.reset();
+  gpu_detail::Commands commands{_device, "material texture upload"};
+  _device->recordUse(commands.value, _use);
+  auto *pass = SDL_BeginGPUCopyPass(commands.value);
+  if (!pass)
+    throwRenderError("Cannot begin material upload",
+                     rendering::RenderOperation::Record);
+  for (Uint32 i = 0; i < upload.levels().size(); ++i) {
+    const auto &level = upload.levels()[i];
+    const SDL_GPUTextureTransferInfo src{
+        transfer.get(), offsets[i], Uint32(level.size.x), Uint32(level.size.y)};
+    SDL_GPUTextureRegion dst{};
+    dst.texture = texture.get();
+    dst.mip_level = i;
+    dst.w = Uint32(level.size.x);
+    dst.h = Uint32(level.size.y);
+    dst.d = 1;
+    SDL_UploadToGPUTexture(pass, &src, &dst, false);
+  }
+  SDL_EndGPUCopyPass(pass);
+  commands.submit();
+  _texture = std::move(texture);
+  _device->registerTexture(_texture.get(), _use);
+}
 
 rendering::RGBA8Image packSurfaceRGBA8(const SurfacePaintImage &source) {
   const auto &surface = source.surface();
@@ -80,7 +200,8 @@ GPUImage::GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels)
   _device->recordUse(commands.value, _use);
   auto *copy = SDL_BeginGPUCopyPass(commands.value);
   if (!copy)
-    throwSDLError("Failed to begin image upload pass");
+    throwRenderError("Failed to begin image upload pass",
+                     rendering::RenderOperation::Record);
   const SDL_GPUTextureTransferInfo source{.transfer_buffer = transfer.get(),
                                           .offset = 0,
                                           .pixels_per_row = info.width,

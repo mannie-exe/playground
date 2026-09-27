@@ -29,6 +29,17 @@ type and file names (`UIRoot`, `UIServices`, `SVGDocument`, `SDLResource`), and
 in compound function names such as `getSVGDocument`. Namespaces/directories
 remain lowercase (`ui`, `sdl`).
 
+Use `Node::settings/setSettings/applySettingsPatch` for common groups, named
+base groups (`contentProps`, `buttonProps`, `gridProps`) to avoid inheritance
+hiding, and `props/setProps/applyPatch` for component-specific values. Do not
+invent mutators for immutable construction configuration. Generic Keep/Set/Reset
+operations live in `support/Patch.hpp`, not the UI module.
+
+Layout changes should test invalidation visits, arrangement reuse, A/B/A offers,
+mutation during traversal and exception retry. Only opt into multiple measurement
+offers when cached results cannot leave constraint-specific child state behind.
+Counters are the performance oracle in tests; optional timings are observational.
+
 Keep value/props/patch types, templates, constant-evaluation functions, and small
 accessors in headers. Put substantial non-template algorithms, resource work,
 and orchestration in matching `src/<area>/<Name>.cpp` files. Public headers must
@@ -37,7 +48,8 @@ private `src` headers. Keep default arguments on declarations, not definitions.
 
 Register implementation files in `cmake/Modules.cmake` (or the application target
 for app-specific code). Link the module providing an API, not just its external
-dependencies: `playground_math`, `playground_runtime`, `playground_rendering`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
+dependencies: `playground_math`, `playground_runtime`, `playground_assets`,
+`playground_rendering`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
 `playground_ui_resources`, or `playground_sdl`. Use PUBLIC requirements for public
 headers, PRIVATE for implementation-only dependencies. Template and constexpr
 definitions stay visible where consumers instantiate/evaluate them.
@@ -93,6 +105,35 @@ quietly presenting them as implemented or deleting them from the design.
 
 ## Testing
 
+Asset definitions live in `include/assets`; native acquisition stays in
+`platform/sdl`. C++ registration freezes before consumers or workers read it.
+See [asset ownership](docs/platform/ASSETS.md). App view constructors receive
+model/resources explicitly; rebuilding nodes must not reset application state.
+Do not add document apps, disk watchers or executable discovery implicitly.
+
+The `assets` and `runtime` test groups cover catalog/decoder/reconstruction and
+bounded execution. Their aggregates are `playground_assets_tests` and
+`playground_runtime_tests`. Use deterministic barriers/stop-aware gates, not sleeps.
+Test admission refusal, supersession, cancellation, shutdown and failed publication.
+These are constituent tests, not game-rule tests.
+
+Runtime input/timing/lifetime contracts are in `docs/platform/RUNTIME.md`.
+
+For idle/wake changes, follow `docs/platform/ACTIVITY.md` and run `runtime_activity`,
+`event_wake`, `ui_completions`, `ui_window_services` and `performance_reports`.
+Check lost/filtered notifications, stale endpoints, timer cancellation, pending
+work during presentation and snapshot invalidation. Test deadlines with supplied
+times, not wall-clock performance thresholds. Painter fast paths require opt-in
+`gpu_device` pixel comparisons against the general path, including transforms,
+fractional clips, borders and opacity layers. Report hardware execution separately.
+Keep input and clocks independent of SDL; translation/device ownership belongs in
+`platform/sdl`, and controllers manipulate authored scene/model state, not a backend.
+Use synthetic events and explicit elapsed times. Cover BeforeUI/AfterUI consumption,
+held/released/canceled distinctions, zero-tick frames, bounded catch-up, pause,
+stale activation delivery, and failed deferred callbacks. Test interpolation and
+time conservation with numeric tolerances, not wall-clock sleeps. Runtime tests
+may drive a tiny scene model without becoming full application/game tests.
+
 We use **CTest to discover/run tests**, with small C++ test executables. CTest is
 not an assertion library. New focused tests can use
 [`tests/support/Test.hpp`](tests/support/Test.hpp): `require` throws on failure and
@@ -109,6 +150,12 @@ UI viewport/presentation settings are constituents: test their pure mapping,
 schema/merge and failure contracts, not full AppHost startup. Use an in-memory
 FileStore or a fresh test-owned directory; never real user preferences. Ordinary
 tests must not change desktop displays, fullscreen modes, or OS settings.
+
+Host transition ordering may be tested through the narrow operations in
+`app/HostTransitions.hpp`, which AppHost also calls. Use fake apps/backends to
+verify ownership, rollback, command suppression and recovery without constructing
+AppHost or touching user settings. Native submit failures use GPUCommandAPI's
+consuming submit boundary in opt-in GPU tests, never a forced driver reset.
 
 ### Commands
 
@@ -157,11 +204,25 @@ a dependency declaration. Timeouts catch hangs, not performance regressions.
 Renderer tests use the `rendering` module label and link playground_rendering;
 hardware tests must be explicitly opt-in, not silently run as ordinary UI tests.
 Use `-DPLAYGROUND_GPU_TESTS=ON` with compiled SPIR-V shaders to enable `gpu_device`
-and `gpu_shaders` (Vulkan only). These are renderer-module readback/lifetime
+and `gpu_shaders`/`gpu_materials` (Vulkan only). These are renderer-module readback/lifetime
 checks, not program smoke tests. Unsupported drivers return skip code 77; a
 supported device failing an assertion is a failure, not a skip. Report shader
 compilation and each tested driver separately. Software-only builds remain valid.
 Do not assert wall-clock speed in ordinary unit tests.
+
+Texture/material changes should run texture_materials, software_materials, animation, material_assets,
+model_import and (opt-in Vulkan) gpu_materials. The latter reads back PBR output;
+it is a renderer constituent test, not a Demo 3D application smoke test.
+Use synthetic clips to test interpolation, identity and stale targets independently
+of downloaded assets. Keep asset authors, source URLs, license files and hashes in
+assets/demo3d/README.md; tests must not fetch the network. Preserve numerical
+texture channels and account for all mip levels. Shader compilation is not proof
+of visual correctness.
+Compact storage/import changes additionally run texture_storage, mesh_preparation
+and ktx_texture. KTX integration tests reuse fixtures from the pinned dependency;
+do not download fixtures during test execution. Keep exact vertex reindexing
+separate from lossy welding or triangle-order changes. Report payload bytes,
+admission estimates and actual allocator/process measurements distinctly.
 
 For a bug fix, first express the failure at the smallest useful boundary. Test
 observable results: bounds, routed action, handle validity, dirty/cache behavior,
@@ -259,6 +320,11 @@ the current scope; building the application still verifies that its consumers co
 - Keep worker publication bounded and owner-thread application explicit. A shared
   handle preserves lifetime, not thread safety or GPU completion. Resource-domain
   compatibility and completion fences solve different problems.
+- Keep backend creation policy in RenderBackendProps and retain it across recovery.
+  Allocation refusal is not device loss. New frame failures must use the matching
+  RenderOperation category; decoding/validation errors must not request recovery.
+- Publish immutable GPU images only after their initializing submission succeeds.
+  Writable pooled attachments and their mutable lease bookkeeping remain internal.
 - For shader changes, test reflected ABI rejection and failed-reload preservation,
   then run native readback tests. For imports, test malformed/budget-exceeding input
   and atomic scene publication separately from successful parsing.
@@ -270,15 +336,50 @@ the current scope; building the application still verifies that its consumers co
 - Build affected targets, run the relevant tests, and use `git diff --check`.
 - Report what was actually verified, along with platform or deferred limitations.
 
-### Native rendering dependencies
+### Accessibility and Unicode dependencies
+
+`cmake/Accessibility.cmake` imports the official checksum-pinned AccessKit C
+0.23.1 desktop binaries. Native adapters are private to playground_sdl; core UI
+headers must not expose AccessKit types. ICU uc/i18n/data are implementation-only
+dependencies of playground_ui_core. MSVC x64/ARM64 use pinned ICU 78.3 archives;
+other desktop toolchains require an installed ICU >=78 development package.
+Windows installation copies the ICU DLLs and both dependencies' licenses.
+The prebuilt AccessKit package does not require a local Rust build.
+
+Appearance observation adds AppKit on macOS and `dbus-1` development headers via
+pkg-config on Linux. SDL supplies light/dark; native adapters supply contrast.
+Core palettes and popup layout remain SDL-independent. Test with injected
+SystemAppearance values; do not toggle a user's OS preferences automatically.
+Run ui_theme, ui_overlays and ui_control_text_layout for appearance/overlay changes.
+Wrap regressions should include fractional density and actual fonts, not just
+synthetic text sizes. Popup dismissal must test the complete pointer sequence.
+
+Use `ui_text_edit`, `ui_text_field`, `ui_accessibility`, `ui_control_variants`,
+`ui_sdl_input`, `ui_window_services` and `ui_presentation_settings` for focused interaction checks.
+Tests use injected clipboard functions; never overwrite the user's clipboard.
+Keep passwords out of snapshots and diagnostics. Native callbacks must use owned
+snapshots/requests and never mutate Nodes or throw through a C ABI. A native
+adapter compiling does not establish Narrator/NVDA, VoiceOver or Orca acceptance;
+report that separately. The Demo2D controls gallery is for manual exploration,
+not a program smoke test.
+
+### Native rendering dependency maintenance
 
 SDL and SDL_ttf are pinned and receive checked-in configure-time patches under
 `cmake/patches`; `cmake/SDLTimestamps.cmake` integrates the Vulkan timestamp
 extension. Never fix only the downloaded `_deps` copy. Dependency upgrades must
 review patch guards, repeat configuration to check idempotence, and run the
-focused `gpu_timing`/`text_pixels` tests plus opt-in native GPU tests. The timestamp
+focused `gpu_timing`/`text_pixels` tests plus opt-in native GPU tests. Run
+`gpu_timestamp_native` for profiling changes: command-buffer reuse and runtime
+profiling toggles must work with GPU debugging both disabled and enabled. The timestamp
 table is a versioned project extension, not an upstream SDL API. CPU timing and
 GPU execution/completion measurements must remain labeled separately.
+
+For telemetry changes also run `performance_monitor` and `performance_reports`.
+Use deterministic duration samples to check aggregation, missing values, size and
+domain grouping, collection generations, loss-counter deltas and bounded histories.
+Reporting must not wait for GPU results or equate command intervals with GPU frame
+time/utilization. Native timing tests cover execution separately from aggregation.
 
 Resource tests must distinguish recording, submitted, completed, canceled and
 ambiguous-failure states. Use injected timestamp tables and pure budget/recovery
@@ -290,11 +391,23 @@ ordinary unit tests do not claim hardware coverage.
 
 ### Pre-commit verification
 
-Format authored C++ with the editor's clang-format conventions; exclude generated
-tables and dependency sources. The current editor has no project-specific style
-override: CLI checks use `--style=file --fallback-style=LLVM`. Preserve semantic
-grouping of props, runtime state and derived caches; do not introduce a formatter
-or clangd configuration just for an audit.
+Format authored C++ with the checked-in `.clang-format`; exclude generated tables
+and dependency sources. It retains LLVM formatting and groups standard library,
+external dependencies, then project headers, with blank lines between groups.
+Matching implementation headers stay in the project group. Macro-configured
+implementation headers and conditional includes must retain their preprocessor
+ordering. Preserve semantic grouping of props, runtime state and derived caches;
+formatting cannot infer those groups for you.
+
+The editor and CLI both use `--style=file`; LLVM 22.1.8 is the currently verified
+formatter/clangd pair. Use `clang-format --dry-run --Werror --style=file <files>`
+to check and `clang-format -i --style=file <files>` to apply. `.clangd` prefers
+angle brackets for public project include paths; it does not add search paths.
+The generated compilation database remains the authority for those paths.
+Review include-cleaner suggestions rather than bulk-removing headers: formatter
+specializations, overload providers and SDL_main.h can matter without an obvious
+direct symbol use. Experiments remain separate targets and need not be reformatted
+as part of an engine-only change.
 
 After rebuilding the compile database, a source/header can be checked with
 `clangd --check=path/to/file.hpp --compile-commands-dir=. --tweaks=`. The empty

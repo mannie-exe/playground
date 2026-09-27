@@ -1,8 +1,8 @@
 #pragma once
 
 #include <rendering/PathPaint.hpp>
+#include <support/Patch.hpp>
 #include <ui/Node.hpp>
-#include <ui/Patch.hpp>
 #include <ui/content/ContentTypes.hpp>
 
 namespace playground::ui {
@@ -15,6 +15,7 @@ struct PathProps {
   layout::Alignment alignment{layout::Alignment::center()};
   bool operator==(const PathProps &) const = default;
 };
+
 struct PathPatch {
   Patch<math::Path2D> path;
   Patch<math::Rect> viewBox;
@@ -35,14 +36,18 @@ protected:
   measureContent(MeasureContext &, const layout::SizeConstraints &) override {
     return {.size = _props.viewBox.size};
   }
+
   void arrangeChildren(ArrangeContext &context, math::Rect) override {
     _direction = context.direction;
   }
+
   void paint(PaintContext &) const override;
 
 public:
   explicit Path(PathProps props, layout::BoxProps box = {});
+
   const PathProps &props() const noexcept { return _props; }
+
   void setProps(PathProps);
   void applyPatch(const PathPatch &);
 };

@@ -47,6 +47,7 @@ void GPUText::setWrapWidth(int pixels) {
   if (!TTF_SetTextWrapWidth(_text.get(), pixels))
     throwSDLError("Cannot set GPU text wrapping");
 }
+
 math::Vec2i GPUText::size() {
   _engine->device()->checkOwnerThread();
   math::Vec2i result;

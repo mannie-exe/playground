@@ -27,12 +27,16 @@ public:
       : PlacementContainer{box}, _props{props} {
     _props.validate();
   }
+
   const layout::FlowProps &props() const noexcept { return _props; }
+
   void setProps(layout::FlowProps props);
   void applyPatch(const FlowPatch &patch);
+
   void applyPlacementPatch(NodeId child, const StackPlacementPatch &patch) {
     applyPlacementPatch(indexOf(child), patch);
   }
+
   void applyPlacementPatch(std::size_t index, const StackPlacementPatch &patch);
 };
 

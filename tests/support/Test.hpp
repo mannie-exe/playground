@@ -11,6 +11,7 @@ inline void require(bool condition, std::string_view message) {
   if (!condition)
     throw std::runtime_error(std::string{message});
 }
+
 template <class Exception = std::invalid_argument, class Operation>
 void rejects(Operation operation, std::string_view message) {
   try {
@@ -20,6 +21,7 @@ void rejects(Operation operation, std::string_view message) {
   }
   throw std::runtime_error(std::string{message});
 }
+
 template <typename Test> int run(Test test) {
   try {
     test();

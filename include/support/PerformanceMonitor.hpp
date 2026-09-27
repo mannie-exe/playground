@@ -7,25 +7,20 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
 #include <rendering/GPUTiming.hpp>
+#include <support/PerformanceReport.hpp>
+#include <ui/WorkDiagnostics.hpp>
 
 struct PerformanceConfig {
   bool enabled{false};
-  std::uint32_t sampleEveryFrames{60};
+  std::uint32_t reportEveryFrames{60};
   std::uint32_t historySize{240};
   bool logSummary{true};
-};
-
-enum class FramePhase : std::uint8_t {
-  Poll,
-  Update,
-  Render,
-  Present,
-  Total,
 };
 
 // CPU durations only. A missing phase is not a zero-duration measurement.
@@ -34,56 +29,41 @@ struct PerformanceSample {
   std::array<bool, 5> measured{};
 };
 
-enum class GPUTimingStatus : std::uint8_t {
-  Unsupported,
-  Disabled,
-  Pending,
-  Measured,
-};
-
 struct PerformanceHistoryEntry {
   std::uint64_t frame{};
   PerformanceSample cpu;
   GPUTimingStatus gpuTiming{GPUTimingStatus::Unsupported};
   bool gpuSampleReceived{};
+  std::vector<playground::ui::UIWorkSample> ui;
 };
 
 class PerformanceMonitor {
-  struct PhaseStats {
-    std::uint64_t count{};
-    double totalMilliseconds{};
-    double minimumMilliseconds{0.0};
-    double maximumMilliseconds{};
-
-    void add(double milliseconds) {
-      if (count == 0)
-        minimumMilliseconds = milliseconds;
-      else if (milliseconds < minimumMilliseconds)
-        minimumMilliseconds = milliseconds;
-
-      if (milliseconds > maximumMilliseconds)
-        maximumMilliseconds = milliseconds;
-      totalMilliseconds += milliseconds;
-      ++count;
-    }
-
-    double average() const {
-      return count == 0 ? 0.0 : totalMilliseconds / count;
-    }
-  };
-
   PerformanceConfig _config;
-  std::array<PhaseStats, 5> _stats;
+  std::array<DurationStats, 5> _stats;
   std::array<std::uint64_t, 5> _starts{};
   std::array<bool, 5> _active{};
   PerformanceSample _sample;
+  std::vector<playground::ui::UIWorkSample> _uiWork;
+  playground::ui::UIWorkStats _uiSummary;
+  DurationStats _idleWait;
+  playground::rendering::PaintWork _paint;
+  std::array<double,
+             static_cast<std::size_t>(playground::ui::UIWorkPhase::Count)>
+      _uiMilliseconds{};
   std::deque<PerformanceHistoryEntry> _history;
   std::deque<playground::rendering::GPUTimingSample> _gpuHistory;
-  std::optional<playground::rendering::GPUTimingSample> _latestGPU;
+  std::vector<GPUGroupReport> _gpuGroups;
+  std::optional<playground::rendering::GPUTimingCollection> _gpuCollection;
+  std::uint64_t _gpuSamplesReceived{};
+  std::uint64_t _omittedGPUSamples{};
+  std::uint64_t _queryDrops{};
+  std::uint64_t _bufferDiscards{};
+  bool _gpuMeasured{};
   bool _gpuTimingAvailable{};
   bool _gpuSampleReceived{};
   std::uint64_t _frameCount{};
   std::uint64_t _framesSinceReport{};
+  std::uint64_t _statisticsRevision{};
   std::uint64_t _frequency{SDL_GetPerformanceFrequency()};
 
   static std::size_t index(FramePhase phase) {
@@ -102,43 +82,56 @@ class PerformanceMonitor {
 
 public:
   static constexpr std::uint32_t maximumHistorySize{65536};
+  static constexpr std::size_t maximumGPUGroups{64};
 
   explicit PerformanceMonitor(PerformanceConfig config = {}) {
     setConfig(config);
   }
 
-  const PerformanceConfig &getConfig() const { return _config; }
+  const PerformanceConfig &config() const { return _config; }
+
   const std::deque<PerformanceHistoryEntry> &history() const noexcept {
     return _history;
   }
+
   const std::deque<playground::rendering::GPUTimingSample> &
   gpuHistory() const noexcept {
     return _gpuHistory;
   }
+
   void setGPUTimingAvailable(bool available) noexcept {
     if (_gpuTimingAvailable == available)
       return;
     _gpuTimingAvailable = available;
-    _latestGPU.reset();
+    _gpuMeasured = false;
+    _gpuCollection.reset();
     _gpuSampleReceived = false;
   }
+
   GPUTimingStatus gpuTimingStatus() const noexcept {
     if (!_gpuTimingAvailable)
       return GPUTimingStatus::Unsupported;
-    if (!_config.enabled)
+    if (!_config.enabled || (_gpuCollection && !_gpuCollection->enabled))
       return GPUTimingStatus::Disabled;
-    return _latestGPU ? GPUTimingStatus::Measured : GPUTimingStatus::Pending;
+    return _gpuMeasured ? GPUTimingStatus::Measured : GPUTimingStatus::Pending;
   }
 
   void setConfig(PerformanceConfig config);
 
   bool isEnabled() const { return _config.enabled; }
 
+  // Host restarts native collection after any full reset, even if two hotkey
+  // toggles occur between rendered frames. Report-only resets do not change it.
+  std::uint64_t statisticsRevision() const noexcept {
+    return _statisticsRevision;
+  }
+
   void setEnabled(bool enabled);
 
   void toggleEnabled() { setEnabled(!isEnabled()); }
 
   void beginFrame() {
+    _uiWork.clear();
     _sample = {};
     _active = {};
     begin(FramePhase::Total);
@@ -158,22 +151,30 @@ public:
   // Allows deterministic samples from another CPU profiler, not GPU timings.
   // Enabled collection validates finite, nonnegative measured durations.
   void recordFrame(const PerformanceSample &sample);
+
+  void recordIdleWait(double milliseconds) {
+    if (isEnabled())
+      _idleWait.add(milliseconds);
+  }
+
+  void recordPaintWork(const playground::rendering::PaintWork &work) {
+    if (isEnabled())
+      _paint.add(work);
+  }
+
+  // Per-root deltas; root timings overlap CPU phases and are not added to
+  // Total.
+  void recordUI(const playground::ui::UIWorkSample &sample);
   // Only completed native timestamp queries; unavailable data stays absent.
   void recordGPU(const playground::rendering::GPUTimingSample &sample);
+  // Record the backend snapshot before forwarding its completed sample batch.
+  void recordGPUCollection(const playground::rendering::GPUTimingCollection &);
 
+  PerformanceReport snapshotReport() const;
+  void resetReportInterval() noexcept;
   void report();
 
-  void resetStatistics() {
-    _stats = {};
-    _active = {};
-    _sample = {};
-    _history.clear();
-    _gpuHistory.clear();
-    _latestGPU.reset();
-    _gpuSampleReceived = false;
-    _frameCount = 0;
-    _framesSinceReport = 0;
-  }
+  void resetStatistics();
 
   bool handleHotkey(const SDL_KeyboardEvent &key);
 };

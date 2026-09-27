@@ -12,12 +12,14 @@ bool close(Vec3f a, Vec3f b) {
   return std::abs(a.x - b.x) < 0.0001f && std::abs(a.y - b.y) < 0.0001f &&
          std::abs(a.z - b.z) < 0.0001f;
 }
+
 void identity(const Matrix4 &m) {
   const Matrix4 expected;
   for (std::size_t i = 0; i < 16; ++i)
     test::require(std::abs(m.elements[i] - expected.elements[i]) < 0.0001f,
                   "inverse product is identity");
 }
+
 int main() {
   return test::run([] {
     const auto z = axisAngle({0, 0, 1}, std::numbers::pi_v<float> / 2);

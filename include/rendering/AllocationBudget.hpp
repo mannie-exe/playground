@@ -12,17 +12,22 @@ class AllocationBudget {
   struct State {
     std::size_t bytes{};
   };
+
   struct Reservation {
     std::shared_ptr<State> state;
     std::size_t bytes;
+
     ~Reservation() { state->bytes -= bytes; }
   };
+
   std::shared_ptr<State> _state{std::make_shared<State>()};
   std::size_t _limit;
 
 public:
   explicit AllocationBudget(std::size_t limit) : _limit{limit} {}
+
   std::size_t bytes() const noexcept { return _state->bytes; }
+
   std::shared_ptr<void> reserve(std::size_t bytes) {
     if (bytes > _limit || _state->bytes > _limit - bytes)
       throw std::length_error("Live render target allocation budget exhausted");

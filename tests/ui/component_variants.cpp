@@ -11,10 +11,15 @@ using namespace playground;
 class Paint final : public rendering::PaintContext {
 public:
   int depth{};
+
   void save() override { ++depth; }
+
   void restore() noexcept override { --depth; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override {}
 };
 

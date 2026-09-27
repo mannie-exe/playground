@@ -8,6 +8,7 @@
 namespace playground::scene {
 namespace {
 std::atomic<std::uint64_t> nextOwner{1};
+
 void validateProps(const ObjectProps &props) {
   props.transform.matrix();
   validate(props.material);
@@ -41,6 +42,7 @@ const Scene3D::Entry &Scene3D::entry(ObjectId id) const {
     throw std::invalid_argument("Stale or foreign scene object");
   return _entries[id.index];
 }
+
 Scene3D::Entry &Scene3D::entry(ObjectId id) {
   return const_cast<Entry &>(std::as_const(*this).entry(id));
 }
@@ -54,6 +56,7 @@ ObjectId Scene3D::create(ObjectProps props, std::optional<ObjectId> parent) {
     auto &slot = _entries[i];
     slot.props = std::move(props);
     slot.parent = parent;
+    slot.worldDirty = slot.visibilityDirty = true;
     const ObjectId id{_owner, static_cast<std::uint32_t>(i), slot.generation};
     if (parent)
       entry(*parent).children.push_back(id);
@@ -74,6 +77,7 @@ ObjectId Scene3D::create(ObjectProps props, std::optional<ObjectId> parent) {
 const ObjectProps &Scene3D::props(ObjectId id) const {
   return *entry(id).props;
 }
+
 std::vector<ObjectId>
 Scene3D::createBatch(std::span<const ObjectProps> objects,
                      std::span<const std::optional<std::size_t>> parents,
@@ -109,12 +113,23 @@ Scene3D::createBatch(std::span<const ObjectProps> objects,
   ++_revision;
   return result;
 }
+
 void Scene3D::setProps(ObjectId id, ObjectProps props) {
-  entry(id);
+  auto &slot = entry(id);
   validateProps(props);
-  entry(id).props = std::move(props);
+  const bool transformChanged = slot.props->transform != props.transform;
+  const bool visibilityChanged = slot.props->visible != props.visible;
+  const auto affected = transformChanged || visibilityChanged
+                            ? descendants(id)
+                            : std::vector<std::uint32_t>{};
+  slot.props = std::move(props);
+  for (auto index : affected) {
+    _entries[index].worldDirty |= transformChanged;
+    _entries[index].visibilityDirty |= visibilityChanged;
+  }
   ++_revision;
 }
+
 void Scene3D::applyPatch(ObjectId id, const ObjectPatch &patch) {
   auto value = props(id);
   if (patch.transform)
@@ -127,6 +142,7 @@ void Scene3D::applyPatch(ObjectId id, const ObjectPatch &patch) {
     value.visible = *patch.visible;
   setProps(id, std::move(value));
 }
+
 void Scene3D::setParent(ObjectId id, std::optional<ObjectId> parent) {
   entry(id);
   for (auto ancestor = parent; ancestor; ancestor = entry(*ancestor).parent)
@@ -134,6 +150,7 @@ void Scene3D::setParent(ObjectId id, std::optional<ObjectId> parent) {
       throw std::invalid_argument("Scene parenting cycle");
   if (parent == entry(id).parent)
     return;
+  const auto affected = descendants(id);
   if (parent)
     entry(*parent).children.reserve(entry(*parent).children.size() + 1);
   if (const auto old = entry(id).parent)
@@ -141,6 +158,8 @@ void Scene3D::setParent(ObjectId id, std::optional<ObjectId> parent) {
   if (parent)
     entry(*parent).children.push_back(id);
   entry(id).parent = parent;
+  for (auto index : affected)
+    _entries[index].worldDirty = _entries[index].visibilityDirty = true;
   ++_revision;
 }
 
@@ -166,6 +185,15 @@ void Scene3D::remove(ObjectId id) {
   ++_revision;
 }
 
+std::vector<std::uint32_t> Scene3D::descendants(ObjectId id) const {
+  entry(id);
+  std::vector<std::uint32_t> result{id.index};
+  for (std::size_t cursor = 0; cursor < result.size(); ++cursor)
+    for (auto child : _entries[result[cursor]].children)
+      result.push_back(child.index);
+  return result;
+}
+
 math::Matrix4 Scene3D::worldTransform(ObjectId id) const {
   entry(id);
   refreshWorldCache();
@@ -175,14 +203,15 @@ math::Matrix4 Scene3D::worldTransform(ObjectId id) const {
 void Scene3D::refreshWorldCache() const {
   if (_cachedRevision == _revision)
     return;
-  std::vector<bool> ready(_entries.size());
   std::vector<std::size_t> chain;
   std::vector<MeshDraw> draws;
   for (std::size_t i = 0; i < _entries.size(); ++i) {
-    if (!_entries[i].props || ready[i])
+    if (!_entries[i].props ||
+        (!_entries[i].worldDirty && !_entries[i].visibilityDirty))
       continue;
     chain.clear();
-    for (std::size_t current = i; !ready[current];) {
+    for (std::size_t current = i;
+         _entries[current].worldDirty || _entries[current].visibilityDirty;) {
       chain.push_back(current);
       if (!_entries[current].parent)
         break;
@@ -190,16 +219,23 @@ void Scene3D::refreshWorldCache() const {
     }
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
       auto &slot = _entries[*it];
-      slot.world = slot.props->transform.matrix();
-      slot.worldVisible = slot.props->visible;
-      if (slot.parent) {
-        const auto &parent = _entries[slot.parent->index];
-        slot.world = parent.world * slot.world;
-        slot.worldVisible = parent.worldVisible && slot.worldVisible;
+      if (slot.worldDirty) {
+        auto world = slot.props->transform.matrix();
+        if (slot.parent)
+          world = _entries[slot.parent->index].world * world;
+        if (!math::isFinite(world))
+          throw std::overflow_error("Scene world transform overflow");
+        slot.world = world;
+        slot.worldDirty = false;
+        ++_cacheStats.worldTransforms;
       }
-      if (!math::isFinite(slot.world))
-        throw std::overflow_error("Scene world transform overflow");
-      ready[*it] = true;
+      if (slot.visibilityDirty) {
+        slot.worldVisible =
+            slot.props->visible &&
+            (!slot.parent || _entries[slot.parent->index].worldVisible);
+        slot.visibilityDirty = false;
+        ++_cacheStats.visibilityUpdates;
+      }
     }
   }
   for (std::size_t i = 0; i < _entries.size(); ++i) {
@@ -211,6 +247,7 @@ void Scene3D::refreshWorldCache() const {
   }
   _cachedDraws = std::move(draws);
   _cachedRevision = _revision;
+  ++_cacheStats.snapshots;
 }
 
 std::vector<MeshDraw> Scene3D::snapshot() const {

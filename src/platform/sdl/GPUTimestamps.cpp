@@ -17,12 +17,15 @@ namespace playground::sdl {
 
 struct GPUTimestampRing::Impl {
   enum class State { Free, Recording, Ended, Submitted, Abandoned };
+
   struct Slot {
     State state{};
     std::uint64_t generation{};
     rendering::SubmissionId submission{};
     SDL_GPUCommandBuffer *commands{};
     std::string label;
+    rendering::GPUWorkContext context;
+    std::uint64_t collectionGeneration{};
   };
 
   SDL_GPUTimestampInterface api{};
@@ -94,10 +97,12 @@ GPUTimestampRing::GPUTimestampRing(const SDL_GPUTimestampInterface &api,
 GPUTimestampRing::~GPUTimestampRing() = default;
 
 std::optional<GPUTimestampRing::Ticket>
-GPUTimestampRing::begin(SDL_GPUCommandBuffer *commands,
-                        std::string_view label) {
+GPUTimestampRing::begin(SDL_GPUCommandBuffer *commands, std::string_view label,
+                        rendering::GPUWorkContext context,
+                        std::uint64_t collectionGeneration) {
   _impl->checkOwner();
   rendering::validateGPUTimingLabel(label);
+  rendering::validateGPUWorkContext(context);
   if (!supported())
     return std::nullopt;
   if (!commands)
@@ -115,8 +120,11 @@ GPUTimestampRing::begin(SDL_GPUCommandBuffer *commands,
     std::string savedLabel{label};
     if (!_impl->api.Write(_impl->pool, commands, index, false))
       throw rendering::RenderFailure(std::string{"Begin GPU timestamp: "} +
-                                     SDL_GetError());
+                                         SDL_GetError(),
+                                     rendering::RenderOperation::Record);
     slot.label = std::move(savedLabel);
+    slot.context = context;
+    slot.collectionGeneration = collectionGeneration;
     slot.generation = ++_impl->sequence;
     slot.commands = commands;
     slot.state = Impl::State::Recording;
@@ -125,6 +133,16 @@ GPUTimestampRing::begin(SDL_GPUCommandBuffer *commands,
   if (_impl->dropped != std::numeric_limits<std::uint64_t>::max())
     ++_impl->dropped;
   return std::nullopt;
+}
+
+void GPUTimestampRing::setContext(Ticket ticket,
+                                  rendering::GPUWorkContext context) {
+  _impl->checkOwner();
+  rendering::validateGPUWorkContext(context);
+  auto *slot = _impl->find(ticket);
+  if (!slot || slot->state != Impl::State::Recording)
+    throw std::logic_error("Timestamp metadata requires a recording ticket");
+  slot->context = context;
 }
 
 void GPUTimestampRing::end(SDL_GPUCommandBuffer *commands, Ticket ticket) {
@@ -136,7 +154,8 @@ void GPUTimestampRing::end(SDL_GPUCommandBuffer *commands, Ticket ticket) {
         "Timestamp end requires its recording command buffer");
   if (!_impl->api.Write(_impl->pool, commands, ticket.slot, true))
     throw rendering::RenderFailure(std::string{"End GPU timestamp: "} +
-                                   SDL_GetError());
+                                       SDL_GetError(),
+                                   rendering::RenderOperation::Record);
   slot->state = Impl::State::Ended;
 }
 
@@ -198,7 +217,8 @@ GPUTimestampRing::poll(rendering::SubmissionId completedSubmission) {
     if (status != SDL_GPU_TIMESTAMP_READY) {
       slot.state = Impl::State::Abandoned;
       throw rendering::RenderFailure(std::string{"Read GPU timestamp: "} +
-                                     SDL_GetError());
+                                         SDL_GetError(),
+                                     rendering::RenderOperation::Query);
     }
     const auto mask = _impl->api.valid_bits == 64
                           ? std::numeric_limits<std::uint64_t>::max()
@@ -206,7 +226,13 @@ GPUTimestampRing::poll(rendering::SubmissionId completedSubmission) {
     const auto ticks = (end - begin) & mask;
     const double milliseconds = static_cast<double>(ticks) *
                                 _impl->api.period_nanoseconds / 1'000'000.0;
-    samples.push_back({slot.submission, slot.label, milliseconds});
+    samples.push_back({slot.submission,
+                       slot.label,
+                       milliseconds,
+                       {},
+                       {},
+                       slot.context,
+                       slot.collectionGeneration});
     ready.push_back(index);
   }
   // Slot reuse changes physical order; publish this batch in submission order.
@@ -223,8 +249,20 @@ GPUTimestampRing::poll(rendering::SubmissionId completedSubmission) {
 bool GPUTimestampRing::supported() const noexcept {
   return _impl->pool != nullptr;
 }
+
 std::uint64_t GPUTimestampRing::dropped() const noexcept {
   return _impl->dropped;
+}
+
+std::uint32_t
+GPUTimestampRing::pending(std::uint64_t generation) const noexcept {
+  return static_cast<std::uint32_t>(
+      std::ranges::count_if(_impl->slots, [generation](const auto &slot) {
+        return slot.collectionGeneration == generation &&
+               (slot.state == Impl::State::Recording ||
+                slot.state == Impl::State::Ended ||
+                slot.state == Impl::State::Submitted);
+      }));
 }
 
 } // namespace playground::sdl

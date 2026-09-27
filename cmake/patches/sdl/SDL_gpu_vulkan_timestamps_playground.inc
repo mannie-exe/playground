@@ -41,22 +41,27 @@ static void *SDLCALL PlaygroundVulkan_CreateTimestampPool(void *context, Uint32 
 }
 
 static bool SDLCALL PlaygroundVulkan_WriteTimestamp(void *opaque, SDL_GPUCommandBuffer *commandBuffer,
-                                                   Uint32 slot, bool end)
+                                                    Uint32 slot, bool end)
 {
     PlaygroundVulkanTimestampPool *pool = (PlaygroundVulkanTimestampPool *)opaque;
     VulkanCommandBuffer *commands = (VulkanCommandBuffer *)commandBuffer;
     if (!pool || pool->released || !commands || slot >= pool->slots ||
-        commands->renderer != pool->renderer || commands->common.submitted ||
-        commands->common.render_pass.in_progress || commands->common.compute_pass.in_progress ||
-        commands->common.copy_pass.in_progress) {
+        commands->renderer != pool->renderer) {
+        return SDL_SetError("Timestamp write requires a live same-device command buffer outside passes");
+    }
+    /* SDL only resets these validation fields when debug mode is enabled.
+     * In particular, submitted stays true on recycled non-debug buffers. */
+    if (commands->common.device->debug_mode &&
+        (commands->common.submitted || commands->common.render_pass.in_progress ||
+         commands->common.compute_pass.in_progress || commands->common.copy_pass.in_progress)) {
         return SDL_SetError("Timestamp write requires a live same-device command buffer outside passes");
     }
     if (!end) {
         pool->renderer->vkCmdResetQueryPool(commands->commandBuffer, pool->queries, slot * 2, 2);
     }
     pool->renderer->vkCmdWriteTimestamp(commands->commandBuffer,
-        end ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        pool->queries, slot * 2 + (end ? 1 : 0));
+                                        end ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                        pool->queries, slot * 2 + (end ? 1 : 0));
     return true;
 }
 
@@ -71,8 +76,8 @@ static SDL_GPUTimestampReadStatus SDLCALL PlaygroundVulkan_ReadTimestamps(void *
         return SDL_GPU_TIMESTAMP_ERROR;
     }
     status = pool->renderer->vkGetQueryPoolResults(pool->renderer->logicalDevice, pool->queries,
-        slot * 2, 2, sizeof(result), result, sizeof(Uint64) * 2,
-        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+                                                   slot * 2, 2, sizeof(result), result, sizeof(Uint64) * 2,
+                                                   VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
     if (status == VK_ERROR_DEVICE_LOST) {
         SDL_SetError("Vulkan timestamp device lost");
         return SDL_GPU_TIMESTAMP_DEVICE_LOST;

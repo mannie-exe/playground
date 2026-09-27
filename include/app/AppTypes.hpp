@@ -14,7 +14,8 @@
 
 enum class AppId {
   Menu,
-  Demo,
+  Demo2D,
+  Demo3D,
   Minesweeper,
   RockPaperScissors,
   Snake,
@@ -67,8 +68,10 @@ constexpr std::string_view toString(AppId appId) {
   switch (appId) {
   case AppId::Menu:
     return "Menu";
-  case AppId::Demo:
-    return "Demo";
+  case AppId::Demo2D:
+    return "Demo 2D";
+  case AppId::Demo3D:
+    return "Demo 3D";
   case AppId::Minesweeper:
     return "Minesweeper";
   case AppId::RockPaperScissors:
@@ -116,11 +119,14 @@ template <> struct std::formatter<AppId> : std::formatter<std::string_view> {
 };
 
 constexpr std::string_view appKey(AppId id) {
+  // Persisted identities stay stable when display names/source modules change.
   switch (id) {
   case AppId::Menu:
     return "menu";
-  case AppId::Demo:
+  case AppId::Demo2D:
     return "demo";
+  case AppId::Demo3D:
+    return "material-lab";
   case AppId::Minesweeper:
     return "minesweeper";
   case AppId::RockPaperScissors:

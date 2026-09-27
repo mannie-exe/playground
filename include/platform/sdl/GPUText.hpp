@@ -19,8 +19,11 @@ class GPUTextEngine {
 
 public:
   explicit GPUTextEngine(GPUDeviceHandle device);
+
   TTF_TextEngine *get() const noexcept { return _engine.get(); }
+
   const GPUDeviceHandle &device() const noexcept { return _device; }
+
   GPUTextEngine(const GPUTextEngine &) = delete;
   GPUTextEngine &operator=(const GPUTextEngine &) = delete;
 };

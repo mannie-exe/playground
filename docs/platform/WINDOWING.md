@@ -7,6 +7,16 @@ See [settings](SETTINGS.md), [UI contracts](../ui/CONTRACTS.md), and
 
 ## Values and ownership
 
+`app::PresentationSession` owns the Window and window-lifetime native
+WindowServices (AccessKit, clipboard and IME),
+backend, presentation/view/window values, observed state, checkpoint restoration
+and renderer recovery. AppHost owns settings persistence, active-app lifecycle,
+command processing, frame orchestration, clock rebasing and renderer-domain
+notifications. UISession remains a separate UI mapping/input/root adapter.
+Preferred content measurement is a synchronous borrowed callback. Restoration
+is explicit and fallible, never a destructor operation; HostTransitions continues
+to supply the shared activation/recovery sequencing tested with fake resources.
+
 | Contract | Owner / meaning |
 |---|---|
 | `WindowConfig` | Low-level creation options for `Window`/the initial AppHost window, including high-pixel-density and transparency capabilities |
@@ -183,6 +193,15 @@ Native references: [window sizing](https://wiki.libsdl.org/SDL3/SDL_SetWindowSiz
 [usable display bounds](https://wiki.libsdl.org/SDL3/SDL_GetDisplayUsableBounds).
 
 ## Removed contracts and replacements
+
+Appearance is view policy, not an SDL window flag or rendering backend option.
+`AppViewPolicy::colorScheme` chooses system/light/dark; its resolved userContrast
+is supplied by settings. `UISession::synchronize(AppContext&)` observes desktop
+appearance and updates the root palette. Page backgrounds are explicit
+`PaintStyle::themeBackground` fills; transparent scene overlays stay transparent.
+Native contrast observation never changes OS settings. See
+[appearance contracts](../ui/ACCESSIBILITY.md#appearance-and-transient-surfaces)
+and [settings precedence](SETTINGS.md).
 
 | Previous API/assumption | Current authority |
 |---|---|

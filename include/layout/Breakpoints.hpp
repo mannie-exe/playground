@@ -20,6 +20,7 @@ struct SizeRange {
         (maximumHeight && *maximumHeight == minimum.height))
       throw std::invalid_argument("Breakpoint range must not be empty");
   }
+
   bool contains(const SizeConstraints &space) const {
     validate();
     space.validate();
@@ -31,6 +32,7 @@ struct SizeRange {
     return matches(minimum.width, maximumWidth, space.width.maximum) &&
            matches(minimum.height, maximumHeight, space.height.maximum);
   }
+
   bool overlaps(const SizeRange &other) const {
     validate();
     other.validate();
@@ -43,6 +45,7 @@ struct SizeRange {
            intersects(minimum.height, maximumHeight, other.minimum.height,
                       other.maximumHeight);
   }
+
   bool operator==(const SizeRange &) const = default;
 };
 
@@ -60,8 +63,8 @@ template <class Mode> struct BreakpointProps {
 };
 
 template <class Mode> struct BreakpointPatch {
-  ui::Patch<std::vector<Breakpoint<Mode>>> rules;
-  ui::Patch<Mode> fallback;
+  Patch<std::vector<Breakpoint<Mode>>> rules;
+  Patch<Mode> fallback;
 };
 
 template <class Mode> class BreakpointSet {
@@ -72,6 +75,7 @@ public:
       : _props{std::move(props)} {
     validate(_props);
   }
+
   static void validate(const BreakpointProps<Mode> &props) {
     for (std::size_t i = 0; i < props.rules.size(); ++i) {
       props.rules[i].availableSpace.validate();
@@ -81,17 +85,21 @@ public:
           throw std::invalid_argument("Breakpoint ranges overlap");
     }
   }
+
   const BreakpointProps<Mode> &props() const noexcept { return _props; }
+
   void setProps(BreakpointProps<Mode> props) {
     validate(props);
     _props = std::move(props);
   }
+
   // Reset needs an explicit policy: there is no universal default Mode.
   void applyPatch(const BreakpointPatch<Mode> &patch,
                   const BreakpointProps<Mode> &defaults) {
     setProps({patch.rules.appliedTo(_props.rules, defaults.rules),
               patch.fallback.appliedTo(_props.fallback, defaults.fallback)});
   }
+
   Mode select(const SizeConstraints &space) const {
     space.validate();
     for (const auto &rule : _props.rules)
@@ -99,6 +107,7 @@ public:
         return rule.mode;
     return _props.fallback;
   }
+
   Mode select(math::Size2 availableSpace) const {
     return select(SizeConstraints::tight(availableSpace));
   }

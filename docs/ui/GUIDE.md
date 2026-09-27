@@ -1,5 +1,13 @@
 # Working with retained UI
 
+For app update/paint cadence, read [application activity](../platform/ACTIVITY.md).
+Retained nodes do not require continuous repaint: an app can delegate demand to
+its UISession and opt out of continuous update/paint. Keep the session's timers
+and completion wake endpoint connected; a clean layout alone is not a reason to
+sleep. Repaint requests are acknowledged by successful host presentation, not by
+merely clearing a root's paint flag. Animated/custom apps remain continuous until
+they provide explicit demand. These policies do not change node composition.
+
 This guide teaches how to think with the retained UI system, from its lifetime
 and environment to individual nodes and larger compositions. It is not an API
 catalog: use [REFERENCE.md](REFERENCE.md) for exact fields, defaults and limits, and
@@ -11,6 +19,13 @@ sections describe how that same composition can adapt, scroll and display model
 items. There is no separate example application to install or maintain.
 
 ## Using the code additions
+
+In the application, acquire a typed resource bundle through AppContext::resources
+before constructing a view. Keep durable model data outside nodes; building a
+fresh tree from that model is reconstruction, not a reset or reconciliation pass.
+Demo2DApp::rebuildView and MinesweeperApp::rebuildView show this separation. The
+low-level AssetRegistry parameters below remain useful inside content components.
+See [C++ authoring and assets](../platform/ASSETS.md) for catalog and async lifetimes.
 
 Each numbered step adds file-scope C++ declarations to the earlier steps; prior
 source is omitted. Paste the blocks in order into one C++23 translation unit if
@@ -24,7 +39,7 @@ than moving children out of an already-mounted tree. Steps 22–25 add independe
 component/runtime techniques using the same APIs. Mounting is explicit, not a
 side effect of calling a factory.
 
-Supply a live AssetRegistry, a valid FontHandle and resolved paths from your
+Supply a live AssetRegistry, a valid FontHandle and resolved sources from your
 existing app. The surrounding host owns platform/resource initialization and must
 outlive resource usage. These composition examples do not choose a renderer;
 Text/Vector use the current resource providers, whose adapter is described in
@@ -307,13 +322,13 @@ the node or its retained state.
 
 void setPreviewColor(ui::Rectangle &preview, math::ColorRGBA8 color) {
   preview.applyPatch(
-      ui::RectanglePatch{.fill = ui::Patch<math::ColorRGBA8>::set(color)});
+      ui::RectanglePatch{.fill = Patch<math::ColorRGBA8>::set(color)});
 }
 
 void clearBoxOverrides(ui::Box &box) {
   box.applyBoxPatch({
-      .padding = ui::Patch<math::Insets>::reset(),
-      .aspectRatio = ui::Patch<std::optional<float>>::set(std::nullopt)});
+      .padding = Patch<math::Insets>::reset(),
+      .aspectRatio = Patch<std::optional<float>>::set(std::nullopt)});
 }
 
 void hidePreview(ui::Node &preview, bool hide) {
@@ -870,7 +885,10 @@ a finite viewport and a movable content offset. The child measures unbounded on
 scrollable axes so its extent can exceed that viewport. Offsets clamp to the
 resulting scroll range; scrollIntoView can bring a descendant into view.
 
-The scrollbar overlays rather than subtracting layout space. Nested scroll views
+Visible scrollbars reserve gutters; content is measured against the remaining
+viewport and clipped separately from the scrollbar chrome. Thus option labels
+and click targets fill the usable width without painting beneath a thumb.
+Nested scroll views
 can consume part of a wheel movement and pass the remainder upward. Physical
 content-space offsets should not be confused with a child's placement record.
 
@@ -1396,9 +1414,137 @@ use Vector for documents requiring styles, filters, gradients or SVG parsing.
 
 ## Further reading
 
+### Content-fitting screens and numeric controls
+
+When a window should fit its content, let the root measure the composition and
+let AppHost cap the result to the display work area. A ScrollView with
+`ScrollSizing::Content` reports natural size instead of expanding to every offered
+pixel. It retains the full content extent when the real viewport is smaller.
+Do not introduce an arbitrary board-size threshold for scrolling; window bounds
+and content bounds already determine whether it is needed.
+
+Stepper composes two ordinary Buttons around readout content you provide. Its
+props own the current integer, inclusive limits, positive step, enabled state and
+semantic name. Connect onValueChanged to your app-owned draft and readout; keep
+the Connection alive. Programmatic setProps is silent, so refreshing controls
+from the draft does not create a feedback loop. Set a compatible value together
+with changed bounds; clamping a game-specific draft is the application's choice.
+
+Keep screen navigation as pending app intent. Replace the tree after routing or
+update, preserve the old model until its view is destroyed, then request content
+fitting. Assign initial focus after layout: focus eligibility requires arranged
+nodes. See [Minesweeper's screen contract](../platform/APPLICATIONS.md).
+
+### Choosing an isolation boundary
+
+Use a Box for content-dependent sizing. Use LayoutBoundary when the surrounding
+layout must reserve an explicit extent regardless of the descendant's content:
+construct it with a logical Size2 and one owned child. It does not expose a child
+baseline or clip overflow. Put a Clip around it when clipping is desired. Changing
+the boundary extent still informs its parent; changing text inside it schedules
+local layout without resizing neighboring content. This is not a promise that all
+root bookkeeping becomes proportional only to changed nodes.
+
+For updates, `settings()` means the common Node groups. `contentProps()` means
+Box alignment, `buttonProps()` means Button appearance/enablement, and
+`gridProps()` means Grid tracks. These do not hide one another through inheritance.
+Content nodes retain their own `props()` and `applyPatch()`. Patch itself is the
+lower-level `playground::Patch<T>`; it is also usable by non-UI values.
+
+To observe work, inspect UIRoot::stats() or workSample(). UIWorkStats accumulates
+work counters; optional timings describe overlapping root operations. Pass the
+host's PerformanceMonitor to UISession::synchronize to collect per-root frame
+deltas. Compare counts under identical workloads before attributing a cost to
+layout, text preparation or painting. The tracked Stack scratch reservations are
+only part of memory use, not an allocation profiler for the whole program.
+
 Use [the node index](REFERENCE.md#nodes) for available atoms and their exact properties,
 [runtime contracts](REFERENCE.md#runtime) for lifecycle and failure behavior, and
 [scope boundaries](REFERENCE.md#scope) for capabilities that are not provided. Build up
 only the relationships your composition needs; nesting every available node is
 not a goal. The useful outcome is knowing who owns each decision, which state it
 changes, and which work follows from that change.
+
+## Add accessible controls without a second state tree
+
+Use `UISession::synchronize(ctx)` in AppHost applications. It attaches the current
+root to window-owned clipboard, IME and accessibility services. Continue calling
+update even when not painting: native actions, timers, focus and snapshots are
+runtime work. The metrics-only overload remains useful for offscreen consumers;
+it intentionally does not invent a native window or AppContext.
+
+Give each control a useful name, or wrap it in Field with a visible label/help
+node. Set values through the control's props/model; do not maintain a parallel
+semantic checked/value state. Keep user callbacks scoped with Connection. This
+independent composition reuses the guide's AssetRegistry/FontHandle:
+
+```cpp
+#include <ui/controls/Composite.hpp>
+#include <ui/controls/Slider.hpp>
+#include <ui/controls/TextField.hpp>
+
+std::unique_ptr<ui::Node> makeAccessibleFields(AssetRegistry &assets,
+                                             FontHandle font) {
+  auto fields = std::make_unique<ui::FieldGroup>(
+      "Preferences", layout::StackProps{
+          .gap = 12, .childrenAlignment = layout::CrossAlignment::Stretch});
+  auto name = std::make_unique<ui::TextField>(
+      ui::TextFieldProps{.font = font, .required = true}, "Player");
+  auto caption = std::make_unique<ui::Text>(
+      assets, ui::TextProps{.value = "Player name", .font = font});
+  fields->append(std::make_unique<ui::Field>(
+      std::move(name), std::move(caption), nullptr,
+      ui::FieldProps{.label = "Player name"}));
+  fields->append(std::make_unique<ui::Slider>(ui::SliderProps{
+      .range = {50, 0, 100, 1}, .name = "Volume"}));
+  fields->append(std::make_unique<ui::TextArea>(
+      ui::TextFieldProps{.font = std::move(font), .name = "Notes"},
+      "Plain multiline notes"));
+  return fields;
+}
+```
+
+For modal content, retain a Dialog with its logical owner and change its open prop.
+It is presented centered at root level, not inside its parent's scroll clip.
+Do not manually disable all sibling controls: UIRoot restricts routing and the
+semantic snapshot to the active modal scope, then restores a valid opener.
+Put application Escape navigation in an AfterUI input context so a field can
+cancel composition, a Select can close, or a Dialog can dismiss first.
+
+TextField accepts committed UTF-8, not characters reconstructed from keycodes.
+It owns transient selection/composition and bounded history. Use onValueChanged
+for edits and onCommit for a submitted value; setters are silent. NumberField's
+committed number is separate from its potentially invalid draft. A password field
+does not expose plaintext through the semantic snapshot or clipboard copy.
+
+Demo2D's scrollable gallery exercises every current control family. Try Tab and
+Shift+Tab, D-pad/arrows, mouse drag/release, disabled controls, nested selection,
+IME composition and Escape. Native reader testing is a separate pass; inspect
+names/values rather than assuming a visually useful control is already announced
+correctly. See [ACCESSIBILITY.md](ACCESSIBILITY.md) for exact boundaries.
+
+### Let controls size themselves and inherit appearance
+
+Use Flow for a row of independent controls that can move to another line. Give
+labels AvailableInlineSize wrapping and controls padding, but leave their height
+content-driven. A fixed height is a deliberate restriction, not a request to
+automatically fit more lines. For images use ContentFit::Contain with centered
+alignment when the complete image must remain visible. A Fill ScrollView occupies
+the offered viewport instead of imposing a fixed preferred page width.
+
+AppViewPolicy's colorScheme defaults to System. UISession resolves the current
+system/user appearance into a palette; ordinary Text and controls inherit it.
+Opt your page root into `setPaintStyle({.themeBackground=true})`. Transparent UI
+over a scene should not opt in. Use `useTheme=false` for deliberately colored
+artwork; do not hard-code label colors just to obtain readable default controls.
+Local `setTheme` overrides are useful for a themed panel, but system high contrast
+takes priority. Color scheme and contrast are independent settings.
+
+Select's trigger keeps its place in layout while its list appears in an overlay.
+Arrows change the highlighted candidate, not the committed selection; Enter or
+click commits, Escape cancels. The existing selection callback is still where you
+update the visible trigger label. Tooltip also uses root presentation: setAnchor
+to its owner's attached NodeId, then control setOpen from your own timing policy.
+Resolve IDs after attachment, for example during the owner's arrangement, rather
+than storing constructor-time empty IDs. Popup content stays owned by its component;
+never detach and reparent it into a second live tree to display it above a clip.

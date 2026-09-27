@@ -9,9 +9,13 @@ struct Source : ui::GridSource {
   std::vector<ui::ItemKey> keys{"header", "span", "bottom"};
   std::vector<ui::GridItemPlacement> cells{{0, 0, 1, 2}, {1, 0, 3, 1}, {4, 1}};
   ui::Revision version{};
+
   std::size_t size() const override { return keys.size(); }
+
   ui::ItemKey keyAt(std::size_t i) const override { return keys.at(i); }
+
   ui::Revision revision() const override { return version; }
+
   ui::GridItemPlacement placementAt(std::size_t i) const override {
     return cells.at(i);
   }

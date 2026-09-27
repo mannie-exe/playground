@@ -1,5 +1,9 @@
 # C++ study notes
 
+For the project-specific changes since `5d95005`, see
+[CATCH_UP.md](CATCH_UP.md): old-to-new responsibilities, layout and rendering math,
+ownership, scheduling, and a reading route through the current implementation.
+
 ## Prefer uniform initialization
 
 Prefer `{}` over `=` for most initialization:

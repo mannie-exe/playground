@@ -1,10 +1,30 @@
+#include <limits>
 #include <memory>
+#include <vector>
 
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/controls/Button.hpp>
 
 using namespace playground;
+
+struct FocusPainter : rendering::PaintContext {
+  std::vector<math::ColorRGBA8> colors;
+
+  void save() override {}
+
+  void restore() noexcept override {}
+
+  void translate(math::Vec2f) override {}
+
+  void clip(math::Rect) override {}
+
+  void fill(math::Rect bounds, math::ColorRGBA8 color) override {
+    test::require(math::isFinite(bounds) && math::isNonNegative(bounds.size),
+                  "finite focus geometry");
+    colors.push_back(color);
+  }
+};
 
 int main() {
   return test::run([] {
@@ -57,7 +77,28 @@ int main() {
     b->setEnabled(false);
     test::require(!b->isPressed() && !b->hasFocus(),
                   "disable cancels press and focus");
-    b->applyPatch({.enabled = ui::Patch<bool>::reset()});
+    b->applyButtonPatch({.enabled = playground::Patch<bool>::reset()});
     test::require(b->isEnabled(), "enabled Reset uses true baseline");
+    root.requestFocus(b->id());
+    FocusPainter painter;
+    root.render(painter);
+    test::require(painter.colors.size() == 9 &&
+                      painter.colors.back() == b->theme().focus,
+                  "focus border paints after button content");
+    const auto original = b->buttonProps();
+    test::rejects<std::invalid_argument>(
+        [&] {
+          auto props = original;
+          props.focusWidth = std::numeric_limits<float>::infinity();
+          b->setButtonProps(props);
+        },
+        "nonfinite focus width rejected");
+    test::require(b->buttonProps() == original,
+                  "invalid focus props preserve state");
+    b->applyButtonPatch({.focusWidth = Patch<float>::set(0)});
+    painter.colors.clear();
+    root.render(painter);
+    test::require(painter.colors.size() == 5,
+                  "zero width opts out of focus border");
   });
 }

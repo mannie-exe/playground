@@ -28,16 +28,17 @@ using rendering::PaintScope;
 struct MeasureContext {
   layout::LayoutDirection direction{layout::LayoutDirection::LeftToRight};
   std::uint64_t environmentRevision{};
-  LayoutStats *stats{};
+  UIWorkStats *stats{};
   math::Vec2f pixelScale{1, 1};
   UIServices *services{};
   LayoutDiagnostics *diagnostics{};
 };
+
 using ArrangeContext = MeasureContext;
 
 struct PrepareContext {
   math::Vec2f pixelScale{1, 1};
-  LayoutStats *stats{};
+  UIWorkStats *stats{};
   rendering::ImagePreparer *images{};
   scene::SceneRenderer *scenes{};
   rendering::TextImagePreparer *text{};
@@ -69,8 +70,10 @@ class Node {
   VisualProps _visualProps;
   InputProps _inputProps;
   SemanticProps _semanticProps;
+  std::optional<ThemePalette> _theme;
 
   std::uint64_t _revision{1};
+  std::uint64_t _arrangeRevision{1};
   Revision _sourceRevision{1};
   Revision _subtreePaintRevision{1};
   DirtyFlags _dirty{DirtyFlags::All};
@@ -79,15 +82,22 @@ class Node {
   bool _preparingChildren{};
 
   std::optional<Measurement> _measurement;
+  std::optional<Measurement> _previousMeasurement;
   math::Rect _bounds{};
   layout::LayoutResult _layoutResult;
   bool _arranged{};
+  std::uint64_t _arrangedRevision{};
+  std::uint64_t _arrangedEnvironment{};
+  layout::LayoutDirection _arrangedDirection{};
+  math::Vec2f _arrangedPixelScale{};
 
   struct LifecycleScope {
     detail::NodeTable &table;
+
     explicit LifecycleScope(detail::NodeTable &value) : table{value} {
       ++table.lifecycleCallbacks;
     }
+
     ~LifecycleScope() { --table.lifecycleCallbacks; }
   };
 
@@ -99,24 +109,49 @@ class Node {
                                         const layout::AxisConstraints &offered);
 
 protected:
+  UIServices *services() const noexcept {
+    auto table = _table.lock();
+    return table ? table->services : nullptr;
+  }
+
   explicit Node(layout::BoxProps box = {}) : _box{box} {
     layout::validate(_box);
   }
 
   virtual layout::MeasureResult
   measureContent(MeasureContext &, const layout::SizeConstraints &) = 0;
+
   virtual void arrangeChildren(ArrangeContext &, math::Rect) {}
+
   virtual void prepareChildren(MeasureContext &,
                                const layout::SizeConstraints &) {}
+
   virtual void prepareContent(PrepareContext &) {}
+
   virtual void paint(PaintContext &) const {}
+
   virtual void paintSubtree(PaintContext &context) const;
+
   virtual void onEvent(UIEvent &) {}
+
   virtual void onDefaultEvent(UIEvent &) {}
+
   virtual bool hitTestOverlay(math::Point2) const { return false; }
+
   virtual void onAttach(UIServices &) {}
+
   virtual void onPropsChanged(const ChangeSet &) {}
+
   virtual void onDetach() noexcept {}
+
+  virtual void onThemeChanged() noexcept {}
+
+  virtual bool isolatesChildLayout() const noexcept { return false; }
+
+  // Old offers are reusable only without constraint-dependent side effects.
+  virtual bool canReuseMeasurementOffers() const noexcept { return false; }
+
+  virtual void validateBoxProps(const layout::BoxProps &) const {}
 
   void checkStructuralMutation() const;
 
@@ -133,68 +168,136 @@ protected:
   std::unique_ptr<Node> takeChildAt(std::size_t index);
 
 public:
+  virtual bool isPortal() const noexcept { return false; }
+
+  const ThemePalette &theme() const noexcept {
+    if (services() && services()->theme.highContrast)
+      return services()->theme;
+    if (_theme)
+      return *_theme;
+    if (_parent)
+      return _parent->theme();
+    return services() ? services()->theme : defaultTheme();
+  }
+
+  void setTheme(std::optional<ThemePalette> value) noexcept {
+    if (_theme == value)
+      return;
+    _theme = std::move(value);
+    refreshTheme();
+  }
+
+  void refreshTheme() noexcept {
+    onThemeChanged();
+    invalidatePaint();
+    for (auto &child : _children)
+      child->refreshTheme();
+  }
+
   virtual ~Node() { detach(); }
+
   Node(const Node &) = delete;
   Node &operator=(const Node &) = delete;
   Node(Node &&) = delete;
   Node &operator=(Node &&) = delete;
 
   NodeId id() const noexcept { return _id; }
+
   Node *parent() const noexcept { return _parent; }
+
   template <typename T = Node> NodeHandle<T> handle() const {
     return {_table, _id};
   }
+
   std::span<const std::unique_ptr<Node>> children() const noexcept {
     return _children;
   }
+
   const layout::BoxProps &boxProps() const noexcept { return _box; }
+
   const NodeProps &nodeProps() const noexcept { return _nodeProps; }
+
   const PaintStyle &paintStyle() const noexcept { return _paintStyle; }
+
   const VisualProps &visualProps() const noexcept { return _visualProps; }
+
   const InputProps &inputProps() const noexcept { return _inputProps; }
+
   const SemanticProps &semanticProps() const noexcept { return _semanticProps; }
+
+  virtual bool isInteractionEnabled() const noexcept {
+    return _semanticProps.enabled;
+  }
+
+  virtual SemanticState semanticState() const {
+    SemanticState state{.description = _semanticProps};
+    if (isFocusable())
+      state.actions.push_back(SemanticAction::Focus);
+    return state;
+  }
+
+  virtual ActionResult performAction(const UIAction &, ActionSource) {
+    return ActionResult::Unsupported;
+  }
+
   const layout::LayoutResult &layoutResult() const noexcept {
     return _layoutResult;
   }
+
   Revision sourceRevision() const noexcept { return _sourceRevision; }
+
   Revision subtreePaintRevision() const noexcept {
     return _subtreePaintRevision;
   }
+
   DirtyFlags dirtyFlags() const noexcept { return _dirty; }
+
   Connection
   onChanged(std::move_only_function<void(const ChangeSet &)> callback) {
     return _changes.connect(std::move(callback));
   }
-  NodeSettings props() const {
+
+  NodeSettings settings() const {
     return {_nodeProps,   _box,        _paintStyle,
             _visualProps, _inputProps, _semanticProps};
   }
 
   math::Rect bounds() const noexcept { return _bounds; }
+
   bool isArranged() const noexcept { return _arranged; }
+
   Visibility visibility() const noexcept { return _nodeProps.visibility; }
+
   HitTestPolicy hitTestPolicy() const noexcept { return _inputProps.hitTest; }
+
   bool isFocusable() const noexcept { return _inputProps.focusable; }
+
   bool clipsContent() const noexcept {
     return _visualProps.overflow == layout::OverflowPolicy::Clip;
   }
+
   virtual math::Rect clipBounds() const noexcept {
     return _visualProps.clipRect.value_or(math::Rect{{}, _bounds.size});
   }
+
   virtual bool containsLocal(math::Point2 point) const {
     return math::Rect{{}, _bounds.size}.contains(point);
   }
+
   virtual bool containsClip(math::Point2 point) const {
     return clipBounds().contains(point);
   }
+
   virtual void applyContentClip(PaintContext &context) const {
     context.clip(clipBounds());
   }
 
-  void setProps(NodeSettings value);
-  void applyPatch(const NodeSettingsPatch &patch) {
-    setProps(patched(props(), patch));
+  void setSettings(NodeSettings value);
+
+  void applySettingsPatch(const NodeSettingsPatch &patch) {
+    setSettings(patched(settings(), patch));
   }
+
   void setNodeProps(NodeProps value);
   void setPaintStyle(PaintStyle value);
   void setVisualProps(VisualProps value);
@@ -207,6 +310,7 @@ public:
   void applySemanticPatch(const SemanticPatch &p);
 
   void setBoxProps(layout::BoxProps value);
+
   void applyBoxPatch(const layout::BoxPatch &patch) {
     setBoxProps(layout::patched(_box, patch));
   }
@@ -218,21 +322,26 @@ public:
   void setBackground(std::optional<math::ColorRGBA8> value);
 
   void invalidate(DirtyFlags flags) noexcept;
+
   void invalidateLayout() noexcept {
     invalidate(DirtyFlags::Measure | DirtyFlags::Arrange | DirtyFlags::Paint |
                DirtyFlags::HitTest);
   }
+
   void invalidatePaint() noexcept { invalidate(DirtyFlags::Paint); }
 
   bool hasActiveInputInSubtree() const noexcept;
+
   bool hasFocus() const noexcept {
     auto table = _table.lock();
     return table && table->focused == _id;
   }
+
   void clearFocus() noexcept {
     if (auto table = _table.lock(); table && table->focused == _id)
       table->focused = {};
   }
+
   void releaseAllPointers() noexcept;
 
   math::Insets contentInsets() const noexcept;
@@ -243,6 +352,7 @@ public:
   void arrange(ArrangeContext &context, math::Rect bounds);
 
 private:
+  void refreshOverflow();
   void prepareSubtree(PrepareContext context, math::Transform2D parentToPixels);
 
 public:
@@ -250,12 +360,13 @@ public:
 
   math::Rect paintBounds() const;
 
-  void render(PaintContext &context) const;
+  void render(PaintContext &context, bool overlayPresentation = false) const;
 
   math::Transform2D localTransform() const noexcept;
+
   math::Transform2D worldTransform() const noexcept {
-    return _parent ? _parent->worldTransform() * localTransform()
-                   : localTransform();
+    return _parent && !isPortal() ? _parent->worldTransform() * localTransform()
+                                  : localTransform();
   }
 
   math::Point2 originInRoot() const noexcept {

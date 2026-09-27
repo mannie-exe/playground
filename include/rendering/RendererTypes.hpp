@@ -16,6 +16,7 @@ struct RendererRequirements {
   bool paint2D{true};
   bool scene3D{};
   bool linearComposition{};
+  bool metallicRoughness{};
   bool operator==(const RendererRequirements &) const = default;
 };
 
@@ -31,6 +32,7 @@ struct RendererCapabilities {
   bool paint2D{};
   bool scene3D{};
   CompositionSpace composition{CompositionSpace::EncodedSRGB};
+  bool metallicRoughness{};
   bool supports(RendererRequirements requirements) const;
   bool operator==(const RendererCapabilities &) const = default;
 };
@@ -48,6 +50,7 @@ struct RendererState {
   RendererPreferences requested;
   RendererCandidate selected;
   std::string fallbackReason;
+
   bool isFallback() const noexcept { return !fallbackReason.empty(); }
 };
 

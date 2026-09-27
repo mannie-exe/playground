@@ -10,6 +10,12 @@ device and scene boundaries are documented in [2D](../render/2D.md),
 
 ## Scope
 
+Asset/runtime constituent coverage additionally includes asset_catalog,
+asset_resources, model_preparation and runtime_executor. These verify logical
+identity, dependency closure, shared resources, generic tree reconstruction,
+bounded worker admission and explicit owner publication. They do not test
+Minesweeper game rules or declare asynchronous layout safe.
+
 Tests cover the UI module and its constituents: geometry, layout, retained
 ownership, events, scheduling, SDL adapters, painting and resource support.
 Complete programs, AppHost smoke tests and game rules are outside this scope.
@@ -23,6 +29,17 @@ their runtime behavior.
 
 ## Contract inventory
 
+Idle integration adds `runtime_activity` (independent cadence, revision
+acknowledgement, timer deadlines and post-before-wake), `event_wake` (SDL event
+coalescing, filtered/reentrant delivery, stale endpoints), and `ui_runtime`
+paint-time invalidation checks. `ui_window_services` checks native publication
+reuse and geometry/mapping invalidation. `performance_reports` separates idle
+waits and paint counters from measured CPU frames. Opt-in `gpu_device` compares
+fast/general pixels for fractional and mirrored rectangles, nested opacity,
+rounded borders, and rejects clipped paths without corrupting preceding draws.
+These checks do not replace interactive exposure/resize, IME, screen-reader and
+power-utilization checks on each operating system.
+
 | Boundary | Tests and exercised behavior | Coverage limits |
 |---|---|---|
 | Math and SDL conversion | `geometry`, `geometry_properties`: arithmetic, bounds, empty rectangles, conversions/rounding, finite/overflow failures, 250 affine/rectangle sweeps | Not exhaustive IEEE-754 values or checked integer arithmetic; callers must avoid ordinary integer overflow/division by zero |
@@ -33,7 +50,15 @@ their runtime behavior.
 | Box/Stack/Grid/Flow/Anchor/ZStack | `ui_containers`, `ui_layout_variants`, `ui_placement_patch`: bounds, gaps, fractions/spans, overlap rejection, alignment, RTL, placement-by-ID, Reset | Not full CSS conformance; large sparse-grid pathological complexity not benchmarked |
 | Component/CustomView/Spacer/Transform | `ui_component_variants`: replacement success/failure, implicit spacer growth, source-order paint/reverse-order hits, translated picking | Not a GPU/rotated-render test |
 | Visibility/input policy | `ui_component_variants`: all 3 visibility × 4 hit-test-policy combinations | Combination matrix uses a small overlay tree, not all ancestor/descendant structures |
-| Button | `ui_button_states`, `ui_containers`: primary/secondary click, wrong release, drag out/back, cancel, disable mid-press, Space/Enter/repeat | No platform IME/editor controls, not every multitouch interleaving |
+| Button | `ui_button_states`, `ui_containers`: primary/secondary click, wrong release, drag out/back, cancel, disable mid-press, Space/Enter/repeat | Not every multitouch interleaving |
+| Stepper | `ui_stepper`: keyboard/button activation, limit focus transfer, disabled/single-value range, saturating integer arithmetic, invalid patches and throwing notifications | Native reader announcement still requires interactive verification |
+| Unicode model | `ui_text_edit`: combining/ZWJ graphemes, bidi UTF-8 offsets, composition isolation, undo/redo, invalid UTF-8, capacity, readonly/password | Not every Unicode conformance corpus |
+| Plain editor | `ui_text_field`: real font shaping, wrapped bidi runs, offscreen painting, clipboard injection, password snapshots, invalid/valid numeric drafts | Native IME candidate windows and reader text-range behavior are manual checks |
+| Actions/semantics | `ui_accessibility`: derived disabled actions, modal restriction/restoration, stale identities, explicit neighbors and numeric rejection | Native OS callback concurrency is not simulated by these owner-thread tests |
+| UI/application navigation ownership | `ui_navigation_routing`: decorative trees pass arrows to AfterUI actions; eligible focus, occupied boundaries and empty modals consume them; disabled controls release ownership | Synthetic input routing, not an interactive camera test |
+| Native adapter lifetime | `ui_window_services`: hidden native window attachment, mode changes, detach/replacement and destruction | No screen reader is driven; dummy/offscreen SDL drivers bypass the native adapter portion |
+| Composite controls | `ui_control_variants`: toggles, radio/list selection, Select, Disclosure, Tabs, label/help relationships, Status, Tooltip, ProgressBar | Demo2D supplies a manual gallery; it is not an automated app test |
+| Content-sized scrolling | `ui_content_scroll`: natural sizing, work-area clamps, overflow extent, resizing, offset reset and legacy Fill constraints | Actual OS work-area/window decoration behavior still needs desktop verification |
 | ScrollView | `ui_scroll_variants`, `ui_containers`: all 3 axes × 3 scrollbar policies, offset clamping/invalid input, removal, overlay drag | No complete dedicated matrix of nested residual wheel propagation and scrollIntoView alignments |
 | AdaptiveStack/Repeat | `ui_collections`, `ui_collection_failures`: mode switches, all three Repeat layouts, stable keyed reorder, duplicate keys, null factory, retry, empty model, refreshed model-backed child measurements | Not all partially throwing update/onAttach permutations |
 | VirtualList/VirtualGrid | `ui_collections`, `ui_collection_failures`, `ui_virtual_list_scale`: fixed/estimated, horizontal/vertical, RTL, indexed scroll, focus pinning/removal, million-item bounded realization; update-then-erase | Not all variable-height anchor changes under arbitrary model edits or captured-pointer pinning combinations |
@@ -120,10 +145,27 @@ Additional renderer/runtime constituents:
 | allocation_budget | Reservation cap, overflow rejection, failure preservation, in-flight lease ownership |
 | gpu_timing | Injected native timestamp table, capacity, cancellation, failure quarantine, unavailable results, counter wrap, owner-thread rules |
 | performance_monitor | Bounded CPU/GPU histories, absent measurements, availability states, hotkey preservation and invalid sample rejection |
+| ui_layout_work | Linear ancestor visits, unchanged siblings, isolated boundary work, exception retry, in-pass mutation, detached queued IDs, exact two-offer leaf reuse and A/B/A virtual realization |
+| ui_stack_baselines | Mixed button padding, every pair of cross alignments in both child orders and directions, partial/fallback baselines, collapsed/empty rows and invalid child rejection |
+| ui_control_text_layout | Six real-font labels across button/checkbox/switch/select, four widths and four densities; raster/measurement agreement and render-only scaling stability |
+| ui_overlays | Clipped owners, viewport placement/fallback, no-flow sizing, preview/commit/cancel, focus restoration, outside press/release consumption, hide/focus-loss cleanup and invalid patches |
+| ui_theme | Native-preference fallback, independent scheme/contrast, local inheritance, root high-contrast priority and optional page background |
+| ui_control_paint | Light/dark/high-contrast slider hover/drag/cancellation, pointer ownership, vertical endpoints/tiny bounds, full-width borderless option rows |
+| ui_scroll_layers | Reserved gutters, clipped-content/chrome paint ordering, track and corner hit priority, drag cancellation, coupled axes, Auto removal and tiny viewports |
 | text_pixels | Styled glyph bearings/crops, straight-alpha mixed runs, natural/explicit line spacing, patch reset and immutable cache distinction |
 | scene_viewport | Camera/letterbox/input mapping, projection, stable alpha ordering, immutable meshes and cached world transforms |
 | vector_paths | Curves, fill rules/holes, round strokes, bounded flattening, retained Path node and software pixels |
 | shader_contracts | Malformed SPIR-V, reflected slots, stage linkage, type/count mismatches |
+
+Performance-monitor checks include deterministic same-phase timing nesting and
+per-root delta aggregation without double consumption. Content-resource variants
+check that repeated preparation and foreground-color changes reuse text layout.
+Content-resource checks also load the installed-source Material SVG icons, check
+centered 24-unit geometry and inherited/disabled tint, and verify opt-out/reset.
+Host transition sequencing remains tested with fake resources through the same
+HostTransitions operations now used by AppHost and PresentationSession. Native
+window sizing/rollback requires separate platform execution; these tests do not
+exercise the desktop or modify user settings.
 
 Hardware text tests include a vendored licensed color-glyph fixture when present;
 the test asserts COLOR glyph support before comparing decoded/premultiplied pixels.

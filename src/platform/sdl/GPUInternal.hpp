@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <platform/sdl/GPUResources.hpp>
+#include <platform/sdl/RenderError.hpp>
 #include <rendering/AllocationBudget.hpp>
 #include <rendering/RenderFailure.hpp>
 #include <support/SDLError.hpp>
@@ -23,6 +24,46 @@ using Transfer = Resource<SDL_GPUTransferBuffer, SDL_ReleaseGPUTransferBuffer>;
 using Texture = GPUTextureResource;
 using Fence = Resource<SDL_GPUFence, SDL_ReleaseGPUFence>;
 
+// Writable attachments stay internal. Only a successfully submitted result is
+// published as an immutable PaintImage; observers prevent pool reuse.
+class ColorTarget {
+  friend class TargetPool;
+  std::shared_ptr<GPUImage> _image;
+  rendering::SubmissionId _writeStart{};
+
+  void beginWrite() noexcept { _writeStart = lastSubmission(); }
+
+  void reserve(std::shared_ptr<void> allocation) {
+    _image->_use->allocation = std::move(allocation);
+  }
+
+public:
+  ColorTarget(GPUDeviceHandle device, math::Vec2i size)
+      : _image{new GPUImage{std::move(device), size}} {}
+
+  ColorTarget(const ColorTarget &) = delete;
+  ColorTarget &operator=(const ColorTarget &) = delete;
+
+  SDL_GPUTexture *get() const noexcept { return _image->get(); }
+
+  math::Size2 pixelSize() const noexcept { return _image->pixelSize(); }
+
+  bool isLeased() const noexcept {
+    return _image.use_count() > 1 || _image->isLeased();
+  }
+
+  rendering::SubmissionId lastSubmission() const noexcept {
+    return _image->lastSubmission();
+  }
+
+  std::shared_ptr<const GPUImage> publish() const {
+    _image->device()->checkOwnerThread();
+    if (lastSubmission() <= _writeStart)
+      throw std::logic_error("Cannot publish an unsubmitted color target");
+    return _image;
+  }
+};
+
 // Native attachment only: depth has no RGB encoding/alpha and is not
 // PaintImage.
 Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size);
@@ -36,11 +77,15 @@ class UploadStream {
 
 public:
   explicit UploadStream(GPUDeviceHandle device) : _device{std::move(device)} {}
+
   void *map(std::size_t bytes);
+
   void unmap() noexcept {
     SDL_UnmapGPUTransferBuffer(_device->get(), _transfer.get());
   }
+
   SDL_GPUTransferBuffer *get() const noexcept { return _transfer.get(); }
+
   Uint32 capacity() const noexcept { return _capacity; }
 };
 
@@ -54,8 +99,10 @@ class StreamBuffer {
 public:
   StreamBuffer(GPUDeviceHandle device, SDL_GPUBufferUsageFlags usage)
       : _device{device}, _upload{std::move(device)}, _usage{usage} {}
+
   SDL_GPUBuffer *write(SDL_GPUCommandBuffer *commands,
                        std::span<const std::byte> bytes);
+
   Uint32 capacity() const noexcept { return _capacity; }
 };
 
@@ -63,7 +110,9 @@ struct DepthTarget {
   math::Vec2i size;
   Texture texture;
   rendering::ResourceLease use;
+
   bool isLeased() const noexcept { return use.use_count() > 1; }
+
   rendering::SubmissionId lastSubmission() const noexcept {
     return use->lastSubmission;
   }
@@ -82,15 +131,17 @@ struct TargetPoolStats {
 // leases. SDL fences retire those leases without a device-wide idle wait.
 class TargetPool {
   struct ColorEntry {
-    std::shared_ptr<GPUImage> target;
+    std::shared_ptr<ColorTarget> target;
     std::size_t bytes;
     rendering::SubmissionId lastUse{};
   };
+
   struct DepthEntry {
     std::shared_ptr<DepthTarget> target;
     std::size_t bytes;
     rendering::SubmissionId lastUse{};
   };
+
   GPUDeviceHandle _device;
   std::vector<ColorEntry> _colors;
   std::vector<DepthEntry> _depths;
@@ -103,11 +154,15 @@ class TargetPool {
 public:
   explicit TargetPool(GPUDeviceHandle device)
       : _device{std::move(device)},
-        _allocations{_device->limits().maxLiveTargetBytes} {}
-  std::shared_ptr<GPUImage> color(math::Vec2i size);
+        _allocations{_device->limits().maxLivePoolBytes} {}
+
+  std::shared_ptr<ColorTarget> color(math::Vec2i size);
   std::shared_ptr<DepthTarget> depth(math::Vec2i size);
+
   const TargetPoolStats &stats() const noexcept { return _stats; }
+
   std::size_t liveBytes() const noexcept { return _allocations.bytes(); }
+
   void trimAged();
   void trim();
 };
@@ -115,14 +170,20 @@ public:
 struct Commands {
   GPUDeviceHandle device;
   SDL_GPUCommandBuffer *value;
-  explicit Commands(GPUDeviceHandle owner, std::string_view label = "commands")
-      : device{std::move(owner)}, value{device->acquireCommands(label)} {}
+
+  explicit Commands(GPUDeviceHandle owner, std::string_view label = "commands",
+                    rendering::GPUWorkContext context = {})
+      : device{std::move(owner)},
+        value{device->acquireCommands(label, context)} {}
+
   ~Commands() {
     if (value)
       device->cancel(value);
   }
+
   Commands(const Commands &) = delete;
   Commands &operator=(const Commands &) = delete;
+
   void submit() {
     auto *commands = std::exchange(value, nullptr);
     try {
@@ -149,9 +210,10 @@ inline SDL_GPUColorTargetBlendState blend() {
   return result;
 }
 
-inline Sampler sampler(GPUDeviceHandle device) {
+inline Sampler sampler(GPUDeviceHandle device,
+                       SDL_GPUFilter filter = SDL_GPU_FILTER_NEAREST) {
   SDL_GPUSamplerCreateInfo info{};
-  info.min_filter = info.mag_filter = SDL_GPU_FILTER_NEAREST;
+  info.min_filter = info.mag_filter = filter;
   info.address_mode_u = info.address_mode_v = info.address_mode_w =
       SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
   return {device, SDL_CreateGPUSampler(device->get(), &info)};

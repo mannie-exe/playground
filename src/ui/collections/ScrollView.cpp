@@ -14,19 +14,60 @@ void ScrollView::clampOffset() noexcept {
 }
 
 bool ScrollView::showBar(layout::Axis axis) const {
-  if (_props.scrollbar == ScrollbarPolicy::Never)
-    return false;
-  const bool x = axis == layout::Axis::Horizontal;
-  return (x ? horizontal() : vertical()) &&
-         (_props.scrollbar == ScrollbarPolicy::Always ||
-          (x ? _extent.width > _viewport.width
-             : _extent.height > _viewport.height));
+  return axis == layout::Axis::Horizontal ? _horizontalBar : _verticalBar;
+}
+
+void ScrollView::resolveViewport(MeasureContext &context,
+                                 math::Size2 available) {
+  const bool bars = _props.scrollbar != ScrollbarPolicy::Never &&
+                    _props.scrollbarThickness > 0;
+  _horizontalBar =
+      bars && horizontal() && _props.scrollbar == ScrollbarPolicy::Always;
+  _verticalBar =
+      bars && vertical() && _props.scrollbar == ScrollbarPolicy::Always;
+  // A gutter can induce overflow on the other axis. Add each at most once;
+  // restart from no Auto gutters on the next layout so growth removes them.
+  for (int pass = 0; pass < 3; ++pass) {
+    _viewport = {
+        std::max(0.f, available.width -
+                          (_verticalBar ? _props.scrollbarThickness : 0)),
+        std::max(0.f, available.height -
+                          (_horizontalBar ? _props.scrollbarThickness : 0))};
+    const layout::SizeConstraints offered{
+        horizontal() ? layout::AxisConstraints{}
+                     : layout::AxisConstraints::tight(_viewport.width),
+        vertical() ? layout::AxisConstraints{}
+                   : layout::AxisConstraints::tight(_viewport.height)};
+    _extent = children().empty()
+                  ? math::Size2{}
+                  : children()[0]->measure(context, offered).size;
+    const bool x = _horizontalBar ||
+                   (bars && horizontal() && _extent.width > _viewport.width);
+    const bool y = _verticalBar ||
+                   (bars && vertical() && _extent.height > _viewport.height);
+    if (x == _horizontalBar && y == _verticalBar)
+      break;
+    _horizontalBar = x;
+    _verticalBar = y;
+  }
+  clampOffset();
+}
+
+math::Rect ScrollView::track(layout::Axis axis) const {
+  const auto content =
+      math::inset(math::Rect{{}, bounds().size}, contentInsets());
+  return axis == layout::Axis::Horizontal
+             ? math::rect(content.x(), content.y() + _viewport.height,
+                          _viewport.width,
+                          std::max(0.f, content.h() - _viewport.height))
+             : math::rect(content.x() + _viewport.width, content.y(),
+                          std::max(0.f, content.w() - _viewport.width),
+                          _viewport.height);
 }
 
 math::Rect ScrollView::thumb(layout::Axis axis) const {
   const bool x = axis == layout::Axis::Horizontal;
-  const auto content =
-      math::inset(math::Rect{{}, bounds().size}, contentInsets());
+  const auto rail = track(axis);
   const float viewport = x ? _viewport.width : _viewport.height,
               extent = x ? _extent.width : _extent.height,
               offset = x ? _offset.x : _offset.y;
@@ -36,30 +77,23 @@ math::Rect ScrollView::thumb(layout::Axis axis) const {
   const float start = extent > viewport
                           ? offset / (extent - viewport) * (viewport - length)
                           : 0;
-  return x ? math::rect(content.x() + start,
-                        content.bottom() -
-                            std::min(content.h(), _props.scrollbarThickness),
-                        length,
-                        std::min(content.h(), _props.scrollbarThickness))
-           : math::rect(content.right() -
-                            std::min(content.w(), _props.scrollbarThickness),
-                        content.y() + start,
-                        std::min(content.w(), _props.scrollbarThickness),
-                        length);
+  return x ? math::rect(rail.x() + start, rail.y(), length, rail.h())
+           : math::rect(rail.x(), rail.y() + start, rail.w(), length);
 }
 
 bool ScrollView::hitTestOverlay(math::Point2 point) const {
-  for (auto axis : {layout::Axis::Horizontal, layout::Axis::Vertical})
-    if (showBar(axis) && thumb(axis).contains(point))
-      return true;
-  return false;
+  const auto content =
+      math::inset(math::Rect{{}, bounds().size}, contentInsets());
+  return content.contains(point) &&
+         !math::Rect{content.position, _viewport}.contains(point);
 }
 
 layout::MeasureResult
 ScrollView::measureContent(MeasureContext &context,
                            const layout::SizeConstraints &offered) {
-  if ((horizontal() && !offered.width.maximum) ||
-      (vertical() && !offered.height.maximum))
+  if (_props.sizing == ScrollSizing::Fill &&
+      ((horizontal() && !offered.width.maximum) ||
+       (vertical() && !offered.height.maximum)))
     throw std::invalid_argument(
         "ScrollView requires finite constraints on scrollable axes");
   layout::SizeConstraints content{
@@ -67,39 +101,65 @@ ScrollView::measureContent(MeasureContext &context,
       vertical() ? layout::AxisConstraints{} : offered.height};
   _extent = children().empty() ? math::Size2{}
                                : children()[0]->measure(context, content).size;
-  _viewport =
-      offered.clamp({horizontal() ? *offered.width.maximum : _extent.width,
-                     vertical() ? *offered.height.maximum : _extent.height});
-  clampOffset();
-  return {_viewport};
+  const auto viewport =
+      _props.sizing == ScrollSizing::Content
+          ? offered.clamp(_extent)
+          : offered.clamp(
+                {horizontal() ? *offered.width.maximum : _extent.width,
+                 vertical() ? *offered.height.maximum : _extent.height});
+  resolveViewport(context, viewport);
+  return {viewport};
 }
 
 void ScrollView::arrangeChildren(ArrangeContext &context, math::Rect content) {
-  _viewport = content.size;
-  clampOffset();
+  resolveViewport(context, content.size);
   if (!children().empty())
     children()[0]->arrange(
         context, {{content.x() - _offset.x, content.y() - _offset.y}, _extent});
 }
 
 void ScrollView::paintSubtree(PaintContext &context) const {
-  Node::paintSubtree(context);
+  {
+    PaintScope scope{context};
+    const auto inset = contentInsets();
+    context.clip({{inset.left, inset.top}, _viewport});
+    Node::paintSubtree(context);
+  }
   for (auto axis : {layout::Axis::Horizontal, layout::Axis::Vertical})
-    if (showBar(axis))
+    if (showBar(axis)) {
+      context.fill(track(axis), theme().surface);
       context.fill(thumb(axis), _props.scrollbarColor);
+    }
 }
 
 void ScrollView::onDefaultEvent(UIEvent &event) {
-  if (event.type == EventType::PointerCancel ||
-      event.type == EventType::FocusLost) {
+  if ((event.type == EventType::PointerCancel &&
+       _dragPointer == event.pointer) ||
+      event.type == EventType::FocusLost ||
+      event.type == EventType::InputCancel) {
     _dragPointer.reset();
     releaseAllPointers();
     return;
   }
   if (event.type == EventType::PointerDown && event.button == 1 &&
-      !event.handled) {
+      !event.handled && !_dragPointer) {
     for (auto axis : {layout::Axis::Horizontal, layout::Axis::Vertical})
-      if (showBar(axis) && thumb(axis).contains(event.localPosition)) {
+      if (showBar(axis) && track(axis).contains(event.localPosition)) {
+        const bool x = axis == layout::Axis::Horizontal;
+        if (!thumb(axis).contains(event.localPosition)) {
+          const auto rail = track(axis);
+          const auto bar = thumb(axis);
+          const float travel = (x ? rail.w() - bar.w() : rail.h() - bar.h());
+          auto offset = _offset;
+          if (travel > 0)
+            (x ? offset.x : offset.y) =
+                ((x ? event.localPosition.x - rail.x() - bar.w() / 2
+                    : event.localPosition.y - rail.y() - bar.h() / 2) /
+                 travel) *
+                (x ? _extent.width - _viewport.width
+                   : _extent.height - _viewport.height);
+          setOffset(offset);
+        }
         _dragPointer = event.pointer;
         _dragAxis = axis;
         _dragStart = axis == layout::Axis::Horizontal ? event.localPosition.x
@@ -172,14 +232,14 @@ void ScrollView::setChild(std::unique_ptr<Node> value) {
 
 void ScrollView::applyPatch(const ScrollPatch &p) {
   const ScrollProps d;
-  setProps(
-      {p.axes.appliedTo(_props.axes, d.axes),
-       p.wheelStep.appliedTo(_props.wheelStep, d.wheelStep),
-       p.scrollbar.appliedTo(_props.scrollbar, d.scrollbar),
-       p.scrollbarThickness.appliedTo(_props.scrollbarThickness,
-                                      d.scrollbarThickness),
-       p.minimumThumb.appliedTo(_props.minimumThumb, d.minimumThumb),
-       p.scrollbarColor.appliedTo(_props.scrollbarColor, d.scrollbarColor)});
+  setProps({p.axes.appliedTo(_props.axes, d.axes),
+            p.wheelStep.appliedTo(_props.wheelStep, d.wheelStep),
+            p.scrollbar.appliedTo(_props.scrollbar, d.scrollbar),
+            p.scrollbarThickness.appliedTo(_props.scrollbarThickness,
+                                           d.scrollbarThickness),
+            p.minimumThumb.appliedTo(_props.minimumThumb, d.minimumThumb),
+            p.scrollbarColor.appliedTo(_props.scrollbarColor, d.scrollbarColor),
+            p.sizing.appliedTo(_props.sizing, d.sizing)});
 }
 
 void ScrollView::setProps(ScrollProps props) {

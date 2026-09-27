@@ -8,7 +8,7 @@ Read [2D.md](2D.md) for painting, [3D.md](3D.md) for scenes, and
 | Backend | 2D | 3D | Composition |
 |---|---|---|---|
 | SurfaceRenderBackend | Shapes, affine/rounded clips, images, layers/capture | Reference unlit rasterizer | Encoded sRGB UI; scene internals linear |
-| GPURenderBackend | Same operations through SDL GPU | Indexed unlit textured geometry and depth | Linear RGBA16_FLOAT, final SDR sRGB encoding |
+| GPURenderBackend | Same operations through SDL GPU | Indexed unlit/PBR geometry, directional/environment lighting and depth | Linear RGBA16_FLOAT, scene tone mapping, final SDR sRGB encoding |
 
 Hardware rendering selects Vulkan only; Direct3D and Metal are not selectable.
 GPU eligibility requires packaged SPIR-V shaders and a supported device/driver. Auto
@@ -41,7 +41,8 @@ offscreen producers -> UI composition -> acquire swapchain -> encode/present.
 <a id="runtime-contract"></a>
 ## Host/frame ownership
 
-AppHost owns Window and RenderBackend. IApp borrows RenderFrame; the host presents.
+AppHost owns PresentationSession, which owns Window and RenderBackend.
+IApp borrows RenderFrame; the host presents.
 Destroy the frame before replacing its backend or reconfiguring the window.
 SDL/TTF guards outlive all dependent handles.
 
@@ -75,6 +76,28 @@ device-loss classification, so RenderFailure means a recovery candidate rather
 than proof of device loss. Validation and arbitrary application exceptions still
 propagate; no recovery screen is installed.
 
+`RenderFailure::operation()` identifies Acquire, Record, Submit, Present or Query;
+Unknown covers an already invalid domain or exhausted recovery. This is an
+operation label, not a portable device-loss diagnosis. `HostTransitions.hpp`
+contains the sequencing used by AppHost itself: frame scope ends before recovery,
+old backend is invalidated/destroyed before releasing window presentation, and a
+new domain is published before notification. Exit hooks suppress new commands
+without moving or copying the pending command payload.
+
+| Failure | Host treatment |
+|---|---|
+| Invalid arguments, state misuse, arithmetic overflow | Reject/propagate; do not recreate the renderer |
+| AllocationLimits or submission-capacity refusal (`length_error`) | Policy refusal; no automatic resolution reduction or recovery |
+| Native frame acquire/record/submit/present/query (`RenderFailure`) | Bounded recreation, after frame destruction; no update replay |
+| Resource construction, font/image decoding or native allocation errors | Ordinary exceptions; candidate creation may follow configured fallback |
+| Failed rollback or recovery factory/notification | Terminal; do not keep using partially restored state |
+
+`RenderBackendProps` supplies immutable creation policy to AppHost and the backend
+factory: `allocations` and `gpuDebug`. It is preserved across switching, restoration
+and recovery, not stored as a per-frame option or user-settings field. Both software
+frame/scene allocation and GPU device allocation consume this policy. UI layer and
+software composition cache budgets remain separate and explicitly scoped.
+
 RenderSettings controls whole-frame resolutionScale, glyphAtlases and vsync,
 without changing input/layout coordinates. SceneView has a separate resolution
 multiplier. GPU immediate presentation falls back to VSYNC when unsupported;
@@ -97,11 +120,19 @@ be unassociated before decoding. Metadata does not convert bytes or prove labels
 | SurfacePaintImage | Shared CPU source; do not mutate published pixels |
 | GPUDevice/GPUDeviceHandle | Native ownership/shared lifetime, not SDL initialization ownership |
 | GPUImage(device, pixels) | Raw RGBA8_UNORM single-level upload retaining device |
-| GPUImage(device, size) | Linear-associated RGBA16F color target; initialize before publishing |
+| Internal ColorTarget | Writable linear-associated RGBA16F attachment, not a public PaintImage |
 | GPUTextureResource / GPUResource | Device-retaining native RAII; depth is not a sampleable PaintImage |
 | get/device accessors | Native borrows/device inspection, not ownership transfer |
 | packSurfaceRGBA8 | Preserve pitch/metadata; no gamma conversion |
 | GPUImagePreparer | CPU surface -> cached upload; same-device image -> identity; foreign device -> error |
+
+Uninitialized size-only GPUImage construction and mutable image lease access are
+private. Internal ColorTarget publishes a const image only after its initializing
+submission succeeds. Publication means queued in producer-before-consumer order,
+not GPU completion. Published image owners and recording/submission leases prevent
+pool reuse. Reacquisition requires a fresh submission before another publication;
+internal native writers must still initialize the entire attachment. Raw native
+texture access is an escape hatch, not permission to mutate published images.
 
 The realization cache keys shared surface ownership plus alpha/encoding and holds
 strong, byte-budgeted LRU results. Wrappers around one source can share uploads;
@@ -109,8 +140,9 @@ distinct equal allocations need not. AssetRegistry handles authored-value sharin
 upstream. Eviction releases cache ownership, not live caller handles. Limits are
 policy estimates, not a query of free VRAM. Live images retain their device.
 
-Published images have no mipmap generation, compressed formats, mutable streaming
-updates or video planes. Transient draw records and mesh transfers do reuse cycling
+UI PaintImages have no mipmap generation, compressed formats, mutable streaming
+updates or video planes. Scene Texture resources have explicit mip chains and
+independent sampler policies; see [MATERIALS.md](MATERIALS.md). Transient draw records and mesh transfers do reuse cycling
 upload/storage buffers. Transfers reject sizes exceeding SDL's 32-bit capacity. No automatic
 GPU-to-CPU or cross-device copy exists. GPU-only authored sources require retained
 CPU sources or regeneration information for backend switching. Use these APIs on
@@ -128,7 +160,8 @@ decodes source texels before interpolation. Composition uses premultiplied
 ONE / ONE_MINUS_SRC_ALPHA into linear RGBA16_FLOAT targets.
 
 Offscreen groups/captures are submitted before consumers. Group opacity applies
-once. The main target is reused until dimensions change. No pass samples its own
+once. The main target is acquired from the same completion-aware pool as offscreen
+targets, rather than overwritten while a previous submission might use it. No pass samples its own
 attachment. SDL's GPU release APIs defer native retirement; shared_ptr is not a
 fence. present() submits the UI target, acquires the swapchain late, then encodes
 sRGB for SDR output. After acquisition an error guard submits rather than cancels:
@@ -159,7 +192,7 @@ waits for device idle. Recent targets remain cached for 240 completed submission
 by default; aging is evaluated on later acquisitions. This is demand-driven
 hysteresis, not a GPU-time-based adaptive controller or a free-VRAM query.
 
-`maxTargetPoolBytes` (64 MiB) limits retained cache entries; `maxLiveTargetBytes`
+`maxTargetPoolBytes` (64 MiB) limits retained cache entries; `maxLivePoolBytes`
 (256 MiB) limits estimated pool allocations, including published targets and
 reservations held by recorded/in-flight uses. Allocation pressure first trims
 unused completed targets, then throws `length_error` if capacity is still absent.
@@ -238,8 +271,10 @@ Preparation failures remain retryable.
 Reflected custom pipelines/reload and glTF/GLB importing are implemented separately
 from UI; see [SHADERS.md](SHADERS.md) and [3D.md](3D.md). CPU background work can
 publish through the bounded CompletionQueue, without worker mutation of the scene
-or UI. Fixed-step simulation, HDR/ICC/wide-gamut color, PBR/lights/shadows/animation
-and advanced transparency are not implicit in a GPU device. A general ECS/job
+or UI. Fixed-step simulation is an explicit runtime service; PBR, environment
+lighting, HDR scene tone mapping and rigid clips are explicit scene services.
+HDR display output/ICC/wide-gamut color, shadows, skinning and advanced transparency
+are not implicit in a GPU device. A general ECS/job
 graph is not required to use the current path.
 
 The project applies a pinned Vulkan-only SDL timestamp extension. Its versioned

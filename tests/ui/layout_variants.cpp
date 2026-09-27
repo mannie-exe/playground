@@ -63,27 +63,27 @@ int main() {
         },
         "length multiplication overflow rejected");
     ui::Box box;
-    const auto original = box.Node::props();
+    const auto original = box.Node::settings();
     test::rejects(
         [&] {
-          box.Node::applyPatch(
-              {.paint = {.opacity = ui::Patch<float>::set(2)}});
+          box.Node::applySettingsPatch(
+              {.paint = {.opacity = playground::Patch<float>::set(2)}});
         },
         "out-of-range opacity rejected");
     test::rejects(
         [&] {
-          box.applyBoxPatch(
-              {.padding = ui::Patch<math::Insets>::set(math::Insets::all(-1))});
+          box.applyBoxPatch({.padding = playground::Patch<math::Insets>::set(
+                                 math::Insets::all(-1))});
         },
         "negative insets rejected");
     test::rejects(
         [&] {
           box.applyVisualPatch(
-              {.clipRect = ui::Patch<std::optional<math::Rect>>::set(
+              {.clipRect = playground::Patch<std::optional<math::Rect>>::set(
                    math::rect(0, 0, -1, 10))});
         },
         "invalid clip rejected");
-    test::require(box.Node::props() == original,
+    test::require(box.Node::settings() == original,
                   "invalid common patches do not partially commit");
     test::rejects(
         [] {

@@ -13,6 +13,7 @@ class Image final : public rendering::PaintImage {
 
 public:
   explicit Image(math::Size2 size) : _size{size} {}
+
   math::Size2 pixelSize() const noexcept override { return _size; }
 };
 
@@ -24,16 +25,22 @@ public:
   int depth{};
 
   void save() override { ++depth; }
+
   void restore() noexcept override { --depth; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override {}
+
   rendering::PaintImageHandle
   capture(math::Rect, math::Vec2f,
           const std::function<void(rendering::PaintContext &)> &) override {
     ++captures;
     return result;
   }
+
   void drawImage(const rendering::PaintImageHandle &, math::Rect, math::Rect,
                  rendering::ImagePaint) override {
     ++draws;

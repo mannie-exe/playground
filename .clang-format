@@ -1,0 +1,16 @@
+BasedOnStyle: LLVM
+SeparateDefinitionBlocks: Always
+IncludeBlocks: Regroup
+# Keep a .cpp's matching header in the project group, not ahead of std headers.
+IncludeIsMainRegex: '$.'
+IncludeCategories:
+  - Regex: '^<(app|assets|demo2d|demo3d|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui)/'
+    Priority: 3
+  - Regex: '^"'
+    Priority: 3
+  - Regex: '^<(SDL3[^/]*/|kiwi/|toml\+\+/|unicode/|accesskit\.h>|cgltf\.h>|mikktspace\.h>|meshoptimizer\.h>|ktx\.h>|stb_image\.h>|pugixml\.hpp>|spirv_reflect\.h>|utf8proc\.h>|conio\.h>|termios\.h>|unistd\.h>)'
+    Priority: 2
+  - Regex: '^<[a-z0-9_]+(\.h)?>$'
+    Priority: 1
+  - Regex: '.*'
+    Priority: 2

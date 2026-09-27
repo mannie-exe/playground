@@ -13,7 +13,9 @@ struct ResourceDomainId {
   std::uint64_t value{};
 
   static constexpr ResourceDomainId cpu() noexcept { return {1}; }
+
   explicit constexpr operator bool() const noexcept { return value != 0; }
+
   constexpr bool operator==(const ResourceDomainId &) const = default;
 };
 

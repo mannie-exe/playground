@@ -28,6 +28,7 @@ struct RGBA8Image {
       throw std::overflow_error("RGBA image exceeds addressable storage");
     return width * height * 4;
   }
+
   void validate() const {
     if (pixels.size() != byteSize(size))
       throw std::invalid_argument("RGBA byte count does not match dimensions");

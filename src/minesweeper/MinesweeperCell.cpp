@@ -1,3 +1,5 @@
+#include <string>
+
 #include <minesweeper/MinesweeperCell.hpp>
 
 void MinesweeperCell::onDefaultEvent(playground::ui::UIEvent &event) {
@@ -5,130 +7,133 @@ void MinesweeperCell::onDefaultEvent(playground::ui::UIEvent &event) {
   if (event.type == EventType::PointerDown && !event.handled && isEnabled() &&
       (event.button == 1 || event.button == 3)) {
     event.handled = true;
-    _publish(
-        {.user = {.type = _events.cellHit, .data1 = &_gridPos, .data2 = this}});
-    if (_cleared)
-      return;
-    if (event.button == 1) {
-      if (!_flagged)
-        clearCell();
-    } else {
-      setFlagged(!_flagged);
-      playground::minesweeper::publishFlagChange(
-          _events, {_gridPos, _flagged, _gridGeneration});
-    }
+    if (event.button == 3)
+      performAction(CustomAction{1}, ActionSource::Pointer);
+    else
+      performAction(Activate{}, ActionSource::Pointer);
     return;
   }
-  if (event.type == EventType::KeyDown || event.type == EventType::KeyUp)
+  if (event.type == EventType::KeyDown && !event.handled && hasFocus() &&
+      isEnabled() &&
+      (event.logicalKey == Key::Space || event.logicalKey == Key::Enter)) {
+    event.handled = true;
+    if (!event.repeat)
+      if (event.shift)
+        performAction(CustomAction{1}, event.source);
+      else
+        performAction(Activate{}, event.source);
+    return;
+  }
+  if (event.type == EventType::KeyUp)
     return;
   Button::onDefaultEvent(event);
 }
 
-MinesweeperCell::MinesweeperCell(
-    float cellSize, bool bomb, playground::math::Vec2i position,
-    const MinesweeperCellStyle &style,
-    const playground::minesweeper::MinesweeperEvents &events,
-    const playground::minesweeper::ViewResources &resources, Sint32 generation,
-    std::function<EventResult(const SDL_Event &)> publish)
-    : Button{nullptr, style.button}, _events{events},
-      _gridGeneration{generation}, _publish{std::move(publish)},
-      _gridPos{position}, _style{style}, _resources{resources},
-      _labelSize{cellSize, cellSize}, _bomb{bomb} {
-  using namespace playground;
-  if (!_publish || style.labelColors.size() < 9 || style.iconPadding < 0)
-    throw std::invalid_argument("Invalid Minesweeper cell configuration");
+playground::ui::SemanticState MinesweeperCell::semanticState() const {
+  auto result = Button::semanticState();
+  if (isEnabled() && !isCleared())
+    result.customActions.push_back(
+        {1, isFlagged() ? "Remove flag" : "Place flag"});
+  return result;
+}
 
+playground::ui::ActionResult
+MinesweeperCell::performAction(const playground::ui::UIAction &action,
+                               playground::ui::ActionSource source) {
+  using namespace playground::ui;
+  if (!isEnabled())
+    return ActionResult::Unavailable;
+  if (std::holds_alternative<Activate>(action)) {
+    _activate(_gridPos, 1);
+    return ActionResult::Applied;
+  }
+  if (const auto *custom = std::get_if<CustomAction>(&action);
+      custom && custom->id == 1) {
+    if (isCleared())
+      return ActionResult::Unavailable;
+    _activate(_gridPos, 3);
+    return ActionResult::Applied;
+  }
+  return Button::performAction(action, source);
+}
+
+MinesweeperCell::MinesweeperCell(
+    float cellSize, const MinesweeperModel &model,
+    playground::math::Vec2i position, const MinesweeperCellStyle &style,
+    const playground::minesweeper::ViewResources &resources,
+    std::function<void(playground::math::Vec2i, int)> activate)
+    : Button{nullptr, style.button}, _model{model}, _gridPos{position},
+      _style{style}, _resources{resources}, _labelSize{cellSize, cellSize},
+      _activate{std::move(activate)} {
+  using namespace playground;
+  if (!_activate || style.labelColors.size() < 9 || style.iconPadding < 0)
+    throw std::invalid_argument("Invalid Minesweeper cell configuration");
   auto layers = std::make_unique<ui::ZStack>(
       ui::ZStackProps{layout::Alignment::stretch()});
   auto label =
       minesweeper::makeLabel(resources, "", style.labelColors[0], _labelSize);
   _label = label.get();
   layers->append(std::move(label));
-  auto icon = [&](bool isBomb) {
+  auto icon = [&](bool bomb) {
     auto box = std::make_unique<ui::Box>(
         layout::BoxProps{.padding = math::Insets::all(
                              static_cast<float>(style.iconPadding))},
         ui::BoxContentProps{layout::Alignment::stretch()});
     box->setChild(minesweeper::makeIcon(
-        resources, isBomb,
-        isBomb ? math::ColorRGBA8{255, 255, 255, 255} : style.flagColor));
+        resources, bomb,
+        bomb ? math::ColorRGBA8{255, 255, 255, 255} : style.flagColor));
     auto *pointer = box.get();
     layers->append(std::move(box));
     return pointer;
   };
-  if (bomb)
-    _bombIcon = icon(true);
+  // A new board can change this cell's bomb state without replacing its view.
+  _bombIcon = icon(true);
   _flagIcon = icon(false);
   setChild(std::move(layers));
   setContentAlignment(layout::Alignment::stretch());
   setFocusable(false);
   auto semantics = semanticProps();
-  semantics.name =
-      "Cell " + std::to_string(position.x) + ", " + std::to_string(position.y);
+  semantics.name = "Row " + std::to_string(position.y + 1) + ", column " +
+                   std::to_string(position.x + 1);
+  semantics.description =
+      "Arrows move; Enter/Space reveal; Shift+Enter/Space flag";
   setSemanticProps(std::move(semantics));
-  synchronizeIcons();
+  synchronize();
 }
 
-void MinesweeperCell::incrementAdjacentBombs() {
-  if (!_bomb) {
-    ++_adjacentBombs;
-    _dirty = true;
-  }
-}
-
-void MinesweeperCell::setFlagged(bool flagged) {
-  if (_cleared || _flagged == flagged)
+void MinesweeperCell::synchronize() {
+  if (_revision == _model.revision())
     return;
-  _flagged = flagged;
-  synchronizeIcons();
-}
-
-void MinesweeperCell::clearCell(bool propagate) {
-  if (_cleared)
-    return;
-  auto style = Button::props();
-  style.normal = style.hover =
-      _bomb ? (_revealed ? _style.revealedColor : _style.bombColor)
-            : _style.clearedColor;
-  if (_dirty) {
-    auto text = _label->props();
-    text.value = std::to_string(_adjacentBombs);
-    text.font =
-        playground::minesweeper::fittedFont(_resources, text.value, _labelSize);
-    text.foreground = _style.labelColors.at(_adjacentBombs);
-    _label->setProps(std::move(text));
-    _dirty = false;
-  }
-  if (_flagged) {
-    _flagged = false;
-    playground::minesweeper::publishFlagChange(
-        _events, {_gridPos, false, _gridGeneration});
-  }
-  Button::setProps(style);
-  _cleared = true;
-  synchronizeIcons();
-  if (propagate)
-    _publish({.user = {.type = _bomb && !_revealed ? _events.bombDetonated
-                                                   : _events.cellCleared,
-                       .data1 = &_gridPos,
-                       .data2 = this}});
-}
-
-EventResult MinesweeperCell::handleEvent(const SDL_Event &event) {
-  if (event.type != _events.cellCleared)
-    return EventResult::Ignored;
-  const auto position =
-      *static_cast<const playground::math::Vec2i *>(event.user.data1);
-  if (!isAdjacent(position) || _cleared || _bomb)
-    return EventResult::Ignored;
-  clearCell();
-  return EventResult::Handled;
-}
-
-void MinesweeperCell::synchronizeIcons() {
   using playground::ui::Visibility;
-  if (_bombIcon)
-    _bombIcon->setVisibility(_cleared && _bomb ? Visibility::Visible
-                                               : Visibility::Hidden);
-  _flagIcon->setVisibility(_flagged ? Visibility::Visible : Visibility::Hidden);
+  const auto &cell = state();
+  auto button = _style.button;
+  if (cell.cleared)
+    button.normal = button.hover =
+        cell.bomb ? (cell.revealed ? _style.revealedColor : _style.bombColor)
+                  : _style.clearedColor;
+  const std::string value = cell.cleared && !cell.bomb && cell.adjacentBombs
+                                ? std::to_string(cell.adjacentBombs)
+                                : "";
+  if (_label->props().value != value) {
+    auto text = _label->props();
+    text.value = value;
+    text.font =
+        playground::minesweeper::fittedFont(_resources, value, _labelSize);
+    text.foreground = _style.labelColors.at(cell.adjacentBombs);
+    _label->setProps(std::move(text));
+  }
+  setButtonProps(button);
+  _bombIcon->setVisibility(cell.cleared && cell.bomb ? Visibility::Visible
+                                                     : Visibility::Hidden);
+  _flagIcon->setVisibility(cell.flagged ? Visibility::Visible
+                                        : Visibility::Hidden);
+  auto semantics = semanticProps();
+  semantics.value = cell.flagged    ? "Flagged"
+                    : !cell.cleared ? "Covered"
+                    : cell.bomb     ? "Bomb"
+                    : cell.adjacentBombs
+                        ? std::to_string(cell.adjacentBombs) + " adjacent bombs"
+                        : "Empty";
+  setSemanticProps(std::move(semantics));
+  _revision = _model.revision();
 }

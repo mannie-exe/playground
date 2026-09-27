@@ -22,19 +22,24 @@ void WindowPreferences::validate() const {
       refreshRate < 0)
     throw std::invalid_argument("Invalid window preferences");
 }
+
 void AppViewPolicy::validate() const {
+  (void)ui::resolveTheme(colorScheme, userContrast, {});
+  interaction.validate();
   if (initialSizing < InitialWindowSizing::Preferred ||
       initialSizing > InitialWindowSizing::RestorePrevious ||
       (preferredWindowSize && !math::hasArea(*preferredWindowSize)) ||
       !math::isFinite(minimumSize) || !math::hasArea(minimumSize))
     throw std::invalid_argument("Invalid app view policy");
 }
+
 math::Vec2i AppViewPolicy::initialWindowSize(math::Vec2i bootstrap) const {
   validate();
   if (!math::hasArea(bootstrap))
     throw std::invalid_argument("Bootstrap window size must be positive");
   return preferredWindowSize.value_or(bootstrap);
 }
+
 void ViewportProps::validate() const {
   positive(scale, "UI scale must be finite and positive");
   if (mode < ViewportMode::Reflow || mode > ViewportMode::FixedCanvas ||
@@ -44,12 +49,14 @@ void ViewportProps::validate() const {
       alignment.y < 0 || alignment.y > 1)
     throw std::invalid_argument("Invalid viewport props");
 }
+
 void PresentationProps::validate() const {
   window.validate();
   viewport.validate();
   render.validate();
   renderer.validate();
 }
+
 math::Vec2f uiWindowScale(const ViewportProps &props,
                           const WindowMetrics &metrics) {
   props.validate();
@@ -67,6 +74,7 @@ math::Vec2f uiWindowScale(const ViewportProps &props,
   return {axis(metrics.windowSize.x, metrics.drawableSize.x),
           axis(metrics.windowSize.y, metrics.drawableSize.y)};
 }
+
 ViewportMapping resolveViewport(const ViewportProps &props,
                                 const WindowMetrics &metrics) {
   const auto uiScale = uiWindowScale(props, metrics);
@@ -108,13 +116,16 @@ ViewportMapping resolveViewport(const ViewportProps &props,
     throw std::overflow_error("Viewport mapping overflow");
   return result;
 }
+
 math::Point2 ViewportMapping::toLogical(math::Point2 position) const {
   return {(position.x - offset.x) / windowUnitsPerLogical.x,
           (position.y - offset.y) / windowUnitsPerLogical.y};
 }
+
 math::Vec2f ViewportMapping::toLogicalDelta(math::Vec2f delta) const {
   return delta / windowUnitsPerLogical;
 }
+
 std::string_view toString(WindowMode mode) {
   switch (mode) {
   case WindowMode::Windowed:
@@ -132,6 +143,7 @@ std::string_view toString(WindowMode mode) {
   }
   throw std::invalid_argument("Unknown window mode");
 }
+
 std::string_view toString(InitialWindowSizing mode) {
   switch (mode) {
   case InitialWindowSizing::Preferred:

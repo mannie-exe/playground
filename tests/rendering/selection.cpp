@@ -14,6 +14,16 @@ int main() {
                                 {true, true, CompositionSpace::Linear}};
     const std::array both{software, gpu};
     const std::array onlySoftware{software};
+    const RendererRequirements pbr{.metallicRoughness = true};
+    test::rejects<std::runtime_error>(
+        [&] { selectRenderer({}, pbr, both); },
+        "unlit 3D capability does not imply PBR support");
+    const std::array litGPU{
+        RendererCandidate{RendererKind::SDLGPU,
+                          GPUDriver::Vulkan,
+                          {true, true, CompositionSpace::Linear, true}}};
+    test::require(selectRenderer({}, pbr, litGPU).candidateIndex == 0,
+                  "explicit PBR capability is negotiated");
     test::require(
         selectRenderer({}, {}, both).candidateIndex == 1,
         "auto prefers a capable GPU even if software is listed first");

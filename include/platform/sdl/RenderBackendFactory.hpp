@@ -5,6 +5,7 @@
 #include <SDL3/SDL_video.h>
 
 #include <rendering/RenderBackend.hpp>
+#include <rendering/RenderBackendProps.hpp>
 
 namespace playground::sdl {
 
@@ -13,16 +14,19 @@ namespace playground::sdl {
 rendering::RendererState resolveRenderer(rendering::RendererPreferences,
                                          rendering::RendererRequirements);
 std::unique_ptr<rendering::RenderBackend>
-createRenderBackend(SDL_Window &, const rendering::RendererState &);
+createRenderBackend(SDL_Window &, const rendering::RendererState &,
+                    const rendering::RenderBackendProps & = {});
 
 struct RenderBackendResult {
   std::unique_ptr<rendering::RenderBackend> backend;
   rendering::RendererState state;
 };
+
 // Attempts compatible candidates; creation failures may fall back only within
 // the requested policy. Never relaxes the application's requirements.
-RenderBackendResult createRenderBackend(SDL_Window &,
-                                        rendering::RendererPreferences,
-                                        rendering::RendererRequirements);
+RenderBackendResult
+createRenderBackend(SDL_Window &, rendering::RendererPreferences,
+                    rendering::RendererRequirements,
+                    const rendering::RenderBackendProps & = {});
 
 } // namespace playground::sdl

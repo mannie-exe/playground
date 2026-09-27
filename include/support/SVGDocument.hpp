@@ -13,6 +13,7 @@ namespace playground {
 struct NoSVGPaint {
   bool operator==(const NoSVGPaint &) const = default;
 };
+
 using SVGPaint = std::variant<NoSVGPaint, math::ColorRGBA8>;
 
 struct SVGElementStyle {
@@ -20,6 +21,7 @@ struct SVGElementStyle {
   std::optional<float> strokeWidth, opacity;
   bool operator==(const SVGElementStyle &) const = default;
 };
+
 using SVGStyleOverrides = std::map<std::string, SVGElementStyle>;
 
 class SVGDocument {

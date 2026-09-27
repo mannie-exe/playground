@@ -8,6 +8,7 @@
 #include <ui/content/Image.hpp>
 #include <ui/content/Text.hpp>
 #include <ui/content/Vector.hpp>
+#include <ui/controls/Button.hpp>
 
 using namespace playground;
 
@@ -15,17 +16,25 @@ class RecordingPaint final : public rendering::PaintContext {
 public:
   int depth{}, draws{};
   math::Size2 pixels;
+  rendering::ImagePaint appearance;
+
   void save() override { ++depth; }
+
   void restore() noexcept override { --depth; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override {}
+
   void drawImage(const rendering::PaintImageHandle &image, math::Rect source,
-                 math::Rect destination, rendering::ImagePaint) override {
+                 math::Rect destination, rendering::ImagePaint style) override {
     test::require(math::isFinite(source) && math::isFinite(destination),
                   "finite draw request");
     ++draws;
     pixels = image->pixelSize();
+    appearance = style;
   }
 };
 
@@ -60,13 +69,26 @@ int main() {
                                         .fontFit = fit,
                                         .minFontSize = 8,
                                         .maxFontSize = 20,
-                                        .fitStep = 2});
+                                        .fitStep = 2,
+                                        .useTheme = false});
               auto *t = text.get();
               root.setContent(std::move(text));
               root.flushLayout(math::Size2{80, 60}, direction);
               test::rejects<std::logic_error>([&] { root.render(paint); },
                                               "text requires preparation");
               root.prepare();
+              const auto layouts = root.stats().textLayouts;
+              root.prepare();
+              test::require(
+                  root.stats().textLayouts == layouts,
+                  "unchanged preparation reuses density-specific text layout");
+              t->applyPatch(
+                  {.foreground = playground::Patch<math::ColorRGBA8>::set(
+                       {200, 210, 220, 255})});
+              root.prepare();
+              test::require(
+                  root.stats().textLayouts == layouts,
+                  "color changes invalidate pixels without reshaping");
               const int before = paint.draws;
               root.render(paint);
               test::require(
@@ -93,7 +115,8 @@ int main() {
               const auto saved = t->props();
               test::rejects(
                   [&] {
-                    t->applyPatch({.font = ui::Patch<FontHandle>::reset()});
+                    t->applyPatch(
+                        {.font = playground::Patch<FontHandle>::reset()});
                   },
                   "required font cannot Reset");
               test::require(t->props() == saved,
@@ -141,18 +164,21 @@ int main() {
     test::rejects(
         [&] {
           i->applyPatch(
-              {.sourceRect = ui::Patch<std::optional<math::Rect>>::set(
+              {.sourceRect = playground::Patch<std::optional<math::Rect>>::set(
                    math::rect(30, 0, 20, 10))});
         },
         "out-of-resource crop rejected");
     test::rejects(
         [&] {
           i->applyPatch(
-              {.image = ui::Patch<rendering::PaintImageHandle>::reset()});
+              {.image =
+                   playground::Patch<rendering::PaintImageHandle>::reset()});
         },
         "required image cannot Reset");
     test::rejects(
-        [&] { i->applyPatch({.assetDensity = ui::Patch<float>::set(0)}); },
+        [&] {
+          i->applyPatch({.assetDensity = playground::Patch<float>::set(0)});
+        },
         "zero density rejected");
     test::require(i->props() == oldImage, "invalid image changes are atomic");
 
@@ -186,22 +212,26 @@ int main() {
     }
     test::rejects<std::runtime_error>(
         [&] {
-          v->applyPatch({.source = ui::Patch<VectorSource>::set(
+          v->applyPatch({.source = playground::Patch<VectorSource>::set(
                              base + "/assets/missing.svg")});
         },
         "missing vector file fails");
     test::require(v->props() == oldVector,
                   "failed asset load retains old vector props");
     test::rejects(
-        [&] { v->applyPatch({.source = ui::Patch<VectorSource>::reset()}); },
+        [&] {
+          v->applyPatch({.source = playground::Patch<VectorSource>::reset()});
+        },
         "required path cannot Reset");
-    v->applyPatch({.maximumRasterPixels = ui::Patch<std::size_t>::set(1)});
+    v->applyPatch(
+        {.maximumRasterPixels = playground::Patch<std::size_t>::set(1)});
     test::rejects<std::length_error>(
         [&] { root.prepare(); }, "vector budget enforced before allocation");
     test::rejects<std::logic_error>(
         [&] { root.render(paint); },
         "failed changed vector cannot silently draw stale output");
-    v->applyPatch({.maximumRasterPixels = ui::Patch<std::size_t>::reset()});
+    v->applyPatch(
+        {.maximumRasterPixels = playground::Patch<std::size_t>::reset()});
     root.prepare();
     root.render(paint);
     root.flushLayout({0, 0});
@@ -209,6 +239,41 @@ int main() {
     const auto draws = paint.draws;
     root.render(paint);
     test::require(paint.draws == draws, "zero-area vector does not draw");
+    for (const auto *name : {"add", "remove"}) {
+      auto icon = std::make_unique<ui::Vector>(
+          assets,
+          ui::VectorProps{.source = base + "/assets/ui/icons/" + name + ".svg",
+                          .useTheme = true},
+          layout::BoxProps{.width = layout::SizeRule::fixed(24),
+                           .height = layout::SizeRule::fixed(24)});
+      auto *glyph = icon.get();
+      auto button = std::make_unique<ui::Button>(std::move(icon));
+      auto *owner = button.get();
+      root.setContent(std::move(button));
+      root.flushLayout({40, 40});
+      test::require(glyph->bounds() == math::rect(8, 8, 24, 24),
+                    "SVG icon is geometrically centered");
+      for (const auto scheme : {ui::ColorSchemePreference::Light,
+                                ui::ColorSchemePreference::Dark}) {
+        root.setTheme(
+            ui::resolveTheme(scheme, ui::ContrastPreference::Normal, {}));
+        root.prepare();
+        root.render(paint);
+        test::require(paint.appearance.tint == glyph->theme().text,
+                      "icon inherits theme ink");
+      }
+      owner->setEnabled(false);
+      root.prepare();
+      root.render(paint);
+      test::require(paint.appearance.tint == glyph->theme().mutedText,
+                    "disabled icon inherits disabled ancestor ink");
+      glyph->applyPatch({.useTheme = Patch<bool>::reset()});
+      root.prepare();
+      root.render(paint);
+      test::require(paint.appearance.tint ==
+                        math::ColorRGBA8{255, 255, 255, 255},
+                    "Vector defaults preserve authored artwork");
+    }
     root.setContent({});
   });
 }

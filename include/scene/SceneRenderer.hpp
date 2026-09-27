@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -9,6 +10,8 @@
 #include <math/Geometry3D.hpp>
 #include <rendering/PaintImage.hpp>
 #include <rendering/ResourceDomain.hpp>
+#include <rendering/Texture.hpp>
+#include <support/PreparationBudget.hpp>
 
 namespace playground::scene {
 
@@ -16,6 +19,9 @@ struct Vertex3D {
   math::Vec3f position;
   math::Vec3f normal{0, 0, 1};
   math::Vec2f uv{};
+  math::Vec4f tangent{1, 0, 0, 1};
+  math::Vec4f color{1, 1, 1, 1};
+  math::Vec2f uv1{};
 };
 
 struct MeshData {
@@ -23,6 +29,7 @@ struct MeshData {
   std::vector<std::uint32_t> indices;
   void validate() const;
 };
+
 struct Bounds3 {
   math::Vec3f minimum, maximum;
 };
@@ -37,15 +44,28 @@ public:
   Mesh(const Mesh &) = default;
   Mesh &operator=(const Mesh &) = delete;
   Mesh &operator=(Mesh &&) = delete;
+
   const MeshData &data() const noexcept { return _data; }
+
   const Bounds3 &bounds() const noexcept { return _bounds; }
 };
+
 using MeshHandle = std::shared_ptr<const Mesh>;
 MeshHandle makeMesh(MeshData data);
 
-// Unlit material description, not a PBR model. Textures share the image
-// resource boundary with UI; scene submission must prepare them for its device.
-enum class TextureAddress { Clamp, Repeat, MirroredRepeat };
+// Unlit artwork can share UI images. PBR uses interpretation-aware texture
+// data.
+using TextureAddress = rendering::TextureAddress;
+
+struct MetallicRoughnessProps {
+  math::Vec4f baseColor{1, 1, 1, 1};
+  float metallic{1}, roughness{1};
+  math::Vec3f emissive{};
+  float normalScale{1}, occlusionStrength{1};
+  rendering::TextureBinding baseColorTexture, metallicRoughnessTexture,
+      normalTexture, occlusionTexture, emissiveTexture;
+};
+
 struct MaterialProps {
   math::ColorRGBA8 baseColor{255, 255, 255, 255};
   rendering::PaintImageHandle baseColorImage;
@@ -57,24 +77,62 @@ struct MaterialProps {
   rendering::Sampling sampling{rendering::Sampling::Nearest};
   TextureAddress addressU{TextureAddress::Clamp};
   TextureAddress addressV{TextureAddress::Clamp};
+  // Present selects PBR; absent keeps the existing explicit unlit path.
+  std::optional<MetallicRoughnessProps> pbr;
+  rendering::TextureBinding colorTexture;
 };
+
 struct MeshDraw {
   MeshHandle mesh;
   MaterialProps material;
   math::Matrix4 model;
 };
+
 struct CameraView {
   math::Matrix4 view;
   math::Matrix4 projection;
 };
+
 struct SceneRenderProps {
   CameraView camera;
   math::Vec2i pixelSize;
   math::ColorRGBA8 clearColor;
+
+  struct Lighting {
+    math::Vec3f directionToLight{0, 1, -1};
+    math::Vec3f irradiance{3, 3, 3};
+    rendering::TextureHandle diffuseEnvironment, specularEnvironment, brdf;
+    float environmentIntensity{1};
+  } lighting;
+
+  // Apply exposure to scene RGB on both backends; leave alpha unchanged.
+  float exposure{1};
+  // Optional GPU-only compression, after exposure and before UI composition.
+  bool toneMap{};
 };
+
+void generateNormals(MeshData &mesh);
+void generateTangents(MeshData &mesh, unsigned uvSet = 0);
+
+struct MeshPrepareProps {
+  bool generateNormals{}, generateTangents{};
+  unsigned tangentUVSet{};
+  std::size_t maxScratchBytes{256 * 1024 * 1024};
+  PreparationBudget *admission{}; // null selects the shared process budget
+};
+
+struct MeshPreparationStats {
+  std::size_t sourceVertices{}, cornerRecords{}, finalVertices{};
+  std::size_t sourceBytes{}, finalBytes{}, scratchEstimateBytes{};
+};
+
+// Transactional attribute generation and exact reindexing. Preserves triangle
+// order/winding; scratch accounting is a conservative admission estimate.
+MeshPreparationStats prepareMesh(MeshData &mesh, MeshPrepareProps props = {});
 
 void validate(const SceneRenderProps &view, std::span<const MeshDraw> draws);
 void validate(const MaterialProps &material);
+MaterialProps unlitPreview(MaterialProps material);
 
 enum class TransparentOrder { BackToFront, Submission };
 std::vector<MeshDraw>
@@ -87,9 +145,11 @@ orderedDraws(const CameraView &camera, std::span<const MeshDraw> draws,
 class SceneRenderer {
 public:
   virtual ~SceneRenderer() = default;
+
   virtual rendering::ResourceDomainId resourceDomain() const noexcept {
     return rendering::ResourceDomainId::cpu();
   }
+
   virtual rendering::PaintImageHandle
   render(const SceneRenderProps &view, std::span<const MeshDraw> draws) = 0;
 };

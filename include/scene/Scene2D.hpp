@@ -18,10 +18,12 @@ struct Item2DProps {
   int zOrder{};
   bool visible{true};
 };
+
 struct Item2DId {
   std::uint64_t owner{}, value{};
   bool operator==(const Item2DId &) const = default;
 };
+
 struct Item2DPatch {
   std::optional<math::Rect> bounds;
   std::optional<math::Transform2D> transform;
@@ -30,6 +32,7 @@ struct Item2DPatch {
   std::optional<int> zOrder;
   std::optional<bool> visible;
 };
+
 class Scene2D {
   std::uint64_t _owner, _next{1}, _revision{};
   std::map<std::uint64_t, Item2DProps> _items;
@@ -45,6 +48,7 @@ public:
   void applyPatch(Item2DId id, const Item2DPatch &patch);
   void remove(Item2DId id);
   std::vector<Item2DProps> snapshot() const;
+
   std::uint64_t revision() const noexcept { return _revision; }
 };
 

@@ -37,6 +37,7 @@ inline std::string toString(DirtyFlags value) {
     result += result.empty() ? "Unknown" : "|Unknown";
   return result;
 }
+
 constexpr std::string_view toString(RepeatLayout value) {
   switch (value) {
   case RepeatLayout::Stack:
@@ -49,6 +50,7 @@ constexpr std::string_view toString(RepeatLayout value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::RepeatLayout>
     : std::formatter<std::string_view> {
@@ -76,6 +78,7 @@ constexpr std::string_view toString(LayoutPhase value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::LayoutPhase>
     : std::formatter<std::string_view> {
@@ -107,6 +110,7 @@ constexpr std::string_view toString(LayoutIssue value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::LayoutIssue>
     : std::formatter<std::string_view> {
@@ -159,6 +163,48 @@ constexpr std::string_view toString(SemanticRole value) {
     return "Image";
   case SemanticRole::ScrollArea:
     return "ScrollArea";
+  case SemanticRole::Checkbox:
+    return "Checkbox";
+  case SemanticRole::Switch:
+    return "Switch";
+  case SemanticRole::Radio:
+    return "Radio";
+  case SemanticRole::RadioGroup:
+    return "RadioGroup";
+  case SemanticRole::Slider:
+    return "Slider";
+  case SemanticRole::SpinButton:
+    return "SpinButton";
+  case SemanticRole::TextField:
+    return "TextField";
+  case SemanticRole::TextArea:
+    return "TextArea";
+  case SemanticRole::Password:
+    return "Password";
+  case SemanticRole::ListBox:
+    return "ListBox";
+  case SemanticRole::Option:
+    return "Option";
+  case SemanticRole::Select:
+    return "Select";
+  case SemanticRole::Disclosure:
+    return "Disclosure";
+  case SemanticRole::Tabs:
+    return "Tabs";
+  case SemanticRole::Tab:
+    return "Tab";
+  case SemanticRole::Dialog:
+    return "Dialog";
+  case SemanticRole::Menu:
+    return "Menu";
+  case SemanticRole::MenuItem:
+    return "MenuItem";
+  case SemanticRole::Tooltip:
+    return "Tooltip";
+  case SemanticRole::Progress:
+    return "Progress";
+  case SemanticRole::Status:
+    return "Status";
   }
   return "Unknown";
 }
@@ -187,6 +233,12 @@ constexpr std::string_view toString(EventType value) {
     return "FocusLost";
   case EventType::FocusGained:
     return "FocusGained";
+  case EventType::TextInput:
+    return "TextInput";
+  case EventType::TextEditing:
+    return "TextEditing";
+  case EventType::InputCancel:
+    return "InputCancel";
   }
   return "Unknown";
 }
@@ -223,6 +275,26 @@ constexpr std::string_view toString(Key value) {
     return "Up";
   case Key::Down:
     return "Down";
+  case Key::Home:
+    return "Home";
+  case Key::End:
+    return "End";
+  case Key::Backspace:
+    return "Backspace";
+  case Key::Delete:
+    return "Delete";
+  case Key::A:
+    return "A";
+  case Key::C:
+    return "C";
+  case Key::V:
+    return "V";
+  case Key::X:
+    return "X";
+  case Key::Y:
+    return "Y";
+  case Key::Z:
+    return "Z";
   }
   return "Unknown";
 }
@@ -307,6 +379,16 @@ constexpr std::string_view toString(ScrollbarPolicy value) {
     return "Auto";
   case ScrollbarPolicy::Always:
     return "Always";
+  }
+  return "Unknown";
+}
+
+constexpr std::string_view toString(ScrollSizing value) {
+  switch (value) {
+  case ScrollSizing::Fill:
+    return "Fill";
+  case ScrollSizing::Content:
+    return "Content";
   }
   return "Unknown";
 }
@@ -442,6 +524,16 @@ struct std::formatter<playground::ui::ScrollAxes>
 };
 
 template <>
+struct std::formatter<playground::ui::ScrollSizing>
+    : std::formatter<std::string_view> {
+  auto format(playground::ui::ScrollSizing value,
+              std::format_context &context) const {
+    return std::formatter<std::string_view>::format(
+        playground::ui::toString(value), context);
+  }
+};
+
+template <>
 struct std::formatter<playground::ui::ScrollbarPolicy>
     : std::formatter<std::string_view> {
   auto format(playground::ui::ScrollbarPolicy value,
@@ -486,6 +578,7 @@ constexpr std::string_view toString(TextTruncation value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::TextTruncation>
     : std::formatter<std::string_view> {
@@ -509,6 +602,7 @@ constexpr std::string_view toString(WritingMode value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::WritingMode>
     : std::formatter<std::string_view> {
@@ -532,6 +626,7 @@ constexpr std::string_view toString(TextOrientation value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::TextOrientation>
     : std::formatter<std::string_view> {
@@ -557,6 +652,7 @@ constexpr std::string_view toString(CollectionOperation value) {
   return "Unknown";
 }
 } // namespace playground::ui
+
 template <>
 struct std::formatter<playground::ui::CollectionOperation>
     : std::formatter<std::string_view> {

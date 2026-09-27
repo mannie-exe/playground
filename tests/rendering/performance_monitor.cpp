@@ -9,7 +9,7 @@
 int main() {
   return playground::test::run([] {
     PerformanceMonitor monitor{{.enabled = true,
-                                .sampleEveryFrames = 60,
+                                .reportEveryFrames = 60,
                                 .historySize = 2,
                                 .logSummary = false}};
     monitor.end(FramePhase::Render);
@@ -40,12 +40,12 @@ int main() {
     key.type = SDL_EVENT_KEY_DOWN;
     key.key = SDLK_F11;
     playground::test::require(monitor.handleHotkey(key), "F11 handled");
-    playground::test::require(
-        monitor.getConfig().enabled && !monitor.getConfig().logSummary &&
-            monitor.getConfig().historySize == 2 &&
-            monitor.getConfig().sampleEveryFrames == 300 &&
-            monitor.history().size() == 2,
-        "F11 changes only reporting interval");
+    playground::test::require(monitor.config().enabled &&
+                                  !monitor.config().logSummary &&
+                                  monitor.config().historySize == 2 &&
+                                  monitor.config().reportEveryFrames == 300 &&
+                                  monitor.history().size() == 2,
+                              "F11 changes only reporting interval");
     {
       struct LogCapture {
         SDL_LogOutputFunction previous{};
@@ -122,8 +122,8 @@ int main() {
           "nonfinite completion latency rejected");
       signals.report();
       playground::test::require(
-          signals.gpuTimingStatus() == GPUTimingStatus::Pending,
-          "report consumes latest-result status, not history");
+          signals.gpuTimingStatus() == GPUTimingStatus::Measured,
+          "report resets interval, not collection measurement status");
       signals.setEnabled(false);
       playground::test::require(signals.gpuTimingStatus() ==
                                     GPUTimingStatus::Disabled,
@@ -136,7 +136,41 @@ int main() {
               signals.gpuHistory().empty(),
           "unsupported timing cannot accidentally publish samples");
     }
-    auto config = monitor.getConfig();
+    auto config = monitor.config();
+    {
+      using namespace playground;
+      ui::UIWorkTiming timing;
+      static double fakeMilliseconds{};
+      timing.setClock(+[]() noexcept { return fakeMilliseconds; });
+      timing.setEnabled(true);
+      {
+        ui::UIWorkTiming::Scope outer{timing, ui::UIWorkPhase::Layout};
+        fakeMilliseconds = 2;
+        {
+          ui::UIWorkTiming::Scope inner{timing, ui::UIWorkPhase::Layout};
+          fakeMilliseconds = 3;
+        }
+        fakeMilliseconds = 5;
+      }
+      test::require(timing.totals()[0] == 5,
+                    "same-phase nesting is not double-counted");
+      PerformanceMonitor uiMonitor{
+          {.enabled = true, .historySize = 2, .logSummary = false}};
+      uiMonitor.recordUI({.root = 1, .work = {.measured = 2}});
+      uiMonitor.recordUI({.root = 2, .work = {.measured = 3}});
+      uiMonitor.recordUI({.root = 1, .work = {.measured = 4}});
+      uiMonitor.recordFrame({});
+      const auto &ui = uiMonitor.history().back().ui;
+      test::require(
+          ui.size() == 2 && ui[0].work.measured == 6 &&
+              ui[1].work.measured == 3,
+          "per-root deltas accumulate without overwriting other roots");
+      uiMonitor.recordFrame({});
+      test::require(uiMonitor.history().back().ui.empty(),
+                    "UI deltas are consumed once");
+      test::rejects([&] { uiMonitor.recordUI({}); },
+                    "anonymous UI sample rejected");
+    }
     config.historySize = 1;
     monitor.setConfig(config);
     playground::test::require(monitor.history().size() == 1 &&

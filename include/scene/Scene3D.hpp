@@ -29,11 +29,13 @@ struct ObjectPatch {
 struct Ray3 {
   math::Vec3f origin, direction;
 };
+
 struct PickResult {
   ObjectId object;
   float distance;
   math::Vec3f position;
 };
+
 Ray3 pickingRay(const CameraView &camera,
                 math::Vec2f normalizedViewportPosition);
 Bounds3 meshBounds(const Mesh &mesh);
@@ -48,6 +50,10 @@ struct CameraProps {
   CameraView view(float aspect) const;
 };
 
+struct SceneCacheStats {
+  std::uint64_t worldTransforms{}, visibilityUpdates{}, snapshots{};
+};
+
 // Owns object records, not GPU realizations. Handles belong to exactly one
 // scene. Snapshotting retains immutable assets; mutation and rendering are
 // single-threaded.
@@ -59,6 +65,8 @@ class Scene3D {
     std::vector<ObjectId> children;
     math::Matrix4 world;
     bool worldVisible{};
+    bool worldDirty{true};
+    bool visibilityDirty{true};
   };
 
   std::uint64_t _owner;
@@ -67,10 +75,12 @@ class Scene3D {
   std::uint64_t _revision{};
   mutable std::optional<std::uint64_t> _cachedRevision;
   mutable std::vector<MeshDraw> _cachedDraws;
+  mutable SceneCacheStats _cacheStats;
 
   Entry &entry(ObjectId id);
   const Entry &entry(ObjectId id) const;
   void refreshWorldCache() const;
+  std::vector<std::uint32_t> descendants(ObjectId id) const;
 
 public:
   Scene3D();
@@ -95,7 +105,10 @@ public:
   math::Matrix4 worldTransform(ObjectId id) const;
   std::vector<MeshDraw> snapshot() const;
   std::optional<PickResult> pick(Ray3 ray) const;
+
   std::uint64_t revision() const noexcept { return _revision; }
+
+  const SceneCacheStats &cacheStats() const noexcept { return _cacheStats; }
 };
 
 } // namespace playground::scene

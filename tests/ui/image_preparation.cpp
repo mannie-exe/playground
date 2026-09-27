@@ -24,8 +24,11 @@ public:
       rendering::AlphaMode alpha = rendering::AlphaMode::Straight,
       rendering::ColorEncoding encoding = rendering::ColorEncoding::SRGB)
       : _size{size}, _alpha{alpha}, _encoding{encoding} {}
+
   math::Size2 pixelSize() const noexcept override { return _size; }
+
   rendering::AlphaMode alphaMode() const noexcept override { return _alpha; }
+
   rendering::ColorEncoding colorEncoding() const noexcept override {
     return _encoding;
   }
@@ -42,6 +45,7 @@ public:
     Throw
   } result{Result::Valid};
   int calls{};
+
   rendering::PaintImageHandle
   prepare(rendering::PaintImageHandle source) override {
     ++calls;
@@ -71,14 +75,21 @@ public:
   TestPreparer images;
   rendering::PaintImageHandle retained;
   int depth{};
+
   rendering::ImagePreparer *imagePreparer() noexcept override {
     return &images;
   }
+
   void save() override { ++depth; }
+
   void restore() noexcept override { --depth; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override {}
+
   void drawImage(const rendering::PaintImageHandle &image, math::Rect,
                  math::Rect, rendering::ImagePaint) override {
     test::require(dynamic_cast<const PreparedImage *>(image.get()),
@@ -92,9 +103,11 @@ public:
   rendering::PaintImageHandle result;
   rendering::ResourceDomainId domain{rendering::acquireResourceDomain()};
   int calls{};
+
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return domain;
   }
+
   rendering::PaintImageHandle
   prepareText(const rendering::TextSource &) override {
     ++calls;

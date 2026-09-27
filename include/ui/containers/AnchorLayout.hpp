@@ -20,9 +20,11 @@ protected:
 
 public:
   explicit AnchorLayout(layout::BoxProps box = {}) : PlacementContainer{box} {}
+
   void applyPlacementPatch(NodeId child, const AnchorPlacementPatch &patch) {
     applyPlacementPatch(indexOf(child), patch);
   }
+
   void applyPlacementPatch(std::size_t index,
                            const AnchorPlacementPatch &patch);
 };

@@ -13,8 +13,11 @@ using namespace playground;
 struct Source final : ui::CollectionSource {
   std::vector<ui::ItemKey> keys{"a", "b", "c"};
   ui::Revision version{};
+
   std::size_t size() const override { return keys.size(); }
+
   ui::ItemKey keyAt(std::size_t i) const override { return keys.at(i); }
+
   ui::Revision revision() const override { return version; }
 };
 

@@ -11,15 +11,18 @@ using namespace playground;
 struct PreparedLeaf : ui::Node {
   bool prepared{};
   math::Vec2f density;
+
   layout::MeasureResult
   measureContent(ui::MeasureContext &,
                  const layout::SizeConstraints &) override {
     return {{10, 10}};
   }
+
   void prepareContent(ui::PrepareContext &context) override {
     prepared = true;
     density = context.pixelScale;
   }
+
   void paint(rendering::PaintContext &) const override {
     test::require(prepared,
                   "singular subtree must not paint unprepared resources");

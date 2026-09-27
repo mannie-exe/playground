@@ -14,26 +14,36 @@
 namespace playground::sdl {
 
 constexpr SDL_Point toSDL(math::Vec2i value) { return {value.x, value.y}; }
+
 constexpr SDL_FPoint toSDL(math::Vec2f value) { return {value.x, value.y}; }
+
 constexpr SDL_FPoint toSDL(math::Point2 value) { return {value.x, value.y}; }
+
 constexpr SDL_FPoint toSDL(math::Size2 value) {
   return {value.width, value.height};
 }
+
 constexpr SDL_FRect toSDL(math::Rect value) {
   return {value.x(), value.y(), value.w(), value.h()};
 }
+
 constexpr SDL_Color toSDL(math::ColorRGBA8 value) {
   return {value.r, value.g, value.b, value.a};
 }
+
 constexpr math::Vec2i fromSDL(SDL_Point value) { return {value.x, value.y}; }
+
 constexpr math::Vec2f fromSDL(SDL_FPoint value) { return {value.x, value.y}; }
+
 constexpr math::Rect fromSDL(SDL_Rect value) {
   return math::rect(static_cast<float>(value.x), static_cast<float>(value.y),
                     static_cast<float>(value.w), static_cast<float>(value.h));
 }
+
 constexpr math::Rect fromSDL(SDL_FRect value) {
   return math::rect(value.x, value.y, value.w, value.h);
 }
+
 constexpr math::ColorRGBA8 fromSDL(SDL_Color value) {
   return {value.r, value.g, value.b, value.a};
 }
@@ -74,10 +84,12 @@ inline SDL_Point toPixelPoint(math::Vec2f value,
                               PixelRounding rounding = PixelRounding::Nearest) {
   return {checkedPixel(value.x, rounding), checkedPixel(value.y, rounding)};
 }
+
 inline SDL_Point toPixelPoint(math::Point2 value,
                               PixelRounding rounding = PixelRounding::Nearest) {
   return {checkedPixel(value.x, rounding), checkedPixel(value.y, rounding)};
 }
+
 inline SDL_Point toPixelSize(math::Size2 value,
                              PixelRounding rounding = PixelRounding::Nearest) {
   if (!math::isNonNegative(value))

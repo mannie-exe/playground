@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <assets/AssetCatalog.hpp>
 #include <platform/sdl/GPUResource.hpp>
 #include <rendering/Shader.hpp>
 
@@ -39,20 +40,27 @@ public:
                         rendering::ShaderReflection vertex,
                         rendering::ShaderReflection fragment,
                         std::uint64_t generation);
+
   SDL_GPUGraphicsPipeline *get() const noexcept { return _pipeline.get(); }
+
   rendering::ResourceDomainId resourceDomain() const noexcept {
     return _device->resourceDomain();
   }
+
   std::uint64_t generation() const noexcept { return _generation; }
+
   const rendering::ShaderReflection &vertex() const noexcept { return _vertex; }
+
   const rendering::ShaderReflection &fragment() const noexcept {
     return _fragment;
   }
+
   // Native pass/commands must belong to this generation's device and thread.
   void bind(SDL_GPURenderPass *pass) const;
   void pushUniform(SDL_GPUCommandBuffer *commands, rendering::ShaderStage stage,
                    std::uint32_t slot, std::span<const std::byte> bytes) const;
 };
+
 using GPUPipelineHandle = std::shared_ptr<const GPUPipelineGeneration>;
 enum class PipelineReload { Unchanged, Published, Rejected };
 
@@ -65,15 +73,23 @@ class GPUShaderPipeline {
   GPUPipelineHandle _current;
   std::vector<std::uint32_t> _vertexCode, _fragmentCode;
   std::string _lastError;
+  bool _fileBacked{true};
 
   void publish(std::vector<std::uint32_t> vertex,
                std::vector<std::uint32_t> fragment);
 
 public:
   GPUShaderPipeline(GPUDeviceHandle device, GPUPipelineProps props);
+  // Explicit immutable asset generation; this path never polls files.
+  GPUShaderPipeline(GPUDeviceHandle device, GPUPipelineProps props,
+                    assets::CompiledShader vertex,
+                    assets::CompiledShader fragment);
   GPUPipelineHandle snapshot() const;
+
   const GPUPipelineProps &props() const noexcept { return _props; }
+
   const std::string &lastError() const noexcept { return _lastError; }
+
   PipelineReload poll();
 };
 

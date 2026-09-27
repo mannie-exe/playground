@@ -58,16 +58,36 @@ int main() {
                       r == 255,
                   "uncached budget fallback preserves pixels");
     root.services().rasterBudget->limit = 64 * 1024 * 1024;
-    layerPtr->applyPatch({.byteLimit = ui::Patch<std::size_t>::set(1)});
+    layerPtr->applyPatch({.byteLimit = playground::Patch<std::size_t>::set(1)});
     render(layout::LayoutDirection::LeftToRight);
     test::require(layerPtr->estimatedCacheBytes() == 0,
                   "per-layer budget refusal is also uncached");
-    layerPtr->applyPatch({.byteLimit = ui::Patch<std::size_t>::reset()});
+    layerPtr->applyPatch(
+        {.byteLimit = playground::Patch<std::size_t>::reset()});
     render(layout::LayoutDirection::LeftToRight);
     test::require(root.services().rasterBudget->used > 0,
                   "cache reservation restored when budget permits");
     root.setContent({});
     test::require(root.services().rasterBudget->used == 0,
                   "detach releases cache budget reservation");
+    auto rectangle = std::make_unique<ui::Rectangle>(
+        ui::RectangleProps{{255, 0, 0, 255}},
+        layout::BoxProps{.width = layout::SizeRule::fixed(5)});
+    auto *rect = rectangle.get();
+    auto island = std::make_unique<ui::LayoutBoundary>(math::Size2{20, 20},
+                                                       std::move(rectangle));
+    root.setContent(std::make_unique<ui::Layer>(
+        std::move(island),
+        ui::LayerProps{.cachePolicy = ui::LayerCachePolicy::WhenUnchanged}));
+    SDL_FillSurfaceRect(surface.get(), nullptr, 0);
+    render(layout::LayoutDirection::LeftToRight);
+    auto props = rect->boxProps();
+    props.width = layout::SizeRule::fixed(12);
+    rect->setBoxProps(props);
+    render(layout::LayoutDirection::LeftToRight);
+    test::require(
+        SDL_ReadSurfacePixel(surface.get(), 8, 5, &r, &g, &b, &a) && r == 255 &&
+            a == 255,
+        "boundary-local geometry changes invalidate the ancestor layer cache");
   });
 }

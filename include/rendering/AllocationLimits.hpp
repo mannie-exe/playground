@@ -16,8 +16,10 @@ struct AllocationLimits {
   std::size_t maxUploadBytes{std::numeric_limits<std::uint32_t>::max()};
   std::size_t maxResidentBytes{128 * 1024 * 1024};
   std::size_t maxMeshResidentBytes{128 * 1024 * 1024};
+  std::size_t maxMaterialResidentBytes{256 * 1024 * 1024};
+  std::size_t maxMaterialTextureBytes{128 * 1024 * 1024};
   std::size_t maxTargetPoolBytes{64 * 1024 * 1024};
-  std::size_t maxLiveTargetBytes{256 * 1024 * 1024};
+  std::size_t maxLivePoolBytes{256 * 1024 * 1024};
   std::size_t maxStreamBytes{16 * 1024 * 1024};
   std::size_t maxInFlightSubmissions{256};
   std::uint32_t maxTimestampScopes{128};
@@ -27,7 +29,8 @@ struct AllocationLimits {
   void validate() const {
     if (!maxTextureDimension || !maxTargetBytes || !maxUploadBytes ||
         !maxStreamBytes || !maxInFlightSubmissions ||
-        !maxSoftwareTargetPixels || !maxLiveTargetBytes)
+        !maxSoftwareTargetPixels || !maxLivePoolBytes ||
+        !maxMaterialTextureBytes)
       throw std::invalid_argument(
           "Renderer allocation limits must be positive");
     if (maxUploadBytes > std::numeric_limits<std::uint32_t>::max())

@@ -14,6 +14,7 @@ namespace {
 struct Vertex {
   math::Vec4f clip;
   math::Vec2f uv;
+  math::Vec4f color;
 };
 
 double distance(math::Vec4f p, int plane) {
@@ -39,7 +40,9 @@ Vertex interpolate(Vertex a, Vertex b, double t) {
   };
   return {{mix(a.clip.x, b.clip.x), mix(a.clip.y, b.clip.y),
            mix(a.clip.z, b.clip.z), mix(a.clip.w, b.clip.w)},
-          {mix(a.uv.x, b.uv.x), mix(a.uv.y, b.uv.y)}};
+          {mix(a.uv.x, b.uv.x), mix(a.uv.y, b.uv.y)},
+          {mix(a.color.x, b.color.x), mix(a.color.y, b.color.y),
+           mix(a.color.z, b.color.z), mix(a.color.w, b.color.w)}};
 }
 
 std::vector<Vertex> clip(std::vector<Vertex> polygon) {
@@ -66,10 +69,13 @@ std::vector<Vertex> clip(std::vector<Vertex> polygon) {
 
 struct ScreenVertex {
   double x, y, depth, inverseW, u, v;
+  std::array<double, 4> color;
 };
+
 double edge(const ScreenVertex &a, const ScreenVertex &b, double x, double y) {
   return (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
 }
+
 bool leading(const ScreenVertex &a, const ScreenVertex &b) {
   return b.y < a.y || (b.y == a.y && b.x > a.x);
 }
@@ -94,7 +100,22 @@ math::LinearRGBA texel(const SurfacePaintImage &image, int x, int y) {
   return {r, g, b, a};
 }
 
-math::LinearRGBA sample(const SurfacePaintImage &image, double u, double v,
+math::Vec2i imageSize(const SurfacePaintImage &image) {
+  return {image.surface()->w, image.surface()->h};
+}
+
+math::Vec2i imageSize(const rendering::Texture &image) {
+  return image.levels().front().size;
+}
+
+math::LinearRGBA texel(const rendering::Texture &image, int x, int y) {
+  const auto &level = image.levels().front();
+  const auto p = level.texels[std::size_t(y) * level.size.x + x];
+  return {p.x, p.y, p.z, p.w};
+}
+
+template <class Image>
+math::LinearRGBA sample(const Image &image, double u, double v,
                         const scene::MaterialProps &material) {
   const auto normalized = [](double value, scene::TextureAddress mode) {
     if (mode == scene::TextureAddress::Clamp)
@@ -119,7 +140,8 @@ math::LinearRGBA sample(const SurfacePaintImage &image, double u, double v,
       wrapped = period - 1 - wrapped;
     return int(wrapped);
   };
-  const int width = image.surface()->w, height = image.surface()->h;
+  const auto size = imageSize(image);
+  const int width = size.x, height = size.y;
   u = normalized(u, material.addressU);
   v = normalized(v, material.addressV);
   if (material.sampling == rendering::Sampling::Nearest)
@@ -131,9 +153,12 @@ math::LinearRGBA sample(const SurfacePaintImage &image, double u, double v,
   math::PremultipliedRGBA result{};
   for (int dy = 0; dy < 2; ++dy)
     for (int dx = 0; dx < 2; ++dx) {
-      const auto c = math::premultiply(
+      auto straight =
           texel(image, addressed(left + dx, width, material.addressU),
-                addressed(top + dy, height, material.addressV)));
+                addressed(top + dy, height, material.addressV));
+      if (material.alpha == scene::MaterialProps::Alpha::Opaque)
+        straight.a = 1;
+      const auto c = math::premultiply(straight);
       const float weight = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
       result.r += c.r * weight;
       result.g += c.g * weight;
@@ -152,6 +177,12 @@ rendering::PaintImageHandle
 SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
                               std::span<const scene::MeshDraw> draws) {
   scene::validate(view, draws);
+  if (view.toneMap)
+    throw std::invalid_argument("Software scene does not support tone mapping");
+  for (const auto &draw : draws)
+    if (draw.material.pbr)
+      throw std::invalid_argument(
+          "Software scene requires explicit unlitPreview, not PBR");
   _limits.validateTarget(view.pixelSize, 4);
   if (std::uint64_t(view.pixelSize.x) * view.pixelSize.y >
       _limits.maxSoftwareTargetPixels)
@@ -163,6 +194,13 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
   const int width = view.pixelSize.x, height = view.pixelSize.y;
 
   for (const auto &draw : draws) {
+    auto sampling = draw.material;
+    const auto &binding = draw.material.colorTexture;
+    if (binding.texture) {
+      sampling.sampling = binding.sampler.magnification;
+      sampling.addressU = binding.sampler.addressU;
+      sampling.addressV = binding.sampler.addressV;
+    }
     const auto *texture = dynamic_cast<const SurfacePaintImage *>(
         draw.material.baseColorImage.get());
     if (draw.material.baseColorImage && !texture)
@@ -186,7 +224,10 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
         const auto &v = mesh.vertices[mesh.indices[triangle + i]];
         vertices.push_back(
             {matrix * math::Vec4f{v.position.x, v.position.y, v.position.z, 1},
-             v.uv});
+             binding.texture
+                 ? binding.transform.apply(binding.uvSet ? v.uv1 : v.uv)
+                 : v.uv,
+             v.color});
       }
       const auto polygon = clip(std::move(vertices));
       for (std::size_t fan = 1; fan + 1 < polygon.size(); ++fan) {
@@ -205,7 +246,9 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
                        v.clip.z * inv,
                        inv,
                        v.uv.x * inv,
-                       v.uv.y * inv};
+                       v.uv.y * inv,
+                       {v.color.x * inv, v.color.y * inv, v.color.z * inv,
+                        v.color.w * inv}};
         }
         if (!valid)
           continue;
@@ -246,17 +289,30 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
             if (!inside)
               continue;
             double z{}, inverseW{}, u{}, v{};
+            std::array<double, 4> vertexColor{};
             for (int i = 0; i < 3; ++i) {
               const double weight = weights[i] / area;
               z += weight * screen[i].depth;
               inverseW += weight * screen[i].inverseW;
               u += weight * screen[i].u;
               v += weight * screen[i].v;
+              for (int c = 0; c < 4; ++c)
+                vertexColor[c] += weight * screen[i].color[c];
             }
             const auto index = std::size_t(y) * width + x;
             if (z < 0 || z > 1 || z >= depth[index] || inverseW <= 0)
               continue;
-            auto color = tint;
+            auto color =
+                math::LinearRGBA{tint.r * float(vertexColor[0] / inverseW),
+                                 tint.g * float(vertexColor[1] / inverseW),
+                                 tint.b * float(vertexColor[2] / inverseW),
+                                 tint.a * float(vertexColor[3] / inverseW)};
+            if (binding.texture) {
+              const auto s = sample(*binding.texture, u / inverseW,
+                                    v / inverseW, sampling);
+              color = {color.r * s.r, color.g * s.g, color.b * s.b,
+                       color.a * s.a};
+            }
             if (texture) {
               const auto sampled =
                   sample(*texture, u / inverseW, v / inverseW, draw.material);
@@ -283,8 +339,11 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
     throwSDLError("Cannot allocate scene output");
   for (int y = 0; y < height; ++y)
     for (int x = 0; x < width; ++x) {
-      const auto color =
-          math::toSRGB(math::unpremultiply(pixels[std::size_t(y) * width + x]));
+      auto linear = math::unpremultiply(pixels[std::size_t(y) * width + x]);
+      linear.r *= view.exposure;
+      linear.g *= view.exposure;
+      linear.b *= view.exposure;
+      const auto color = math::toSRGB(linear);
       if (!SDL_WriteSurfacePixel(surface.get(), x, y, color.r, color.g, color.b,
                                  color.a))
         throwSDLError("Cannot write scene output");

@@ -39,7 +39,10 @@ public:
                             GPUTimestampProps = {});
   ~GPUTimestampRing();
 
-  std::optional<Ticket> begin(SDL_GPUCommandBuffer *, std::string_view label);
+  std::optional<Ticket> begin(SDL_GPUCommandBuffer *, std::string_view label,
+                              rendering::GPUWorkContext context = {},
+                              std::uint64_t collectionGeneration = 0);
+  void setContext(Ticket, rendering::GPUWorkContext);
   void end(SDL_GPUCommandBuffer *, Ticket);
   void submitted(Ticket, rendering::SubmissionId);
   void cancel(Ticket) noexcept;
@@ -48,6 +51,7 @@ public:
   poll(rendering::SubmissionId completedSubmission);
   bool supported() const noexcept;
   std::uint64_t dropped() const noexcept;
+  std::uint32_t pending(std::uint64_t collectionGeneration) const noexcept;
 
   GPUTimestampRing(const GPUTimestampRing &) = delete;
   GPUTimestampRing &operator=(const GPUTimestampRing &) = delete;

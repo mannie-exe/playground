@@ -13,6 +13,7 @@ struct std::formatter<SDL_Point> : std::formatter<std::string_view> {
         std::format("SDL_Point{{{}, {}}}", value.x, value.y), context);
   }
 };
+
 template <>
 struct std::formatter<SDL_FPoint> : std::formatter<std::string_view> {
   auto format(SDL_FPoint value, std::format_context &context) const {
@@ -20,6 +21,7 @@ struct std::formatter<SDL_FPoint> : std::formatter<std::string_view> {
         std::format("SDL_FPoint{{{}, {}}}", value.x, value.y), context);
   }
 };
+
 template <> struct std::formatter<SDL_Rect> : std::formatter<std::string_view> {
   auto format(SDL_Rect value, std::format_context &context) const {
     return std::formatter<std::string_view>::format(
@@ -28,6 +30,7 @@ template <> struct std::formatter<SDL_Rect> : std::formatter<std::string_view> {
         context);
   }
 };
+
 template <>
 struct std::formatter<SDL_FRect> : std::formatter<std::string_view> {
   auto format(SDL_FRect value, std::format_context &context) const {
@@ -37,6 +40,7 @@ struct std::formatter<SDL_FRect> : std::formatter<std::string_view> {
         context);
   }
 };
+
 template <>
 struct std::formatter<SDL_Color> : std::formatter<std::string_view> {
   auto format(SDL_Color value, std::format_context &context) const {

@@ -4,23 +4,26 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <unordered_map>
 #include <utility>
 
-#include <math/ColorSpace.hpp>
-#include <scene/ModelImport.hpp>
-
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
+
+#include <math/ColorSpace.hpp>
+#include <scene/ModelImport.hpp>
 
 namespace playground::scene {
 namespace {
 struct ParserBudget {
   std::size_t used{}, limit;
 };
+
 struct alignas(std::max_align_t) AllocationHeader {
   std::size_t size;
 };
+
 void *allocateParser(void *user, cgltf_size size) {
   auto &budget = *static_cast<ParserBudget *>(user);
   if (size > budget.limit - budget.used ||
@@ -34,6 +37,7 @@ void *allocateParser(void *user, cgltf_size size) {
   budget.used += size;
   return header + 1;
 }
+
 void freeParser(void *user, void *pointer) {
   if (!pointer)
     return;
@@ -41,6 +45,7 @@ void freeParser(void *user, void *pointer) {
   static_cast<ParserBudget *>(user)->used -= header->size;
   std::free(header);
 }
+
 void check(bool condition, std::string_view message) {
   if (!condition)
     throw std::invalid_argument(std::string{message});
@@ -198,8 +203,12 @@ TextureAddress address(cgltf_wrap_mode mode) {
 } // namespace
 
 ModelAsset::ModelAsset(std::vector<ModelNode> nodes,
-                       std::vector<std::string> warnings)
-    : _nodes{std::move(nodes)}, _warnings{std::move(warnings)} {
+                       std::vector<std::string> warnings,
+                       std::vector<AnimationClip> clips)
+    : _nodes{std::move(nodes)}, _warnings{std::move(warnings)},
+      _clips{std::move(clips)} {
+  for (const auto &clip : _clips)
+    clip.validate(_nodes.size());
   for (std::size_t i = 0; i < _nodes.size(); ++i) {
     const auto &node = _nodes[i];
     node.transform.matrix();
@@ -208,6 +217,42 @@ ModelAsset::ModelAsset(std::vector<ModelNode> nodes,
       validate({{}, {1, 1}, {}},
                std::array{MeshDraw{primitive.mesh, primitive.material, {}}});
   }
+}
+
+void ModelAsset::applyAnimation(Scene3D &scene, const ModelInstance &instance,
+                                std::size_t clipIndex,
+                                const Playback &playback) const {
+  const auto &clip = _clips.at(clipIndex);
+  if (instance.modelIdentity != _identity ||
+      instance.nodes.size() != _nodes.size() || !scene.contains(instance.root))
+    throw std::invalid_argument("Animation instance is stale or incompatible");
+  std::vector<math::Transform3D> poses;
+  poses.reserve(_nodes.size());
+  for (std::size_t i = 0; i < _nodes.size(); ++i) {
+    if (!scene.contains(instance.nodes[i]))
+      throw std::invalid_argument("Animation target is stale");
+    poses.push_back(_nodes[i].transform);
+  }
+  const auto time = playback.sampleTime(clip.duration);
+  for (const auto &track : clip.tracks) {
+    auto &pose = poses[track.node];
+    const auto value = track.sample(time);
+    switch (track.path) {
+    case TrackPath::Translation:
+      pose.position = {value.x, value.y, value.z};
+      break;
+    case TrackPath::Scale:
+      pose.scale = {value.x, value.y, value.z};
+      break;
+    case TrackPath::Rotation:
+      pose.orientation = {value.x, value.y, value.z, value.w};
+      break;
+    }
+  }
+  for (const auto &pose : poses)
+    pose.matrix();
+  for (std::size_t i = 0; i < poses.size(); ++i)
+    scene.applyPatch(instance.nodes[i], {.transform = poses[i]});
 }
 
 ModelInstance ModelAsset::instantiate(Scene3D &scene,
@@ -228,6 +273,7 @@ ModelInstance ModelAsset::instantiate(Scene3D &scene,
     }
   }
   ModelInstance result;
+  result.modelIdentity = _identity;
   result.nodes.reserve(nodeIndices.size());
   const auto ids = scene.createBatch(objects, parents, parent);
   result.root = ids.front();
@@ -236,14 +282,19 @@ ModelInstance ModelAsset::instantiate(Scene3D &scene,
   return result;
 }
 
+void ModelImportProps::validate() const {
+  check(maxDocumentBytes && std::isfinite(unitsPerMeter) && unitsPerMeter > 0 &&
+            maxResourceBytes && maxTotalResourceBytes && maxNodes &&
+            maxVertices && maxIndices && maxParserBytes &&
+            maxPreparationBytes && maxAnimationClips && maxAnimationKeys,
+        "Invalid model import limits");
+}
+
 ModelHandle importGLTF(std::span<const std::byte> document,
                        const ModelImportServices &services,
                        const ModelImportProps &props) {
-  check(!document.empty() && document.size() <= props.maxDocumentBytes &&
-            std::isfinite(props.unitsPerMeter) && props.unitsPerMeter > 0 &&
-            props.maxResourceBytes && props.maxTotalResourceBytes &&
-            props.maxNodes && props.maxVertices && props.maxIndices &&
-            props.maxParserBytes,
+  props.validate();
+  check(!document.empty() && document.size() <= props.maxDocumentBytes,
         "Invalid model input/import limits");
   ParserBudget parserBudget{0, props.maxParserBytes};
   cgltf_options options{};
@@ -259,13 +310,15 @@ ModelHandle importGLTF(std::span<const std::byte> document,
   check(!data->asset.min_version ||
             std::string_view{data->asset.min_version} == "2.0",
         "Model requires a newer glTF version");
-  check(data->nodes_count <= props.maxNodes && !data->skins_count &&
-            !data->animations_count,
-        "Excessive nodes, skinning or animation is unsupported");
+  check(data->nodes_count <= props.maxNodes &&
+            data->animations_count <= props.maxAnimationClips &&
+            !data->skins_count,
+        "Excessive nodes or skinning is unsupported");
   for (std::size_t i = 0; i < data->extensions_required_count; ++i) {
     const std::string_view extension{data->extensions_required[i]};
     check(extension == "KHR_materials_unlit" ||
-              extension == "KHR_texture_transform",
+              extension == "KHR_texture_transform" ||
+              extension == "KHR_texture_basisu",
           "Unsupported required glTF extension");
   }
   std::size_t totalBytes{};
@@ -305,42 +358,106 @@ ModelHandle importGLTF(std::span<const std::byte> document,
   check(cgltf_validate(data.get()) == cgltf_result_success,
         "Invalid glTF structure");
   std::vector<std::string> warnings;
-  std::unordered_map<const cgltf_image *, rendering::PaintImageHandle> images;
-  auto image = [&](const cgltf_image *source) {
-    check(source && bool(services.decodeImage),
-          "Model texture needs an image decoder");
-    if (const auto found = images.find(source); found != images.end())
-      return found->second;
-    std::vector<std::byte> bytes;
-    std::span<const std::byte> encoded;
-    if (source->uri) {
-      bytes = readURI(source->uri);
-      account(bytes.size());
-      encoded = bytes;
-    } else {
-      check(source->buffer_view != nullptr, "Model image has no storage");
-      const auto &view = *source->buffer_view;
-      encoded = {static_cast<const std::byte *>(view.buffer->data) +
-                     view.offset,
-                 view.size};
-    }
-    auto decoded = services.decodeImage(
-        encoded, source->mime_type ? source->mime_type : "");
-    check(decoded &&
-              decoded->colorEncoding() == rendering::ColorEncoding::SRGB &&
-              decoded->alphaMode() == rendering::AlphaMode::Straight &&
-              math::isFinite(decoded->pixelSize()) &&
-              math::hasArea(decoded->pixelSize()),
-          "glTF base-color decoder must return straight sRGB image");
-    images.emplace(source, decoded);
-    return decoded;
-  };
   std::unordered_map<const cgltf_material *, MaterialProps> materials;
+  std::map<std::pair<const cgltf_image *, rendering::TextureRole>,
+           rendering::TextureHandle>
+      textures;
+  auto binding = [&](const cgltf_texture_view &view,
+                     rendering::TextureRole role) {
+    rendering::TextureBinding result;
+    if (!view.texture)
+      return result;
+    const auto *texture = view.texture;
+    const auto *image =
+        texture->has_basisu ? texture->basisu_image : texture->image;
+    check(!texture->has_webp && image, "Unsupported/missing texture image");
+    check(bool(services.decodeTexture),
+          "Model material needs a numerical texture decoder");
+    const auto key = std::pair{image, role};
+    if (auto found = textures.find(key); found != textures.end())
+      result.texture = found->second;
+    else {
+      const auto *source = image;
+      std::vector<std::byte> bytes;
+      std::span<const std::byte> encoded;
+      if (source->uri) {
+        bytes = readURI(source->uri);
+        account(bytes.size());
+        encoded = bytes;
+      } else {
+        check(source->buffer_view != nullptr, "Texture has no storage");
+        const auto &v = *source->buffer_view;
+        encoded = {static_cast<const std::byte *>(v.buffer->data) + v.offset,
+                   v.size};
+      }
+      result.texture = services.decodeTexture(
+          encoded, source->mime_type ? source->mime_type : "", role);
+      check(result.texture && result.texture->role() == role,
+            "Texture decoder returned wrong interpretation");
+      account(result.texture->bytes());
+      textures.emplace(key, result.texture);
+    }
+    int uvSet = view.has_transform && view.transform.has_texcoord
+                    ? view.transform.texcoord
+                    : view.texcoord;
+    check(uvSet >= 0 && uvSet <= 1, "Only TEXCOORD_0 and TEXCOORD_1 supported");
+    result.uvSet = unsigned(uvSet);
+    if (view.has_transform)
+      result.transform = {{view.transform.offset[0], view.transform.offset[1]},
+                          {view.transform.scale[0], view.transform.scale[1]},
+                          view.transform.rotation};
+    if (const auto *s = texture->sampler) {
+      result.sampler.addressU = address(s->wrap_s);
+      result.sampler.addressV = address(s->wrap_t);
+      check(s->mag_filter == cgltf_filter_type_undefined ||
+                s->mag_filter == cgltf_filter_type_linear ||
+                s->mag_filter == cgltf_filter_type_nearest,
+            "Invalid magnification filter");
+      result.sampler.magnification = s->mag_filter == cgltf_filter_type_nearest
+                                         ? rendering::Sampling::Nearest
+                                         : rendering::Sampling::Linear;
+      switch (s->min_filter) {
+      case cgltf_filter_type_nearest:
+        result.sampler.minification = rendering::Sampling::Nearest;
+        result.sampler.mip = rendering::MipFilter::None;
+        break;
+      case cgltf_filter_type_linear:
+        result.sampler.mip = rendering::MipFilter::None;
+        break;
+      case cgltf_filter_type_nearest_mipmap_nearest:
+        result.sampler.minification = rendering::Sampling::Nearest;
+        result.sampler.mip = rendering::MipFilter::Nearest;
+        break;
+      case cgltf_filter_type_linear_mipmap_nearest:
+        result.sampler.mip = rendering::MipFilter::Nearest;
+        break;
+      case cgltf_filter_type_nearest_mipmap_linear:
+        result.sampler.minification = rendering::Sampling::Nearest;
+        break;
+      case cgltf_filter_type_undefined:
+      case cgltf_filter_type_linear_mipmap_linear:
+        break;
+      default:
+        throw std::invalid_argument("Invalid minification filter");
+      }
+    }
+    result.validate();
+    return result;
+  };
   auto material = [&](const cgltf_material *source) {
     if (!source)
-      return MaterialProps{.doubleSided = false};
+      return MaterialProps{.doubleSided = false,
+                           .pbr = MetallicRoughnessProps{}};
     if (const auto found = materials.find(source); found != materials.end())
       return found->second;
+    if (source->has_clearcoat || source->has_transmission ||
+        source->has_volume || source->has_ior || source->has_specular ||
+        source->has_sheen || source->has_emissive_strength ||
+        source->has_iridescence || source->has_diffuse_transmission ||
+        source->has_anisotropy || source->has_dispersion ||
+        source->has_pbr_specular_glossiness)
+      warnings.emplace_back("Optional extended material properties ignored; "
+                            "using core metallic-roughness fallback");
     MaterialProps result;
     result.doubleSided = source->double_sided;
     result.alphaCutoff = source->alpha_cutoff;
@@ -352,45 +469,44 @@ ModelHandle importGLTF(std::span<const std::byte> document,
       result.alpha = MaterialProps::Alpha::Blend;
     else
       throw std::invalid_argument("Invalid glTF material alpha mode");
-    if (!source->unlit)
-      warnings.emplace_back("Lighting material imported as unlit base color");
     const auto &pbr = source->pbr_metallic_roughness;
-    if (source->has_pbr_metallic_roughness)
-      result.baseColor =
-          math::toSRGB({pbr.base_color_factor[0], pbr.base_color_factor[1],
-                        pbr.base_color_factor[2], pbr.base_color_factor[3]});
-    if (const auto *texture = pbr.base_color_texture.texture) {
-      check(!texture->has_basisu && !texture->has_webp,
-            "Compressed glTF image extension unsupported");
-      result.baseColorImage = image(texture->image);
-      result.sampling = rendering::Sampling::Linear;
-      result.addressU = result.addressV = TextureAddress::Repeat;
-      if (const auto *sampler = texture->sampler) {
-        result.addressU = address(sampler->wrap_s);
-        result.addressV = address(sampler->wrap_t);
-        const auto mag = sampler->mag_filter;
-        const auto min = sampler->min_filter;
-        check(min == cgltf_filter_type_undefined ||
-                  min == cgltf_filter_type_nearest ||
-                  min == cgltf_filter_type_linear ||
-                  min == cgltf_filter_type_nearest_mipmap_nearest ||
-                  min == cgltf_filter_type_linear_mipmap_nearest ||
-                  min == cgltf_filter_type_nearest_mipmap_linear ||
-                  min == cgltf_filter_type_linear_mipmap_linear,
-              "Invalid glTF minification filter");
-        check(mag == cgltf_filter_type_undefined ||
-                  mag == cgltf_filter_type_nearest ||
-                  mag == cgltf_filter_type_linear,
-              "Invalid glTF magnification filter");
-        result.sampling = mag == cgltf_filter_type_nearest
-                              ? rendering::Sampling::Nearest
-                              : rendering::Sampling::Linear;
-        if (sampler->min_filter != cgltf_filter_type_undefined &&
-            sampler->min_filter != mag)
-          warnings.emplace_back("Texture minification/mipmap policy reduced to "
-                                "the magnification filter");
+    if (!source->unlit) {
+      MetallicRoughnessProps p;
+      p.baseColor = {pbr.base_color_factor[0], pbr.base_color_factor[1],
+                     pbr.base_color_factor[2], pbr.base_color_factor[3]};
+      p.metallic = pbr.metallic_factor;
+      p.roughness = pbr.roughness_factor;
+      p.emissive = {source->emissive_factor[0], source->emissive_factor[1],
+                    source->emissive_factor[2]};
+      p.normalScale = source->normal_texture.scale;
+      p.occlusionStrength = source->occlusion_texture.scale;
+      p.baseColorTexture =
+          binding(pbr.base_color_texture, rendering::TextureRole::Color);
+      p.metallicRoughnessTexture =
+          binding(pbr.metallic_roughness_texture, rendering::TextureRole::Data);
+      p.normalTexture =
+          binding(source->normal_texture, rendering::TextureRole::Normal);
+      p.occlusionTexture =
+          binding(source->occlusion_texture, rendering::TextureRole::Data);
+      p.emissiveTexture =
+          binding(source->emissive_texture, rendering::TextureRole::Emission);
+      if (result.alpha == MaterialProps::Alpha::Mask &&
+          p.baseColorTexture.texture && p.baseColor.w > 0 &&
+          result.alphaCutoff / p.baseColor.w <= 1) {
+        account(p.baseColorTexture.texture->bytes());
+        p.baseColorTexture.texture = rendering::preserveAlphaCoverage(
+            p.baseColorTexture.texture, result.alphaCutoff / p.baseColor.w);
       }
+      result.pbr = std::move(p);
+      validate(result);
+      materials.emplace(source, result);
+      return result;
     }
+    result.colorTexture =
+        binding(pbr.base_color_texture, rendering::TextureRole::Color);
+    result.baseColor =
+        math::toSRGB({pbr.base_color_factor[0], pbr.base_color_factor[1],
+                      pbr.base_color_factor[2], pbr.base_color_factor[3]});
     validate(result);
     materials.emplace(source, result);
     return result;
@@ -420,8 +536,28 @@ ModelHandle importGLTF(std::span<const std::byte> document,
                  normal->component_type == cgltf_component_type_r_32f &&
                  !normal->normalized && normal->count == position->count),
             "glTF normals must be matching float VEC3 values");
-      check(!cgltf_find_accessor(&primitive, cgltf_attribute_type_color, 0),
-            "Vertex color attributes are not implemented");
+      const auto *color =
+          cgltf_find_accessor(&primitive, cgltf_attribute_type_color, 0);
+      const auto *tangent =
+          cgltf_find_accessor(&primitive, cgltf_attribute_type_tangent, 0);
+      const auto normalizedFloat = [](const cgltf_accessor *a) {
+        return (a->component_type == cgltf_component_type_r_32f &&
+                !a->normalized) ||
+               ((a->component_type == cgltf_component_type_r_8u ||
+                 a->component_type == cgltf_component_type_r_16u) &&
+                a->normalized);
+      };
+      check(!color ||
+                ((color->type == cgltf_type_vec3 ||
+                  color->type == cgltf_type_vec4) &&
+                 color->count == position->count && normalizedFloat(color)),
+            "Invalid vertex color accessor");
+      check(!tangent ||
+                (tangent->type == cgltf_type_vec4 &&
+                 tangent->count == position->count &&
+                 tangent->component_type == cgltf_component_type_r_32f &&
+                 !tangent->normalized),
+            "Invalid tangent accessor");
       check(
           !cgltf_find_accessor(&primitive, cgltf_attribute_type_joints, 0) &&
               !cgltf_find_accessor(&primitive, cgltf_attribute_type_weights, 0),
@@ -432,14 +568,7 @@ ModelHandle importGLTF(std::span<const std::byte> document,
                    indices->component_type == cgltf_component_type_r_16u ||
                    indices->component_type == cgltf_component_type_r_32u),
               "glTF indices must be unsigned integer scalars");
-      const auto *textureView =
-          primitive.material
-              ? &primitive.material->pbr_metallic_roughness.base_color_texture
-              : nullptr;
-      int uvSet = textureView ? textureView->texcoord : 0;
-      if (textureView && textureView->has_transform &&
-          textureView->transform.has_texcoord)
-        uvSet = textureView->transform.texcoord;
+      int uvSet = 0;
       const auto *uv =
           cgltf_find_accessor(&primitive, cgltf_attribute_type_texcoord, uvSet);
       check(!uv ||
@@ -450,8 +579,6 @@ ModelHandle importGLTF(std::span<const std::byte> document,
                     uv->component_type == cgltf_component_type_r_16u) &&
                    uv->normalized))),
             "glTF UVs must be matching float/normalized unsigned VEC2 values");
-      check(!textureView || !textureView->texture || uv,
-            "Textured primitive lacks selected UVs");
       const auto indexCount =
           primitive.indices ? primitive.indices->count : position->count;
       check(position->count <= props.maxVertices - totalVertices &&
@@ -475,20 +602,41 @@ ModelHandle importGLTF(std::span<const std::byte> document,
         if (normal) {
           check(cgltf_accessor_read_float(normal, v, xyz, 3),
                 "Cannot read glTF normal");
-          vertex.normal = {xyz[0], xyz[1], -xyz[2]};
+          vertex.normal = math::normalized({xyz[0], xyz[1], -xyz[2]});
         }
         if (uv) {
           float xy[2];
           check(cgltf_accessor_read_float(uv, v, xy, 2), "Cannot read glTF UV");
           vertex.uv = {xy[0], xy[1]};
-          if (textureView && textureView->has_transform) {
-            const auto &t = textureView->transform;
-            const float x = xy[0] * t.scale[0], y = xy[1] * t.scale[1];
-            vertex.uv = {t.offset[0] + std::cos(t.rotation) * x -
-                             std::sin(t.rotation) * y,
-                         t.offset[1] + std::sin(t.rotation) * x +
-                             std::cos(t.rotation) * y};
-          }
+        }
+        if (const auto *uv1 = cgltf_find_accessor(
+                &primitive, cgltf_attribute_type_texcoord, 1)) {
+          check(uv1->type == cgltf_type_vec2 && uv1->count == position->count &&
+                    normalizedFloat(uv1),
+                "Invalid second UV set");
+          float xy[2];
+          check(cgltf_accessor_read_float(uv1, v, xy, 2),
+                "Cannot read second UV set");
+          vertex.uv1 = {xy[0], xy[1]};
+        }
+        if (color) {
+          float rgba[4]{1, 1, 1, 1};
+          check(cgltf_accessor_read_float(color, v, rgba, 4),
+                "Cannot read vertex color");
+          if (color->type == cgltf_type_vec3)
+            rgba[3] = 1;
+          for (float c : rgba)
+            check(std::isfinite(c) && c >= 0 && c <= 1,
+                  "Vertex color must be normalized");
+          vertex.color = {rgba[0], rgba[1], rgba[2], rgba[3]};
+        }
+        if (tangent) {
+          float t[4];
+          check(cgltf_accessor_read_float(tangent, v, t, 4),
+                "Cannot read tangent");
+          check(t[3] == 1 || t[3] == -1, "Invalid tangent handedness");
+          const auto n = math::normalized({t[0], t[1], -t[2]});
+          vertex.tangent = {n.x, n.y, n.z, -t[3]};
         }
       }
       for (std::size_t i = 0; i < indexCount; ++i) {
@@ -500,8 +648,34 @@ ModelHandle importGLTF(std::span<const std::byte> document,
       }
       for (std::size_t i = 0; i < indexCount; i += 3)
         std::swap(geometry.indices[i + 1], geometry.indices[i + 2]);
-      result.push_back(
-          {makeMesh(std::move(geometry)), material(primitive.material)});
+      auto mat = material(primitive.material);
+      auto requireUV = [&](const rendering::TextureBinding &b) {
+        check(!b.texture ||
+                  cgltf_find_accessor(&primitive, cgltf_attribute_type_texcoord,
+                                      int(b.uvSet)),
+              "Missing texture-selected UV set");
+      };
+      requireUV(mat.colorTexture);
+      if (mat.pbr) {
+        const auto &p = *mat.pbr;
+        requireUV(p.baseColorTexture);
+        requireUV(p.normalTexture);
+        requireUV(p.metallicRoughnessTexture);
+        requireUV(p.occlusionTexture);
+        requireUV(p.emissiveTexture);
+      }
+      const auto prepared = prepareMesh(
+          geometry, {.generateNormals = !normal,
+                     .generateTangents = !tangent && mat.pbr &&
+                                         bool(mat.pbr->normalTexture.texture),
+                     .tangentUVSet = mat.pbr ? mat.pbr->normalTexture.uvSet : 0,
+                     .maxScratchBytes = props.maxPreparationBytes});
+      account(prepared.finalBytes);
+      totalVertices -= position->count;
+      check(geometry.vertices.size() <= props.maxVertices - totalVertices,
+            "Generated mesh exceeds vertex budget");
+      totalVertices += geometry.vertices.size();
+      result.push_back({makeMesh(std::move(geometry)), std::move(mat)});
     }
     meshes.emplace(source, result);
     return result;
@@ -514,10 +688,12 @@ ModelHandle importGLTF(std::span<const std::byte> document,
   }
   if (!selected && data->scenes_count)
     selected = &data->scenes[0];
+
   struct Pending {
     const cgltf_node *node;
     std::optional<std::size_t> parent;
   };
+
   std::vector<Pending> pending;
   if (selected) {
     for (std::size_t i = selected->nodes_count; i > 0; --i)
@@ -529,6 +705,7 @@ ModelHandle importGLTF(std::span<const std::byte> document,
   }
   std::vector<bool> visited(data->nodes_count);
   std::vector<ModelNode> nodes;
+  std::vector<std::optional<std::size_t>> nodeMap(data->nodes_count);
   while (!pending.empty()) {
     const auto [source, parent] = pending.back();
     pending.pop_back();
@@ -547,12 +724,105 @@ ModelHandle importGLTF(std::span<const std::byte> document,
     if (source->mesh)
       node.primitives = mesh(source->mesh);
     const auto index = nodes.size();
+    nodeMap[original] = index;
     nodes.push_back(std::move(node));
     for (std::size_t i = source->children_count; i > 0; --i)
       pending.push_back({source->children[i - 1], index});
   }
-  return std::make_shared<const ModelAsset>(std::move(nodes),
-                                            std::move(warnings));
+  std::vector<AnimationClip> clips;
+  std::size_t totalKeys{};
+  for (std::size_t a = 0; a < data->animations_count; ++a) {
+    const auto &source = data->animations[a];
+    AnimationClip clip{source.name ? source.name : ""};
+    for (std::size_t c = 0; c < source.channels_count; ++c) {
+      const auto &channel = source.channels[c];
+      check(channel.target_node && channel.sampler,
+            "Missing animation target/sampler");
+      const auto mapped =
+          nodeMap[std::size_t(channel.target_node - data->nodes)];
+      if (!mapped)
+        continue;
+      check(!channel.target_node->has_matrix, "Animated nodes must use TRS");
+      TransformTrack track;
+      track.node = *mapped;
+      switch (channel.target_path) {
+      case cgltf_animation_path_type_translation:
+        track.path = TrackPath::Translation;
+        break;
+      case cgltf_animation_path_type_rotation:
+        track.path = TrackPath::Rotation;
+        break;
+      case cgltf_animation_path_type_scale:
+        track.path = TrackPath::Scale;
+        break;
+      default:
+        throw std::invalid_argument("Morph animation unsupported");
+      }
+      const auto &s = *channel.sampler;
+      switch (s.interpolation) {
+      case cgltf_interpolation_type_step:
+        track.interpolation = TrackInterpolation::Step;
+        break;
+      case cgltf_interpolation_type_linear:
+        track.interpolation = TrackInterpolation::Linear;
+        break;
+      case cgltf_interpolation_type_cubic_spline:
+        track.interpolation = TrackInterpolation::CubicSpline;
+        break;
+      default:
+        throw std::invalid_argument("Invalid animation interpolation");
+      }
+      check(s.input && s.output && s.input->type == cgltf_type_scalar &&
+                s.input->component_type == cgltf_component_type_r_32f &&
+                s.output->component_type == cgltf_component_type_r_32f &&
+                s.output->type == (track.path == TrackPath::Rotation
+                                       ? cgltf_type_vec4
+                                       : cgltf_type_vec3),
+            "Invalid animation accessor types");
+      check(!s.input->normalized && !s.output->normalized &&
+                s.input->count <= props.maxAnimationKeys - totalKeys,
+            "Animation key budget exceeded or normalized float accessor");
+      totalKeys += s.input->count;
+      const auto multiplier =
+          track.interpolation == TrackInterpolation::CubicSpline ? 3u : 1u;
+      check(s.output->count / multiplier == s.input->count &&
+                s.output->count % multiplier == 0,
+            "Animation output count does not match interpolation");
+      check(s.input->count <= props.maxResourceBytes / sizeof(float) &&
+                s.output->count <= props.maxResourceBytes / sizeof(math::Vec4f),
+            "Animation allocation exceeds limit");
+      account(s.input->count * sizeof(float));
+      account(s.output->count * sizeof(math::Vec4f));
+      for (std::size_t k = 0; k < s.input->count; ++k) {
+        float time;
+        check(cgltf_accessor_read_float(s.input, k, &time, 1),
+              "Cannot read animation time");
+        track.times.push_back(time);
+      }
+      for (std::size_t k = 0; k < s.output->count; ++k) {
+        float v[4]{};
+        check(cgltf_accessor_read_float(s.output, k, v, 4),
+              "Cannot read animation key");
+        if (track.path == TrackPath::Translation) {
+          v[0] *= props.unitsPerMeter;
+          v[1] *= props.unitsPerMeter;
+          v[2] *= -props.unitsPerMeter;
+        }
+        if (track.path == TrackPath::Rotation) {
+          v[0] = -v[0];
+          v[1] = -v[1];
+        }
+        track.values.push_back({v[0], v[1], v[2], v[3]});
+      }
+      track.validate(nodes.size());
+      clip.duration = std::max(clip.duration, double(track.times.back()));
+      clip.tracks.push_back(std::move(track));
+    }
+    clip.validate(nodes.size());
+    clips.push_back(std::move(clip));
+  }
+  return std::make_shared<const ModelAsset>(
+      std::move(nodes), std::move(warnings), std::move(clips));
 }
 
 } // namespace playground::scene

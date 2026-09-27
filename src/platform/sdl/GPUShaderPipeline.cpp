@@ -7,6 +7,7 @@
 namespace playground::sdl {
 namespace {
 using ShaderResource = GPUResource<SDL_GPUShader, SDL_ReleaseGPUShader>;
+
 ShaderResource shader(GPUDeviceHandle device,
                       std::span<const std::uint32_t> code,
                       const rendering::ShaderReflection &reflected,
@@ -26,6 +27,7 @@ ShaderResource shader(GPUDeviceHandle device,
   info.num_uniform_buffers = layout.uniformBuffers;
   return {device, SDL_CreateGPUShader(device->get(), &info)};
 }
+
 SDL_GPUVertexElementFormat element(rendering::ShaderValueType type) {
   using enum rendering::ShaderValueType;
   switch (type) {
@@ -56,6 +58,7 @@ SDL_GPUVertexElementFormat element(rendering::ShaderValueType type) {
   }
   throw std::invalid_argument("Unsupported vertex format");
 }
+
 void validateInputs(const GPUPipelineProps &props,
                     const rendering::ShaderReflection &vertex,
                     const rendering::ShaderReflection &fragment) {
@@ -141,6 +144,19 @@ GPUPipelineHandle GPUShaderPipeline::snapshot() const {
   return _current;
 }
 
+GPUShaderPipeline::GPUShaderPipeline(GPUDeviceHandle device,
+                                     GPUPipelineProps props,
+                                     assets::CompiledShader vertex,
+                                     assets::CompiledShader fragment)
+    : _device{std::move(device)}, _props{std::move(props)}, _fileBacked{false} {
+  if (!_device)
+    throw std::invalid_argument("Custom pipeline requires a GPU device");
+  _device->checkOwnerThread();
+  _props.vertex = {{}, vertex.reflection.entryPoint, vertex.layout};
+  _props.fragment = {{}, fragment.reflection.entryPoint, fragment.layout};
+  publish(std::move(vertex.words), std::move(fragment.words));
+}
+
 void GPUShaderPipeline::publish(std::vector<std::uint32_t> vertexCode,
                                 std::vector<std::uint32_t> fragmentCode) {
   _device->checkOwnerThread();
@@ -194,6 +210,8 @@ void GPUShaderPipeline::publish(std::vector<std::uint32_t> vertexCode,
 
 PipelineReload GPUShaderPipeline::poll() {
   _device->checkOwnerThread();
+  if (!_fileBacked)
+    return PipelineReload::Unchanged;
   try {
     auto vertex = rendering::readSPIRV(_props.vertex.path);
     auto fragment = rendering::readSPIRV(_props.fragment.path);

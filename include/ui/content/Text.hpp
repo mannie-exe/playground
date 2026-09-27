@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -32,8 +33,10 @@ struct TextProps {
   float maxFontSize{256};
   float fitStep{0.5f};
   TextFlowProps flow;
+  bool useTheme{true};
   bool operator==(const TextProps &) const = default;
 };
+
 struct TextPatch {
   Patch<std::string> value;
   Patch<FontHandle> font;
@@ -45,6 +48,7 @@ struct TextPatch {
   Patch<FontFit> fontFit;
   Patch<float> minFontSize, maxFontSize, fitStep;
   Patch<TextFlowProps> flow;
+  Patch<bool> useTheme;
 };
 
 class Text final : public Node {
@@ -60,8 +64,21 @@ class Text final : public Node {
   AssetRegistry &_assets;
   TextProps _props;
 
+  struct LayoutEntry {
+    layout::SizeConstraints constraints;
+    layout::LayoutDirection direction;
+    float scale;
+    Measurement result;
+  };
+
+  std::array<std::optional<LayoutEntry>, 2> _layouts;
+  std::size_t _nextLayout{};
+
   layout::LayoutDirection _direction{layout::LayoutDirection::LeftToRight};
   std::optional<Measurement> _arrangedText;
+  std::optional<Measurement> _pixelText;
+  float _pixelDensity{};
+  math::Size2 _pixelTextBounds;
   rendering::PaintImageHandle _source;
   rendering::PaintImageHandle _raster;
   math::Rect _destination;
@@ -75,7 +92,10 @@ class Text final : public Node {
   Measurement atSize(float size, const layout::SizeConstraints &offered,
                      layout::LayoutDirection direction, float scale = 1);
   Measurement measured(const layout::SizeConstraints &offered,
-                       layout::LayoutDirection direction);
+                       layout::LayoutDirection direction, UIWorkStats *stats,
+                       float scale);
+  const Measurement &resolved(const layout::SizeConstraints &offered,
+                              MeasureContext &context);
   Measurement flowed(Measurement result,
                      const layout::SizeConstraints &offered) const;
 
@@ -89,17 +109,33 @@ protected:
   void prepareContent(PrepareContext &context) override;
   void paint(PaintContext &context) const override;
 
+  void onThemeChanged() noexcept override { _prepared = false; }
+
+  math::ColorRGBA8 foreground() const {
+    if (!_props.useTheme)
+      return _props.foreground;
+    for (auto *p = parent(); p; p = p->parent())
+      if (!p->isInteractionEnabled())
+        return theme().mutedText;
+    return theme().text;
+  }
+
 public:
   Text(AssetRegistry &assets, TextProps props, layout::BoxProps box = {});
+
   const TextProps &props() const noexcept { return _props; }
+
   std::string_view displayedValue() const noexcept {
     return _arrangedText ? std::string_view{_arrangedText->value}
                          : std::string_view{_props.value};
   }
+
   bool isTruncated() const noexcept { return displayedValue() != _props.value; }
+
   FontHandle effectiveFont() const {
     return _arrangedText ? _arrangedText->font : _props.font;
   }
+
   void setProps(TextProps value);
   void setValue(std::string value);
   void setFont(FontHandle font);

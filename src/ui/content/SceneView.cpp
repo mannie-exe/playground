@@ -13,6 +13,13 @@ void validate(const SceneViewProps &props) {
       props.resolutionScale > 4)
     throw std::invalid_argument("Invalid scene view properties");
   props.camera.view(props.preferredSize.width / props.preferredSize.height);
+  scene::validate({props.camera.view(1),
+                   {1, 1},
+                   props.clearColor,
+                   props.lighting,
+                   props.exposure,
+                   props.toneMap},
+                  {});
   if ((props.aspectRatio &&
        (!std::isfinite(*props.aspectRatio) || *props.aspectRatio <= 0)) ||
       (props.transparentOrder != scene::TransparentOrder::BackToFront &&
@@ -50,8 +57,9 @@ void SceneView::prepareContent(PrepareContext &context) {
   const auto pixels = viewport->pixelSize;
   const auto imageDomain = context.images ? context.images->resourceDomain()
                                           : rendering::ResourceDomainId::cpu();
-  const scene::SceneRenderProps view{viewport->camera, pixels,
-                                     _props.clearColor};
+  const scene::SceneRenderProps view{viewport->camera,  pixels,
+                                     _props.clearColor, _props.lighting,
+                                     _props.exposure,   _props.toneMap};
   if (_image && _renderedRevision == _props.scene->revision() &&
       _rendererDomain == context.scenes->resourceDomain() &&
       _imageDomain == imageDomain &&
@@ -104,7 +112,10 @@ void SceneView::applyPatch(const SceneViewPatch &patch) {
                                        defaults.resolutionScale),
        patch.aspectRatio.appliedTo(_props.aspectRatio, defaults.aspectRatio),
        patch.transparentOrder.appliedTo(_props.transparentOrder,
-                                        defaults.transparentOrder)});
+                                        defaults.transparentOrder),
+       patch.lighting.appliedTo(_props.lighting, defaults.lighting),
+       patch.exposure.appliedTo(_props.exposure, defaults.exposure),
+       patch.toneMap.appliedTo(_props.toneMap, defaults.toneMap)});
 }
 
 } // namespace playground::ui

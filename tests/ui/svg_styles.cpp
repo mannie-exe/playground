@@ -52,7 +52,8 @@ int main() {
     root.setContent(std::move(vector));
     root.flushLayout({20, 20});
     root.prepare();
-    node->applyPatch({.styles = ui::Patch<SVGStyleOverrides>::set(overrides)});
+    node->applyPatch(
+        {.styles = playground::Patch<SVGStyleOverrides>::set(overrides)});
     root.flushLayout({20, 20});
     root.prepare();
     SurfaceHandle target{SDL_CreateSurface(20, 20, SDL_PIXELFORMAT_RGBA32),
@@ -65,8 +66,8 @@ int main() {
                   "Vector style patch invalidates same-size raster");
     test::rejects(
         [&] {
-          node->applyPatch(
-              {.styles = ui::Patch<SVGStyleOverrides>::set({{"missing", {}}})});
+          node->applyPatch({.styles = playground::Patch<SVGStyleOverrides>::set(
+                                {{"missing", {}}})});
         },
         "failed override patch preserves props");
     test::require(node->props().styles == overrides,

@@ -4,6 +4,7 @@
 
 #include <platform/sdl/ModelImport.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
+#include <platform/sdl/TextureDecode.hpp>
 #include <support/SDLError.hpp>
 
 namespace playground::sdl {
@@ -58,6 +59,33 @@ std::filesystem::path relativeURI(std::string_view uri) {
 }
 } // namespace
 
+rendering::PaintImageHandle decodeModelImage(std::span<const std::byte> encoded,
+                                             std::string_view mime,
+                                             std::size_t maximumBytes) {
+  if (!mime.empty() && mime != "image/png" && mime != "image/jpeg")
+    throw std::invalid_argument("glTF images must be PNG or JPEG");
+  const auto byte = [&](std::size_t i) {
+    return std::to_integer<unsigned>(encoded[i]);
+  };
+  const bool png = encoded.size() >= 8 && byte(0) == 137 && byte(1) == 80 &&
+                   byte(2) == 78 && byte(3) == 71 && byte(4) == 13 &&
+                   byte(5) == 10 && byte(6) == 26 && byte(7) == 10;
+  const bool jpeg =
+      encoded.size() >= 3 && byte(0) == 255 && byte(1) == 216 && byte(2) == 255;
+  if (!png && !jpeg)
+    throw std::invalid_argument("Model texture is not a PNG/JPEG image");
+  auto *stream = SDL_IOFromConstMem(encoded.data(), encoded.size());
+  if (!stream)
+    throwSDLError("Cannot open model image bytes");
+  SurfaceHandle surface{IMG_Load_IO(stream, true), SurfaceHandleDeleter{}};
+  if (!surface)
+    throwSDLError("Cannot decode model image");
+  if (surface->pitch < 0 || surface->h < 0 ||
+      static_cast<std::uint64_t>(surface->pitch) * surface->h > maximumBytes)
+    throw std::length_error("Decoded model image exceeds resident budget");
+  return makeSurfaceImage(std::move(surface));
+}
+
 scene::ModelHandle loadGLTF(const std::filesystem::path &path,
                             const scene::ModelImportProps &props) {
   const auto documentPath = std::filesystem::absolute(path);
@@ -79,38 +107,12 @@ scene::ModelHandle loadGLTF(const std::filesystem::path &path,
                     "Model resource symlink escapes its directory");
             return readBytes(target, props.maxResourceBytes);
           },
-      .decodeImage =
-          [&](std::span<const std::byte> encoded, std::string_view mime) {
-            if (!mime.empty() && mime != "image/png" && mime != "image/jpeg")
-              throw std::invalid_argument("glTF images must be PNG or JPEG");
-            const auto byte = [&](std::size_t i) {
-              return std::to_integer<unsigned>(encoded[i]);
-            };
-            const bool png = encoded.size() >= 8 && byte(0) == 137 &&
-                             byte(1) == 80 && byte(2) == 78 && byte(3) == 71 &&
-                             byte(4) == 13 && byte(5) == 10 && byte(6) == 26 &&
-                             byte(7) == 10;
-            const bool jpeg = encoded.size() >= 3 && byte(0) == 255 &&
-                              byte(1) == 216 && byte(2) == 255;
-            if (!png && !jpeg)
-              throw std::invalid_argument(
-                  "Model texture is not a PNG/JPEG image");
-            auto *stream = SDL_IOFromConstMem(encoded.data(), encoded.size());
-            if (!stream)
-              throwSDLError("Cannot open model image bytes");
-            SurfaceHandle surface{IMG_Load_IO(stream, true),
-                                  SurfaceHandleDeleter{}};
-            if (!surface)
-              throwSDLError("Cannot decode model image");
-            // Encoded byte limits alone do not bound decompressed image
-            // allocation. Reject excessive resident images immediately after
-            // the decoder returns.
-            if (surface->pitch < 0 ||
-                static_cast<std::uint64_t>(surface->pitch) * surface->h >
-                    props.maxResourceBytes)
-              throw std::length_error(
-                  "Decoded model image exceeds resident budget");
-            return makeSurfaceImage(std::move(surface));
+      .decodeTexture =
+          [&](std::span<const std::byte> encoded, std::string_view mime,
+              rendering::TextureRole role) {
+            return decodeTexture(encoded, mime, role,
+                                 rendering::MipPolicy::Generate,
+                                 props.maxResourceBytes);
           }};
   return scene::importGLTF(document, services, props);
 }

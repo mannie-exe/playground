@@ -11,24 +11,20 @@
 
 #include <math/Geometry2D.hpp>
 #include <minesweeper/MinesweeperCell.hpp>
-#include <minesweeper/MinesweeperEvents.hpp>
-#include <platform/sdl/EventResult.hpp>
-#include <support/Random.hpp>
 #include <ui/containers/Grid.hpp>
 
 struct MinesweeperGridProps {
   playground::math::Vec2i size;
   int cellSize;
   int gap;
-  float bombChance;
 
   int width() const { return extent(size.x); }
+
   int height() const { return extent(size.y); }
 
   void validate() const {
-    if (!hasArea(size) || cellSize <= 0 || gap < 0 ||
-        !std::isfinite(bombChance) || bombChance < 0 || bombChance > 1)
-      throw std::invalid_argument("Invalid Minesweeper grid dimensions/chance");
+    if (!hasArea(size) || cellSize <= 0 || gap < 0)
+      throw std::invalid_argument("Invalid Minesweeper grid dimensions");
     (void)width();
     (void)height();
     if (static_cast<std::int64_t>(size.x) * size.y >
@@ -49,51 +45,43 @@ private:
 };
 
 class MinesweeperGrid : public playground::ui::Grid {
-public:
-  using BombSelector = std::function<bool(playground::math::Vec2i)>;
-
-private:
-  playground::minesweeper::MinesweeperEvents _events;
-  Sint32 _generation{playground::minesweeper::nextGridGeneration()};
-  playground::Random _random{};
+  MinesweeperModel &_model;
 
   MinesweeperGridProps _props;
   MinesweeperCellStyle _cellStyle;
 
   std::vector<MinesweeperCell *> _cells;
-  std::vector<playground::math::Vec2i> _bombs;
+  playground::math::Vec2i _focused{};
 
-  int _cellsToClear{};
+protected:
+  void onDefaultEvent(playground::ui::UIEvent &) override;
 
 public:
   explicit MinesweeperGrid(
       MinesweeperGridProps props, const MinesweeperCellStyle &cellStyle,
-      const playground::minesweeper::MinesweeperEvents &events,
-      const playground::minesweeper::ViewResources &resources,
-      const BombSelector &selectBomb = {});
-  ~MinesweeperGrid() {
-    playground::minesweeper::discardGridNotifications(_generation);
-  }
-  Sint32 generation() const noexcept { return _generation; }
+      MinesweeperModel &model,
+      const playground::minesweeper::ViewResources &resources);
 
-  MinesweeperCell &getCellAt(const playground::math::Vec2i &gridPos);
+  MinesweeperCell &cellAt(const playground::math::Vec2i &gridPos);
 
-  MinesweeperCell &getCellAt(const int x, const int y) {
-    return getCellAt(playground::math::Vec2i{x, y});
+  MinesweeperCell &cellAt(const int x, const int y) {
+    return cellAt(playground::math::Vec2i{x, y});
   }
 
-  const MinesweeperCell &
-  getCellAt(const playground::math::Vec2i &gridPos) const;
+  const MinesweeperCell &cellAt(const playground::math::Vec2i &gridPos) const;
 
-  const MinesweeperCell &getCellAt(const int x, const int y) const {
-    return getCellAt(playground::math::Vec2i{x, y});
+  const MinesweeperCell &cellAt(const int x, const int y) const {
+    return cellAt(playground::math::Vec2i{x, y});
   }
 
-  int getBombCount() const { return static_cast<int>(_bombs.size()); }
-  const MinesweeperGridProps &getProps() const { return _props; }
-  const MinesweeperCellStyle &getCellStyle() const { return _cellStyle; }
+  int bombCount() const { return _model.bombCount(); }
 
-  EventResult handleEvent(const SDL_Event &event);
+  const MinesweeperGridProps &props() const { return _props; }
+
+  const MinesweeperCellStyle &cellStyle() const { return _cellStyle; }
+
+  void synchronize();
+  void focusCell(playground::math::Vec2i);
 
 private:
   static playground::layout::GridProps layoutFor(const MinesweeperGridProps &p);

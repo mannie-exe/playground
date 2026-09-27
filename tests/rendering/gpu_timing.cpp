@@ -20,6 +20,7 @@ struct Driver {
     Uint64 begin{10};
     Uint64 end{50};
   };
+
   std::array<Result, 4> results;
   unsigned writes{};
   unsigned reads{};
@@ -177,6 +178,7 @@ void malformedContracts() {
   test::require(driver.releases == 0,
                 "failed construction owns no native pool");
 }
+
 void preserveReadySamples() {
   Driver driver;
   int first{}, second{};
@@ -230,6 +232,37 @@ void labelsAndRecycledOrder() {
                     ready[1].sequence == 3,
                 "ready batches follow submission order, not slot order");
 }
+
+void recordingContext() {
+  Driver driver;
+  int identity{};
+  auto *commands = reinterpret_cast<SDL_GPUCommandBuffer *>(&identity);
+  sdl::GPUTimestampRing ring{driver.api(), {2}};
+  rejects<std::invalid_argument>([&] {
+    ring.begin(commands, "invalid", {.targetPixels = math::Vec2i{0, 2}}, 7);
+  });
+  test::require(driver.writes == 0,
+                "invalid extent is rejected before GPU recording");
+  const auto ticket = *ring.begin(commands, "composition", {}, 7);
+  test::require(ring.pending(7) == 1 && ring.pending(8) == 0,
+                "pending gauge is collection-specific");
+  const rendering::GPUWorkContext acquired{math::Vec2i{1200, 800},
+                                           math::Vec2i{600, 400}};
+  ring.setContext(ticket, acquired);
+  ring.end(commands, ticket);
+  rejects([&] { ring.setContext(ticket, {}); });
+  ring.submitted(ticket, 1);
+  driver.results[ticket.slot].status = SDL_GPU_TIMESTAMP_NOT_READY;
+  test::require(ring.poll(1).empty() && ring.pending(7) == 1,
+                "unavailable queries keep their captured metadata pending");
+  driver.results[ticket.slot].status = SDL_GPU_TIMESTAMP_READY;
+  const auto samples = ring.poll(1);
+  test::require(samples.size() == 1 && samples[0].context == acquired &&
+                    samples[0].collectionGeneration == 7 &&
+                    ring.pending(7) == 0,
+                "delayed completion retains recording size and generation");
+  rejects([&] { ring.setContext(ticket, {}); });
+}
 } // namespace
 
 int main() {
@@ -239,5 +272,6 @@ int main() {
     malformedContracts();
     preserveReadySamples();
     labelsAndRecycledOrder();
+    recordingContext();
   });
 }

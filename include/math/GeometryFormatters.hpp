@@ -17,6 +17,7 @@ struct std::formatter<playground::math::Vec2<T>>
         std::format("{}{{{}, {}}}", name, value.x, value.y), context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Point2>
     : std::formatter<std::string_view> {
@@ -26,6 +27,7 @@ struct std::formatter<playground::math::Point2>
         std::format("Point2{{{}, {}}}", value.x, value.y), context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Size2>
     : std::formatter<std::string_view> {
@@ -35,6 +37,7 @@ struct std::formatter<playground::math::Size2>
         std::format("Size2{{{}, {}}}", value.width, value.height), context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Rect>
     : std::formatter<std::string_view> {
@@ -46,6 +49,7 @@ struct std::formatter<playground::math::Rect>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Insets>
     : std::formatter<std::string_view> {
@@ -57,6 +61,7 @@ struct std::formatter<playground::math::Insets>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Gap2>
     : std::formatter<std::string_view> {
@@ -67,6 +72,7 @@ struct std::formatter<playground::math::Gap2>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::Transform2D>
     : std::formatter<std::string_view> {
@@ -78,6 +84,7 @@ struct std::formatter<playground::math::Transform2D>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::ColorRGBA8>
     : std::formatter<std::string_view> {
@@ -89,6 +96,7 @@ struct std::formatter<playground::math::ColorRGBA8>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::CornerRadii>
     : std::formatter<std::string_view> {
@@ -100,6 +108,7 @@ struct std::formatter<playground::math::CornerRadii>
         context);
   }
 };
+
 template <>
 struct std::formatter<playground::math::RoundedRect>
     : std::formatter<std::string_view> {

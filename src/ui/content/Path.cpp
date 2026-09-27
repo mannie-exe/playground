@@ -9,11 +9,13 @@ void Path::validate(const PathProps &props) {
   content_detail::validate({.fit = props.fit, .alignment = props.alignment});
   math::flattenPath(props.path);
 }
+
 Path::Path(PathProps props, layout::BoxProps box)
     : Node{box}, _props{std::move(props)} {
   validate(_props);
   setHitTestPolicy(HitTestPolicy::None);
 }
+
 void Path::setProps(PathProps props) {
   validate(props);
   if (_props == props)
@@ -25,6 +27,7 @@ void Path::setProps(PathProps props) {
   else
     invalidatePaint();
 }
+
 void Path::applyPatch(const PathPatch &patch) {
   const PathProps defaults{};
   setProps({patch.path.appliedTo(_props.path),
@@ -33,6 +36,7 @@ void Path::applyPatch(const PathPatch &patch) {
             patch.fit.appliedTo(_props.fit, defaults.fit),
             patch.alignment.appliedTo(_props.alignment, defaults.alignment)});
 }
+
 void Path::paint(PaintContext &context) const {
   const auto area = content_detail::contentBounds(bounds(), contentInsets());
   const auto resolved = content_detail::resolve(

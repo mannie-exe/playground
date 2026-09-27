@@ -41,12 +41,16 @@ public:
       : PlacementContainer{box}, _props{std::move(props)} {
     _props.validate(false);
   }
-  const layout::GridProps &props() const noexcept { return _props; }
-  void setProps(layout::GridProps value);
-  void applyPatch(const GridPatch &p);
+
+  const layout::GridProps &gridProps() const noexcept { return _props; }
+
+  void setGridProps(layout::GridProps value);
+  void applyGridPatch(const GridPatch &p);
+
   void applyPlacementPatch(NodeId child, const GridPlacementPatch &patch) {
     applyPlacementPatch(indexOf(child), patch);
   }
+
   void applyPlacementPatch(std::size_t index, const GridPlacementPatch &p);
   void setTracks(std::vector<layout::TrackSize> columns,
                  std::vector<layout::TrackSize> rows);

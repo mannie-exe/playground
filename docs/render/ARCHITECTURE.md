@@ -1,13 +1,13 @@
-# Rendering architecture and phase-one contracts
+# Rendering architecture
 
-This document fixes the boundaries used by the current architecture migration.
-It is a contract, not a claim that every item below has already been implemented.
-GPU.md, 2D.md, 3D.md and the source describe the implemented subset. Deferred
-features remain visible rather than being represented by successful no-op APIs.
+This document explains dependency direction, ownership and runtime sequencing.
+[GPU.md](GPU.md), [2D.md](2D.md) and [3D.md](3D.md) define the detailed APIs and
+limitations; [CONTRACTS.md](CONTRACTS.md) fixes coordinate and color conventions.
 
 The current scope includes model importing, reflected custom pipelines and
 reload, bounded residency/streaming, conservative target reuse, batching and
-direct vector paths. Lighting/PBR, shadows and animation remain excluded.
+direct vector paths, metallic–roughness PBR, directional/environment lighting and
+rigid transform animation. Shadows, skinning and VAT remain separate extensions.
 GPU timestamps use a pinned, reproducible Vulkan-only SDL extension, exposed
 through a versioned device-property table. Bounded asynchronous queries share the
 central submission completion tracker; see [PROFILING.md](PROFILING.md). CPU
@@ -21,7 +21,7 @@ silently reinterpret arbitrary SVG CSS, filters or gradients as solid paths.
 
 ## Backend policy
 
-Software and SDL GPU/Vulkan are the supported implementations in this phase.
+Software and SDL GPU/Vulkan are the supported implementations.
 Auto means Vulkan when eligible, otherwise software if requirements permit it.
 Direct3D12 and Metal are not selectable implementations. HLSL remains the authored
 shader language; SPIR-V is the packaged hardware format. DXC is a compiler, not
@@ -33,6 +33,12 @@ are prepared before activating an application; optional 3D pipelines remain lazy
 A candidate listing is not proof that device, shader or target creation succeeds.
 
 ## Ownership and dependency direction
+
+[C++ asset definitions](../platform/ASSETS.md) distinguish source definitions,
+model/scene instances and native realizations. Typed catalog registration and
+explicit asynchronous CPU model preparation do not introduce document apps,
+automatic reload or parallel scene mutation. The host executor is lazy; apps
+explicitly request work and accept completed models during owner-thread update.
 
 | Boundary | Owns / lends |
 |---|---|
@@ -61,8 +67,10 @@ GPU native texture ownership is distinct from PaintImage. Only initialized,
 sampleable color images cross the PaintImage boundary. Depth attachments are not
 paint images. Format, usage, alpha association, encoding and byte accounting
 must agree; arbitrary native flags cannot silently redefine those semantics.
-AllocationLimits centralizes extent, pixel, transfer and residency safeguards.
-Configured budgets are not measurements of free VRAM.
+RenderBackendProps carries immutable AllocationLimits and debugging policy from
+AppHost through factory selection, rollback and recovery. AllocationLimits
+centralizes extent, pixel, transfer and residency safeguards. Configured budgets
+are not measurements of free VRAM, and the live-pool cap is not a whole-device cap.
 
 ## Observer and viewport
 
@@ -99,7 +107,10 @@ input -> publish completed CPU work -> model update -> layout
 
 Workers may decode/compute immutable CPU results. They never mutate a live Node,
 Scene, registry, window or device. Publish through a lifetime-scoped completion
-mailbox with a request generation; owner-thread acceptance rejects stale results.
+mailbox or owner-polled result slot with a request generation; owner-thread
+acceptance rejects stale results. ModelPreparation uses a bounded executor and
+latest-request future slot; it does not enqueue callbacks into UIRoot. See
+[asset preparation](../platform/ASSETS.md#asynchronous-requests).
 Cancellation and stale-result rejection are separate concerns. Existing UI
 CompletionSink is the UI delivery boundary, not a general GPU queue or job graph.
 
@@ -118,11 +129,10 @@ no published image owns them and queued usage is ordered/protected by the backen
 use fences or SDL cycling where ordering alone is insufficient. Cache eviction
 never invalidates a live handle. Shutdown stops publication before services die.
 
-Static scenes should reuse snapshots/output. Dynamic scenes should not validate
-every immutable vertex or rebuild unrelated world transforms every frame. Scene
-mutation advances revisions; backend-domain changes invalidate realizations, not
-application state. A cached layer containing an unchanged Scene2DView must remain
-reusable.
+Scene3D caches world/visibility values by dirty branch and draw snapshots by revision.
+Snapshot results are owned copies; unchanged SceneView output can be reused without
+a snapshot rebuild. Backend-domain changes invalidate realizations, not application
+state. See 3D.md for the remaining linear scans and diagnostic counters.
 
 ## Activation and failure boundaries
 
@@ -137,21 +147,22 @@ hooks must have explicit staging/activation/cleanup obligations before claiming 
 transactional guarantee. Cleanup must not throw; candidate commands must not leak
 into the previous application's command slot on failed activation.
 
-Device-loss handling needs typed failure classification, a bounded retry/rebuild
-policy, new resource domains, and retained CPU/reconstruction inputs. Do not infer
-device loss by matching arbitrary SDL error strings or silently retry every error.
-If the native API cannot reliably classify a failure, expose an explicit recovery
-request and an observable failure state rather than pretending recovery occurred.
+RenderFailure classifies native operation failures for bounded recovery; it does
+not prove device loss. Recovery publishes a fresh domain, rebases the update clock
+and notifies the app. Explicit recovery remains available. Invalid values,
+allocation-policy refusal and arbitrary callback exceptions are not automatically
+retried. HostTransitions contains the host's tested sequencing operations; GPU.md
+defines the failure categories and terminal cases.
 
-## Feature gates and acceptance
+## Scope and verification
 
-Lighting/PBR, shadows and animation are deliberately outside this phase. The
-following each need their own executable contract before being called complete:
-shader reflection/custom pipeline ABI and atomic hot reload; model importing and
-axis/unit conversion; GPU timing; batching/streaming/residency/target pooling;
-direct GPU vector paths. These are implementation requirements, not merely seams;
-no placeholder interface counts as an implementation. In-app GPU timestamps
-require native capability; unsupported devices produce no fabricated samples.
+Shadows, skeletal deformation and VAT remain outside the current scope.
+Reflection/hot reload, bounded model/rigid-clip import, material/texture preparation,
+PBR/IBL, GPU timing, streaming/batching, residency/pooling and direct vector paths
+have focused tests under tests/rendering.
+Those tests verify their bounded contracts, not arbitrary formats, shaders or
+driver behavior. In-app GPU timestamps require native capability; unsupported
+devices produce no fabricated samples.
 
 Verification includes invalid props, failed preparation/activation, stale domains,
 snapshot ownership, camera/input mapping, alpha ordering, cache reuse and bounded

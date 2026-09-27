@@ -5,7 +5,9 @@
 #include <math/ColorSpace.hpp>
 #include <platform/sdl/GPUFrameAccess.hpp>
 #include <platform/sdl/GPURenderBackend.hpp>
+#include <platform/sdl/RenderError.hpp>
 #include <rendering/RenderFailure.hpp>
+#include <scene/SceneRenderer.hpp>
 
 namespace playground::sdl {
 
@@ -23,9 +25,10 @@ std::vector<rendering::RendererCandidate> availableGPURenderers() {
     if (packagedShaderFormats() &&
         SDL_GPUSupportsShaderFormats(packagedShaderFormats(),
                                      rendering::toString(driver).data()))
-      result.push_back({rendering::RendererKind::SDLGPU,
-                        driver,
-                        {true, true, rendering::CompositionSpace::Linear}});
+      result.push_back(
+          {rendering::RendererKind::SDLGPU,
+           driver,
+           {true, true, rendering::CompositionSpace::Linear, true}});
   return result;
 }
 
@@ -36,16 +39,16 @@ struct GPURenderBackend::Impl {
   gpu_detail::PaintDevice paint;
 
   std::unique_ptr<gpu_detail::GPUSceneRenderer> scenes;
-  std::shared_ptr<GPUImage> target;
   bool active{};
   bool prepared2D{};
   std::optional<bool> vsync;
 
-  Impl(SDL_Window &window, rendering::GPUDriver driver)
+  Impl(SDL_Window &window, rendering::GPUDriver driver,
+       const rendering::RenderBackendProps &props)
       : window{window}, driver{driver},
-        device{std::make_shared<GPUDevice>(
-            GPUDeviceProps{packagedShaderFormats(), false,
-                           rendering::toString(driver).data()})},
+        device{std::make_shared<GPUDevice>(GPUDeviceProps{
+            packagedShaderFormats(), props.gpuDebug,
+            rendering::toString(driver).data(), props.allocations})},
         paint{device} {
     if (!SDL_GPUTextureSupportsFormat(
             device->get(), SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
@@ -56,6 +59,7 @@ struct GPURenderBackend::Impl {
     if (!SDL_ClaimWindowForGPUDevice(device->get(), &window))
       throwSDLError("Cannot claim GPU window");
   }
+
   ~Impl() { SDL_ReleaseWindowFromGPUDevice(device->get(), &window); }
 };
 
@@ -70,7 +74,7 @@ class GPUFrame final : public rendering::RenderFrame,
   math::Vec2i _size;
   math::ColorRGBA8 _clear;
 
-  std::shared_ptr<GPUImage> _target;
+  std::shared_ptr<gpu_detail::ColorTarget> _target;
   std::optional<gpu_detail::GPUPainter> _painter;
 
   rendering::PaintImageHandle
@@ -90,6 +94,7 @@ public:
     _device.device->checkOwnerThread();
     return _device.device;
   }
+
   rendering::PaintImageHandle renderOffscreen(
       GPUOffscreenProps props,
       const std::function<void(GPURecordingContext)> &record) override {
@@ -102,7 +107,8 @@ public:
     std::shared_ptr<gpu_detail::DepthTarget> depth;
     if (props.depth)
       depth = _device.targets.depth(props.size);
-    gpu_detail::Commands commands{device, "custom offscreen"};
+    gpu_detail::Commands commands{
+        device, "custom offscreen", {.targetPixels = props.size}};
     device->recordTexture(commands.value, target->get());
     if (depth)
       device->recordTexture(commands.value, depth->texture.get());
@@ -122,7 +128,8 @@ public:
     auto *pass = SDL_BeginGPURenderPass(commands.value, &color, 1,
                                         props.depth ? &depthInfo : nullptr);
     if (!pass)
-      throwSDLError("Cannot begin custom offscreen pass");
+      throwRenderError("Cannot begin custom offscreen pass",
+                       rendering::RenderOperation::Record);
     try {
       record({commands.value, pass, *device});
     } catch (...) {
@@ -131,27 +138,33 @@ public:
     }
     SDL_EndGPURenderPass(pass);
     commands.submit();
-    return target;
+    return target->publish();
   }
+
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return _device.device->resourceDomain();
   }
+
   GPUFrame(SDL_Window &window, gpu_detail::PaintDevice &device,
            std::unique_ptr<gpu_detail::GPUSceneRenderer> &scenes, bool &active,
-           std::shared_ptr<GPUImage> target, math::Vec2i size,
+           std::shared_ptr<gpu_detail::ColorTarget> target, math::Vec2i size,
            math::Vec2f scale, math::ColorRGBA8 clear)
       : _window{window}, _device{device}, _scenes{scenes}, _active{active},
         _size{size}, _clear{clear}, _target{std::move(target)},
         _painter{std::in_place, device, scale} {
     _active = true;
   }
+
   ~GPUFrame() override { _active = false; }
+
   rendering::PaintContext &paint2D() override {
     if (!_painter)
       throw std::logic_error("GPU frame already presented");
     return *_painter;
   }
+
   scene::SceneRenderer *scene3D() noexcept override { return this; }
+
   rendering::PresentationOutcome present() override {
     if (!_painter)
       throw std::logic_error("GPU frame already presented");
@@ -161,10 +174,12 @@ public:
     auto *commands =
         _device.device->acquireCommands("presentation composition");
     SDL_GPUTexture *swapchain{};
+
     struct PresentGuard {
       GPUDevice &device;
       SDL_GPUCommandBuffer *commands;
       SDL_GPUTexture *&swapchain;
+
       ~PresentGuard() {
         if (commands) {
           if (swapchain)
@@ -174,16 +189,20 @@ public:
         }
       }
     } guard{*_device.device, commands, swapchain};
+
     Uint32 w{}, h{};
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, &_window, &swapchain,
                                                &w, &h))
-      throw rendering::RenderFailure(
-          std::string{"Cannot acquire GPU swapchain: "} + SDL_GetError());
+      throwRenderError("Cannot acquire GPU swapchain",
+                       rendering::RenderOperation::Acquire);
     if (!swapchain)
       return rendering::PresentationOutcome::Skipped;
+    _device.device->setTimingContext(
+        commands,
+        {.targetPixels = math::Vec2i{int(w), int(h)}, .sourcePixels = _size});
     // Use the acquired size: a native resize can occur after beginFrame.
     // PresentGuard also releases the acquired image if recording throws.
-    compositor.drawImage(_target, {{}, _target->pixelSize()},
+    compositor.drawImage(_target->publish(), {{}, _target->pixelSize()},
                          math::rect(0, 0, float(w), float(h)), {});
     compositor.encode(
         commands, swapchain, {int(w), int(h)},
@@ -197,48 +216,68 @@ public:
 } // namespace
 
 GPURenderBackend::GPURenderBackend(SDL_Window &window,
-                                   rendering::GPUDriver driver)
+                                   rendering::GPUDriver driver,
+                                   const rendering::RenderBackendProps &props)
     : _impl{[&] {
         if (driver != rendering::GPUDriver::Vulkan)
           throw std::invalid_argument(
               "Only Vulkan hardware rendering is supported");
-        return std::make_unique<Impl>(window, driver);
+        props.validate();
+        return std::make_unique<Impl>(window, driver, props);
       }()} {}
+
 GPURenderBackend::~GPURenderBackend() = default;
+
 void GPURenderBackend::invalidate() noexcept { _impl->device->invalidate(); }
+
 void GPURenderBackend::setProfilingEnabled(bool enabled) {
   _impl->device->setProfilingEnabled(enabled);
 }
+
+std::optional<rendering::PaintWork> GPURenderBackend::takePaintWork() {
+  return _impl->paint.takeStats();
+}
+
 bool GPURenderBackend::supportsGPUTiming() const noexcept {
   return _impl->device->supportsTimestamps();
 }
+
 std::vector<rendering::GPUTimingSample> GPURenderBackend::takeGPUTimings() {
   return _impl->device->takeGPUTimings();
 }
+
+rendering::GPUTimingCollection GPURenderBackend::gpuTimingCollection() const {
+  return _impl->device->gpuTimingCollection();
+}
+
 rendering::ResourceDomainId GPURenderBackend::resourceDomain() const noexcept {
   return _impl->device->resourceDomain();
 }
+
 std::uint64_t GPURenderBackend::completedWork() {
   _impl->device->pollCompletions();
   return _impl->device->completedSubmission();
 }
+
 rendering::RendererCandidate GPURenderBackend::description() const {
   return {rendering::RendererKind::SDLGPU,
           _impl->driver,
-          {true, true, rendering::CompositionSpace::Linear}};
+          {true, true, rendering::CompositionSpace::Linear, true}};
 }
+
 void GPURenderBackend::prepare(rendering::RendererRequirements requirements) {
   rendering::RenderBackend::prepare(requirements);
   if (_impl->active)
     throw std::logic_error("Cannot prepare capabilities during a live frame");
   if ((requirements.paint2D || requirements.linearComposition) &&
       !_impl->prepared2D) {
-    GPUImage target{_impl->device, math::Vec2i{1, 1}};
+    auto target = _impl->paint.targets.color({1, 1});
     gpu_detail::GPUPainter painter{_impl->paint, {1, 1}};
-    painter.finish(target.get(), {1, 1}, {});
+    painter.finish(target->get(), {1, 1}, {});
     _impl->prepared2D = true;
   }
-  if (requirements.scene3D && !_impl->scenes) {
+  if ((requirements.scene3D || requirements.metallicRoughness) &&
+      !_impl->scenes) {
     if (!SDL_GPUTextureSupportsFormat(
             _impl->device->get(), SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
             SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET))
@@ -251,12 +290,15 @@ void GPURenderBackend::prepare(rendering::RendererRequirements requirements) {
     _impl->scenes = std::move(candidate);
   }
 }
+
 math::Vec2i GPURenderBackend::drawableSize() const {
   math::Vec2i size;
   if (!SDL_GetWindowSizeInPixels(&_impl->window, &size.x, &size.y))
-    throwSDLError("Cannot query GPU drawable size");
+    throwRenderError("Cannot query GPU drawable size",
+                     rendering::RenderOperation::Query);
   return size;
 }
+
 std::unique_ptr<rendering::RenderFrame>
 GPURenderBackend::beginFrame(rendering::RenderFrameProps props) {
   if (_impl->active)
@@ -271,7 +313,8 @@ GPURenderBackend::beginFrame(rendering::RenderFrameProps props) {
       mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
     if (!SDL_SetGPUSwapchainParameters(_impl->device->get(), &_impl->window,
                                        SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode))
-      throwSDLError("Cannot configure GPU presentation");
+      throwRenderError("Cannot configure GPU presentation",
+                       rendering::RenderOperation::Present);
     _impl->vsync = props.settings.vsync;
   }
   const auto drawable = drawableSize();
@@ -279,16 +322,16 @@ GPURenderBackend::beginFrame(rendering::RenderFrameProps props) {
       !math::hasArea(drawable))
     return {};
   const auto size = props.settings.targetSize(drawable);
-  if (!_impl->target ||
-      _impl->target->pixelSize() != math::Size2{float(size.x), float(size.y)})
-    _impl->target = std::make_shared<GPUImage>(_impl->device, size);
+  auto target = _impl->paint.targets.color(size);
   int width{}, height{};
   if (!SDL_GetWindowSize(&_impl->window, &width, &height) || width <= 0 ||
       height <= 0)
-    throwSDLError("Cannot query GPU logical size");
+    throwRenderError("Cannot query GPU logical size",
+                     rendering::RenderOperation::Query);
   return std::make_unique<GPUFrame>(
-      _impl->window, _impl->paint, _impl->scenes, _impl->active, _impl->target,
-      size, math::Vec2f{float(size.x) / width, float(size.y) / height},
+      _impl->window, _impl->paint, _impl->scenes, _impl->active,
+      std::move(target), size,
+      math::Vec2f{float(size.x) / width, float(size.y) / height},
       props.clearColor);
 }
 

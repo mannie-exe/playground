@@ -36,6 +36,47 @@ public headers contain no SPIRV-Reflect types. Dependency licenses are installed
 
 ## Reflected ABI
 
+### Built-in 2D passes
+
+`paint` remains the general 4×4 coverage path for paths, borders, rounded/asymmetric
+shapes, transformed geometry and complex clips. `paint_rect` shares its record
+layout and color helpers, but uses analytic pixel/rectangle intersection only for
+axis-aligned rectangles with rectangular clips and no border. `present` is selected
+for a single full-target compatible image draw. Each fast fragment shader has one
+uniform block rather than the general shader's batch plus path blocks.
+
+Linear premultiplied images can use hardware linear filtering. Straight-alpha,
+sRGB and alpha-only representations retain explicit conversion/filtering; nearest
+sampling retains texel selection. Exact masks remain on the general path. Clip
+bounds provide conservative CPU rejection and outward-rounded native scissor;
+changing pipeline/scissor splits adjacent batches but never reorders draws.
+Fast analytic coverage can be smoother than the quantized 16-sample reference at
+arbitrary fractional edges. Quarter-pixel fixtures test pixel parity; rotated
+rounded borders continue through the unchanged general shader.
+
+### Built-in material passes
+
+`scene_pbr` handles metallic–roughness materials and typed unlit textures.
+Its vertex attributes are position, normal, UV0, tangent/handedness, linear vertex
+color and UV1; vertex uniforms contain model-view-projection, model and normal
+matrices. The fragment pass binds eight texture/sampler pairs: base color,
+metallic/roughness, normal, occlusion, emission, diffuse environment, prefiltered
+specular environment and the BRDF lookup. One 17-float4 uniform block carries
+material/light factors and five independent texture-coordinate transforms.
+
+`scene_tone` applies scene exposure and optional Khronos PBR Neutral tone mapping
+to HDR scene output before UI composition. Its settings uniform contains exposure
+and a compression-enable flag; exposure remains effective without compression.
+It does not tone-map UI colors. Material
+textures have role-aware upload semantics, unlike generic UI `PaintImage` values;
+see [MATERIALS.md](MATERIALS.md). The older `scene_unlit` path retains UI-image
+compatibility and also multiplies linear vertex colors.
+
+These are fixed built-in ABIs, not an automatic material compiler. A custom
+pipeline still declares and validates its own layout below.
+
+### Custom pipeline ABI
+
 `rendering/Shader.hpp` supplies `readSPIRV`, `reflectSPIRV`, `ShaderReflection`,
 `ShaderLayout`, `validateShaderLink`, and `isShaderABICompatible`.
 
@@ -70,6 +111,12 @@ Built-in shaders also pass this reflection/layout validation when loaded. Their
 resource-count declarations no longer silently accept incompatible bytecode.
 
 ## Custom pipeline ownership and reload
+
+The C++ asset path uses assets::ShaderAsset and assets::prepareShader to validate
+immutable compiled code. GPUShaderPipeline also accepts prepared vertex/fragment
+values with its native pipeline props; this overload never polls files. The
+path-based API below remains an explicit optional reload facility, not a watcher.
+See [asset contracts](../platform/ASSETS.md) for identity and dependency boundaries.
 
 `sdl::GPUShaderPipeline` owns props and the current immutable
 `GPUPipelineGeneration`. `GPUPipelineProps` owns paths, entry points, declared layouts,

@@ -3,8 +3,8 @@
 #include <optional>
 #include <utility>
 
+#include <support/Patch.hpp>
 #include <ui/Node.hpp>
-#include <ui/Patch.hpp>
 
 namespace playground::ui {
 
@@ -26,6 +26,8 @@ class Rectangle final : public Node {
   RectangleProps _props;
 
 protected:
+  bool canReuseMeasurementOffers() const noexcept override { return true; }
+
   layout::MeasureResult
   measureContent(MeasureContext &, const layout::SizeConstraints &) override {
     return {};
@@ -64,6 +66,7 @@ public:
   }
 
   const RectangleProps &props() const noexcept { return _props; }
+
   void setProps(RectangleProps props) {
     props.cornerRadii.validate();
     if (_props == props)
@@ -71,12 +74,14 @@ public:
     _props = props;
     invalidate(DirtyFlags::Paint | DirtyFlags::HitTest);
   }
+
   void applyPatch(const RectanglePatch &patch) {
     const RectangleProps defaults{};
     setProps({patch.fill.appliedTo(_props.fill),
               patch.border.appliedTo(_props.border, defaults.border),
               patch.cornerRadii.appliedTo(_props.cornerRadii, {})});
   }
+
   bool containsLocal(math::Point2 point) const override {
     return math::RoundedRect{{{}, bounds().size}, _props.cornerRadii}.contains(
         point);

@@ -26,8 +26,12 @@ int main() {
         s->setOffset({10000, 10000});
         root.flushLayout({100, 80});
         test::require(
-            s->offset().x == (axes == ui::ScrollAxes::Vertical ? 0 : 200) &&
-                s->offset().y == (axes == ui::ScrollAxes::Horizontal ? 0 : 120),
+            s->offset().x == (axes == ui::ScrollAxes::Vertical
+                                  ? 0
+                                  : 300 - s->viewportExtent().width) &&
+                s->offset().y == (axes == ui::ScrollAxes::Horizontal
+                                      ? 0
+                                      : 200 - s->viewportExtent().height),
             "scroll clamps each enabled axis");
         s->setOffset({-10, -10});
         test::require(s->offset() == math::Vec2f{},
@@ -37,7 +41,9 @@ int main() {
             "NaN offset rejected");
         const auto props = s->props();
         test::rejects(
-            [&] { s->applyPatch({.wheelStep = ui::Patch<float>::set(-1)}); },
+            [&] {
+              s->applyPatch({.wheelStep = playground::Patch<float>::set(-1)});
+            },
             "negative wheel step rejected");
         test::require(s->props() == props,
                       "failed scroll patch leaves props unchanged");

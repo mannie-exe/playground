@@ -57,7 +57,7 @@ static void verifyLineSpacing(const std::string &path) {
   FontPatch reset;
   reset.lineSpace.emplace(std::nullopt);
   font.applyProps(reset);
-  Font natural{font.getProps()};
+  Font natural{font.props()};
   test::require(
       !font.getLineSpace() && font.getLineSkip() == natural.getLineSkip(),
       "engaged empty patch restores freshly configured natural line skip");
@@ -66,7 +66,7 @@ static void verifyLineSpacing(const std::string &path) {
                 "engaged pixel patch sets actual line skip");
   font.setLineSpace(std::nullopt);
   font.setSize(64);
-  Font enlarged{font.getProps()};
+  Font enlarged{font.props()};
   test::require(!font.getLineSpace() &&
                     font.getLineSkip() == enlarged.getLineSkip() &&
                     font.getLineSkip() > initialSkip,

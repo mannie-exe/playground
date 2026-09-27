@@ -56,6 +56,8 @@ public:
   FontHandle getFont(FontProps props);
 
   SurfaceHandle getImage(const std::string &path);
+  SurfaceHandle getImage(const std::string &key,
+                         const std::function<SurfaceHandle()> &create);
 
   SurfaceHandle getVector(const std::string &path,
                           playground::math::Vec2i size = {});

@@ -17,7 +17,9 @@ public:
             "Operation failed and previous runtime could not be restored"},
         _operation{std::move(operation)}, _restoration{std::move(restoration)} {
   }
+
   const std::exception_ptr &operation() const noexcept { return _operation; }
+
   const std::exception_ptr &restoration() const noexcept {
     return _restoration;
   }

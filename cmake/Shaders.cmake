@@ -127,8 +127,17 @@ endfunction()
 add_custom_target(playground_shaders)
 playground_add_shader(scene_unlit_vertex shaders/scene_unlit.vert.hlsl vertex)
 playground_add_shader(scene_unlit_fragment shaders/scene_unlit.frag.hlsl fragment)
+playground_add_shader(scene_pbr_vertex shaders/scene_pbr.vert.hlsl vertex)
+playground_add_shader(scene_pbr_fragment shaders/scene_pbr.frag.hlsl fragment)
+playground_add_shader(scene_tone_vertex shaders/scene_tone.vert.hlsl vertex)
+playground_add_shader(scene_tone_fragment shaders/scene_tone.frag.hlsl fragment)
 playground_add_shader(paint_vertex shaders/paint.vert.hlsl vertex)
 playground_add_shader(paint_fragment shaders/paint.frag.hlsl fragment)
+playground_add_shader(paint_rect_fragment shaders/paint_rect.frag.hlsl fragment
+    "${PROJECT_SOURCE_DIR}/shaders/paint.frag.hlsl")
+playground_add_shader(present_fragment shaders/present.frag.hlsl fragment
+    "${PROJECT_SOURCE_DIR}/shaders/paint_rect.frag.hlsl"
+    "${PROJECT_SOURCE_DIR}/shaders/paint.frag.hlsl")
 if(playground_shader_tool OR PLAYGROUND_DXC_EXECUTABLE)
     target_compile_definitions(playground_sdl PRIVATE PLAYGROUND_SHADER_DIRECTORY="${PROJECT_BINARY_DIR}/shaders")
     foreach(format IN LISTS PLAYGROUND_SHADER_FORMATS)

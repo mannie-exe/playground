@@ -12,11 +12,34 @@
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <rendering/ImageData.hpp>
 #include <rendering/ImagePreparer.hpp>
+#include <rendering/Texture.hpp>
 #include <support/SDLResource.hpp>
 
 namespace playground::sdl {
 
+namespace gpu_detail {
+class ColorTarget;
+}
+struct GPURecordingContext;
+
+class GPUTextureData final {
+  GPUDeviceHandle _device;
+  GPUTextureResource _texture;
+  rendering::ResourceLease _use;
+  std::size_t _bytes{};
+
+public:
+  GPUTextureData(GPUDeviceHandle device, const rendering::Texture &source,
+                 bool ignoreAlpha = false);
+
+  SDL_GPUTexture *get() const noexcept { return _texture.get(); }
+
+  std::size_t bytes() const noexcept { return _bytes; }
+};
+
 class GPUImage final : public rendering::PaintImage {
+  friend class gpu_detail::ColorTarget;
+  friend struct GPURecordingContext;
   GPUDeviceHandle _device;
   GPUTextureResource _texture;
   math::Vec2i _size;
@@ -25,11 +48,10 @@ class GPUImage final : public rendering::PaintImage {
   std::size_t _bytesPerPixel{4};
   rendering::ResourceLease _use;
 
+  GPUImage(GPUDeviceHandle device, math::Vec2i size);
+
 public:
   GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels);
-  // Backend target under construction: initialize before publishing as a
-  // PaintImageHandle, then never modify while such a handle can be observed.
-  GPUImage(GPUDeviceHandle device, math::Vec2i size);
   ~GPUImage() override = default;
   GPUImage(const GPUImage &) = delete;
   GPUImage &operator=(const GPUImage &) = delete;
@@ -37,15 +59,21 @@ public:
   math::Size2 pixelSize() const noexcept override {
     return {static_cast<float>(_size.x), static_cast<float>(_size.y)};
   }
+
   SDL_GPUTexture *get() const noexcept { return _texture.get(); }
+
   std::size_t bytesPerPixel() const noexcept override { return _bytesPerPixel; }
+
   const GPUDeviceHandle &device() const noexcept { return _device; }
-  const rendering::ResourceLease &use() const noexcept { return _use; }
+
   bool isLeased() const noexcept { return _use.use_count() > 1; }
+
   rendering::SubmissionId lastSubmission() const noexcept {
     return _use->lastSubmission;
   }
+
   rendering::AlphaMode alphaMode() const noexcept override { return _alpha; }
+
   rendering::ColorEncoding colorEncoding() const noexcept override {
     return _encoding;
   }
@@ -59,6 +87,7 @@ class GPUImagePreparer : public rendering::ImagePreparer {
     std::size_t bytes{};
     std::uint64_t lastUse{};
   };
+
   struct Entry {
     std::array<Representation, 4> representations;
   };
@@ -75,12 +104,15 @@ class GPUImagePreparer : public rendering::ImagePreparer {
 
 public:
   explicit GPUImagePreparer(GPUDeviceHandle device);
+
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return _device->resourceDomain();
   }
+
   rendering::PaintImageHandle
   prepare(rendering::PaintImageHandle source) override;
   void prune();
+
   std::size_t residentBytes() const noexcept { return _residentBytes; }
 };
 

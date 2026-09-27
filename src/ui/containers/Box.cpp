@@ -5,7 +5,7 @@ namespace playground::ui {
 layout::MeasureResult
 Box::measureContent(MeasureContext &context,
                     const layout::SizeConstraints &offered) {
-  if (children().empty() ||
+  if (children().empty() || children()[0]->isPortal() ||
       children()[0]->visibility() == Visibility::Collapsed)
     return {};
   const auto margin = placementInParent(0).margin;
@@ -23,7 +23,7 @@ Box::measureContent(MeasureContext &context,
 }
 
 void Box::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
-  if (!children().empty()) {
+  if (!children().empty() && !children()[0]->isPortal()) {
     const auto &placement = placementInParent(0);
     container_detail::placeAligned(
         *children()[0], context, bounds, placement.margin,
@@ -31,7 +31,7 @@ void Box::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
   }
 }
 
-void Box::setProps(BoxContentProps props) {
+void Box::setContentProps(BoxContentProps props) {
   if (_props != props) {
     _props = props;
     invalidateLayout();

@@ -7,6 +7,8 @@
 #include <math/Geometry2D.hpp>
 #include <rendering/RenderSettings.hpp>
 #include <rendering/RendererTypes.hpp>
+#include <ui/Interaction.hpp>
+#include <ui/Theme.hpp>
 
 namespace playground::platform {
 
@@ -41,10 +43,14 @@ struct WindowPreferences {
 };
 
 struct AppViewPolicy {
+  ui::ColorSchemePreference colorScheme{ui::ColorSchemePreference::System};
+  // Resolved by settings; applications should leave user contrast inherited.
+  ui::ContrastPreference userContrast{ui::ContrastPreference::System};
   InitialWindowSizing initialSizing{InitialWindowSizing::Preferred};
   std::optional<math::Vec2i> preferredWindowSize;
   math::Size2 minimumSize{1, 1};
   bool resizable{true};
+  ui::InteractionProps interaction;
   void validate() const;
   math::Vec2i initialWindowSize(math::Vec2i bootstrap) const;
 };
@@ -76,6 +82,7 @@ struct WindowMetrics {
 };
 
 struct ViewportMapping {
+  bool operator==(const ViewportMapping &) const = default;
   math::Size2 logicalSize;
   math::Vec2f windowUnitsPerLogical{1, 1};
   math::Vec2f offset;

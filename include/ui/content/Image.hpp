@@ -6,8 +6,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include <support/Patch.hpp>
 #include <ui/Node.hpp>
-#include <ui/Patch.hpp>
 #include <ui/content/ContentTypes.hpp>
 
 namespace playground::ui {
@@ -48,6 +48,7 @@ protected:
     _image = rendering::prepareImage(_props.image, context.images);
     _prepared = true;
   }
+
   layout::MeasureResult
   measureContent(MeasureContext &, const layout::SizeConstraints &) override {
     return {.size = source().size / _props.assetDensity};
@@ -63,6 +64,7 @@ public:
   explicit Image(ImageProps props, layout::BoxProps box = {});
 
   const ImageProps &props() const noexcept { return _props; }
+
   void setProps(ImageProps props);
   void applyPatch(const ImagePatch &patch);
 };

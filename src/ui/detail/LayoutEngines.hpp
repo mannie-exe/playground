@@ -1,5 +1,16 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <numeric>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
 #include <ui/containers/Flow.hpp>
 #include <ui/containers/Grid.hpp>
 #include <ui/containers/Stack.hpp>
@@ -34,15 +45,26 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
                     PlacementAt placementAt, MeasureContext &context,
                     const layout::SizeConstraints &offered, layout::Axis axis,
                     const layout::StackProps &props, bool arranging = false) {
+  if (context.stats)
+    ++context.stats->containerPlans;
   StackPlan plan;
   std::vector<layout::FlexItem> flex;
+  plan.items.reserve(indices.size());
+  flex.reserve(indices.size());
+  if (context.stats) {
+    context.stats->scratchGrowths += !indices.empty() ? 2 : 0;
+    context.stats->scratchPeakBytes =
+        std::max<std::uint64_t>(context.stats->scratchPeakBytes,
+                                plan.items.capacity() * sizeof(StackPlanItem) +
+                                    flex.capacity() * sizeof(layout::FlexItem));
+  }
   float margins{};
   const auto mainOffered = main(offered, axis);
   const auto crossOffered = cross(offered, axis);
 
   for (const auto index : indices) {
     auto &child = *parent.children()[index];
-    if (child.visibility() == Visibility::Collapsed)
+    if (child.isPortal() || child.visibility() == Visibility::Collapsed)
       continue;
     const auto &placement = placementAt(index);
     const auto alignment =
@@ -80,7 +102,6 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
                                                 (flex.size() - 1)));
   float crossExtent{};
   float firstAscent{}, firstDescent{}, lastAscent{}, lastDescent{};
-  bool firstGroup{}, lastGroup{};
 
   for (std::size_t i = 0; i < plan.items.size(); ++i) {
     auto &item = plan.items[i];
@@ -107,7 +128,6 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
          item.alignment == layout::CrossAlignment::LastBaseline)) {
       const bool last = item.alignment == layout::CrossAlignment::LastBaseline;
       const float value = baseline(item, last);
-      (last ? lastGroup : firstGroup) = true;
       auto &ascent = last ? lastAscent : firstAscent;
       auto &descent = last ? lastDescent : firstDescent;
       ascent = std::max(ascent, sum(item.margin.top, value));
@@ -159,16 +179,26 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
                     align, std::max(0.0f, crossAvailable - low - high),
                     cross(item.measured.size, axis), !horizontal && rtl);
     }
-    if (horizontal && item.measured.firstBaseline)
-      plan.firstBaseline = plan.firstBaseline.value_or(
-          item.crossPosition + *item.measured.firstBaseline);
-    if (horizontal && item.measured.lastBaseline)
-      plan.lastBaseline = item.crossPosition + *item.measured.lastBaseline;
+    if (horizontal) {
+      // Export a vertical envelope, not the first/last child in traversal
+      // order. Alignment groups affect placement; they must not overwrite this
+      // range.
+      const auto include = [&](float local) {
+        const float positioned = sum(item.crossPosition, local);
+        plan.firstBaseline =
+            std::min(plan.firstBaseline.value_or(positioned), positioned);
+        plan.lastBaseline =
+            std::max(plan.lastBaseline.value_or(positioned), positioned);
+      };
+      if (item.measured.firstBaseline)
+        include(*item.measured.firstBaseline);
+      if (item.measured.lastBaseline)
+        include(*item.measured.lastBaseline);
+      if (baselineAligned)
+        include(baseline(item, item.alignment ==
+                                   layout::CrossAlignment::LastBaseline));
+    }
   }
-  if (firstGroup)
-    plan.firstBaseline = firstAscent;
-  if (lastGroup)
-    plan.lastBaseline = lastAscent;
   return plan;
 }
 
@@ -199,12 +229,15 @@ template <typename PlacementAt> class GridEngine {
   PlacementAt _placementAt;
 
   auto children() const { return _owner.children(); }
+
   const layout::GridPlacement &placementInParent(std::size_t i) const {
     return _placementAt(i);
   }
+
   struct Cell {
     std::size_t child, row, column, rows, columns;
   };
+
   struct Plan {
     std::vector<Cell> cells;
     std::vector<float> widths, heights;
@@ -215,6 +248,7 @@ template <typename PlacementAt> class GridEngine {
     return a.row < b.row + b.rows && b.row < a.row + a.rows &&
            a.column < b.column + b.columns && b.column < a.column + a.columns;
   }
+
   static float total(std::span<const float> values, float gap) {
     double result =
         values.empty() ? 0 : static_cast<double>(gap) * (values.size() - 1);
@@ -222,6 +256,7 @@ template <typename PlacementAt> class GridEngine {
       result += value;
     return layout::detail::checked(result);
   }
+
   static float start(std::span<const float> values, std::size_t index,
                      float gap) {
     double result = static_cast<double>(gap) * index;
@@ -229,6 +264,7 @@ template <typename PlacementAt> class GridEngine {
       result += values[i];
     return layout::detail::checked(result);
   }
+
   static void contribution(std::vector<float> &sizes,
                            const std::vector<layout::TrackSize> &tracks,
                            std::size_t begin, std::size_t count, float required,
@@ -257,6 +293,7 @@ template <typename PlacementAt> class GridEngine {
       remaining -= applied;
     }
   }
+
   static void distribute(std::vector<float> &sizes,
                          const std::vector<layout::TrackSize> &tracks,
                          std::optional<float> available, float gap) {
@@ -271,9 +308,12 @@ template <typename PlacementAt> class GridEngine {
                        0, tracks[i].kind() == layout::TrackKind::Fixed});
     sizes = layout::allocateStack(items, *available, gap).sizes;
   }
+
   Plan makePlan(MeasureContext &context,
                 const layout::SizeConstraints &offered) {
     _props.validate(!children().empty());
+    if (context.stats)
+      ++context.stats->containerPlans;
     Plan plan;
     auto columns = _props.columns, rows = _props.rows;
     auto free = [&](const Cell &cell) {
@@ -294,7 +334,8 @@ template <typename PlacementAt> class GridEngine {
       plan.cells.push_back(cell);
     };
     for (std::size_t i = 0; i < children().size(); ++i) {
-      if (children()[i]->visibility() == Visibility::Collapsed)
+      if (children()[i]->isPortal() ||
+          children()[i]->visibility() == Visibility::Collapsed)
         continue;
       const auto &p = placementInParent(i);
       if (p.row && p.column)
@@ -302,7 +343,8 @@ template <typename PlacementAt> class GridEngine {
     }
     std::size_t cursorRow{}, cursorColumn{};
     for (std::size_t i = 0; i < children().size(); ++i) {
-      if (children()[i]->visibility() == Visibility::Collapsed)
+      if (children()[i]->isPortal() ||
+          children()[i]->visibility() == Visibility::Collapsed)
         continue;
       const auto &p = placementInParent(i);
       if (p.row && p.column)
@@ -417,10 +459,12 @@ template <typename PlacementAt> class GridEngine {
 public:
   GridEngine(Node &owner, const layout::GridProps &props, PlacementAt placement)
       : _owner{owner}, _props{props}, _placementAt{std::move(placement)} {}
+
   layout::MeasureResult measure(MeasureContext &context,
                                 const layout::SizeConstraints &offered) {
     return {makePlan(context, offered).size};
   }
+
   void arrange(ArrangeContext &context, math::Rect bounds) {
     const auto plan =
         makePlan(context, layout::SizeConstraints::tight(bounds.size));
@@ -452,7 +496,9 @@ template <typename PlacementAt> class FlowEngine {
   Node &_owner;
   const layout::FlowProps &_props;
   PlacementAt _placementAt;
+
   auto children() const { return _owner.children(); }
+
   const layout::StackPlacement &placementInParent(std::size_t i) const {
     return _placementAt(i);
   }
@@ -466,11 +512,14 @@ template <typename PlacementAt> class FlowEngine {
                 const layout::SizeConstraints &offered) {
     using namespace container_detail;
     std::vector<std::size_t> indices;
+    if (context.stats)
+      ++context.stats->containerPlans;
     std::vector<float> bases;
     const auto mainOffered = main(offered, _props.mainAxis);
     const auto crossOffered = cross(offered, _props.mainAxis);
     for (std::size_t i = 0; i < children().size(); ++i) {
-      if (children()[i]->visibility() == Visibility::Collapsed)
+      if (children()[i]->isPortal() ||
+          children()[i]->visibility() == Visibility::Collapsed)
         continue;
       const auto &placement = placementInParent(i);
       auto mainConstraint = layout::AxisConstraints{};
@@ -517,10 +566,12 @@ template <typename PlacementAt> class FlowEngine {
 public:
   FlowEngine(Node &owner, const layout::FlowProps &props, PlacementAt placement)
       : _owner{owner}, _props{props}, _placementAt{std::move(placement)} {}
+
   layout::MeasureResult measure(MeasureContext &context,
                                 const layout::SizeConstraints &offered) {
     return {makePlan(context, offered).size};
   }
+
   void arrange(ArrangeContext &context, math::Rect bounds) {
     using namespace container_detail;
     auto plan = makePlan(context, layout::SizeConstraints::tight(bounds.size));

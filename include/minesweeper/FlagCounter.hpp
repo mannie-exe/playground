@@ -50,41 +50,49 @@ public:
     setBackground(props.button.disabled);
     setSemanticProps({.role = ui::SemanticRole::Group,
                       .name = "Flag counter",
-                      .enabled = false});
+                      .value = std::to_string(props.amount)});
   }
 
-  int getAmount() const { return _props.amount; }
-  const FlagCounterProps &getProps() const { return _props; }
+  int amount() const { return _props.amount; }
+
+  const FlagCounterProps &props() const { return _props; }
 
   void setAmount(int amount) {
     if (_props.amount == amount)
       return;
-    auto text = _label->props();
-    text.value = std::to_string(amount);
-    text.font =
-        playground::minesweeper::fittedFont(_resources, text.value, _labelSize);
-    _label->setProps(std::move(text));
-    _props.amount = amount;
+    auto props = _props;
+    props.amount = amount;
+    setProps(props);
   }
 
-  void applyPropsPatch(const FlagCounterPatch &patch) {
-    if (patch.amount)
-      setAmount(*patch.amount);
-    if (patch.button) {
-      setBackground(patch.button->disabled);
-      _props.button = *patch.button;
+  // Stage copies and font acquisition first. Child setters provide their own
+  // guarantees; this is not rollback of arbitrary notification side effects.
+  void setProps(FlagCounterProps props) {
+    auto semantics = semanticProps();
+    semantics.value = std::to_string(props.amount);
+    auto text = _label->props();
+    text.foreground = props.labelColor;
+    if (_props.amount != props.amount) {
+      text.value = std::to_string(props.amount);
+      text.font = playground::minesweeper::fittedFont(_resources, text.value,
+                                                      _labelSize);
     }
-    if (patch.labelColor) {
-      auto text = _label->props();
-      text.foreground = *patch.labelColor;
-      _label->setProps(std::move(text));
-      _props.labelColor = *patch.labelColor;
-    }
-    if (patch.iconColor) {
-      auto icon = _icon->props();
-      icon.content.paint.tint = *patch.iconColor;
-      _icon->setProps(std::move(icon));
-      _props.iconColor = *patch.iconColor;
-    }
+    auto icon = _icon->props();
+    icon.content.paint.tint = props.iconColor;
+    _label->setProps(std::move(text));
+    _props.amount = props.amount;
+    _props.labelColor = props.labelColor;
+    _icon->setProps(std::move(icon));
+    _props.iconColor = props.iconColor;
+    setBackground(props.button.disabled);
+    _props.button = props.button;
+    setSemanticProps(std::move(semantics));
+  }
+
+  void applyPatch(const FlagCounterPatch &patch) {
+    setProps({patch.button.value_or(_props.button),
+              patch.iconColor.value_or(_props.iconColor),
+              patch.labelColor.value_or(_props.labelColor),
+              patch.amount.value_or(_props.amount)});
   }
 };

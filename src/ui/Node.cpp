@@ -21,6 +21,7 @@ void Node::attach(const std::shared_ptr<detail::NodeTable> &table) {
     if (table->services) {
       LifecycleScope scope{*table};
       onAttach(*table->services);
+      onThemeChanged();
     }
     for (auto &child : _children)
       child->attach(table);
@@ -144,6 +145,7 @@ Node &Node::transferChildAt(Node &source, std::size_t from, std::size_t to) {
   source._children.erase(source._children.begin() + from);
   owned->_parent = this;
   _children.insert(_children.begin() + to, std::move(owned));
+  child->refreshTheme();
   source.invalidateLayout();
   invalidateLayout();
   return *child;
@@ -161,8 +163,9 @@ std::unique_ptr<Node> Node::takeChildAt(std::size_t index) {
   return child;
 }
 
-void Node::setProps(NodeSettings value) {
+void Node::setSettings(NodeSettings value) {
   value.validate();
+  validateBoxProps(value.box);
   DirtyFlags changes = DirtyFlags::None;
   if (value.box != _box || ((value.node.visibility == Visibility::Collapsed) !=
                             (_nodeProps.visibility == Visibility::Collapsed)))
@@ -191,69 +194,69 @@ void Node::setProps(NodeSettings value) {
 }
 
 void Node::setNodeProps(NodeProps value) {
-  auto p = props();
+  auto p = settings();
   p.node = std::move(value);
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::setPaintStyle(PaintStyle value) {
-  auto p = props();
+  auto p = settings();
   p.paint = value;
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::setVisualProps(VisualProps value) {
-  auto p = props();
+  auto p = settings();
   p.visual = value;
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::setInputProps(InputProps value) {
-  auto p = props();
+  auto p = settings();
   p.input = value;
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::setSemanticProps(SemanticProps value) {
-  auto p = props();
+  auto p = settings();
   p.semantics = std::move(value);
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::applyNodePatch(const NodePatch &p) {
   NodeSettingsPatch patch;
   patch.node = p;
-  applyPatch(patch);
+  applySettingsPatch(patch);
 }
 
 void Node::applyPaintPatch(const PaintStylePatch &p) {
   NodeSettingsPatch patch;
   patch.paint = p;
-  applyPatch(patch);
+  applySettingsPatch(patch);
 }
 
 void Node::applyVisualPatch(const VisualPatch &p) {
   NodeSettingsPatch patch;
   patch.visual = p;
-  applyPatch(patch);
+  applySettingsPatch(patch);
 }
 
 void Node::applyInputPatch(const InputPatch &p) {
   NodeSettingsPatch patch;
   patch.input = p;
-  applyPatch(patch);
+  applySettingsPatch(patch);
 }
 
 void Node::applySemanticPatch(const SemanticPatch &p) {
   NodeSettingsPatch patch;
   patch.semantics = p;
-  applyPatch(patch);
+  applySettingsPatch(patch);
 }
 
 void Node::setBoxProps(layout::BoxProps value) {
-  auto p = props();
+  auto p = settings();
   p.box = value;
-  setProps(std::move(p));
+  setSettings(std::move(p));
 }
 
 void Node::setVisibility(Visibility value) {
@@ -288,18 +291,40 @@ void Node::setBackground(std::optional<math::ColorRGBA8> value) {
 }
 
 void Node::invalidate(DirtyFlags flags) noexcept {
-  _dirty = _dirty | flags;
   _pendingChanges = _pendingChanges | flags;
   ++_sourceRevision;
-  if (any(flags &
-          (DirtyFlags::Paint | DirtyFlags::Measure | DirtyFlags::Arrange)))
-    for (auto *ancestor = this; ancestor; ancestor = ancestor->_parent)
-      ++ancestor->_subtreePaintRevision;
-  if (any(flags & DirtyFlags::Measure)) {
-    _measurement.reset();
-    ++_revision;
+  bool layout = any(flags & (DirtyFlags::Measure | DirtyFlags::Arrange));
+  const bool paint = layout || any(flags & DirtyFlags::Paint);
+  auto table = _table.lock();
+  for (auto *node = this; node; node = node->_parent) {
+    if (table && table->stats)
+      ++table->stats->invalidationVisits;
+    if (paint)
+      ++node->_subtreePaintRevision;
+    if (node == this)
+      node->_dirty = node->_dirty | flags;
+    else if (layout)
+      node->_dirty = node->_dirty | DirtyFlags::Measure | DirtyFlags::Arrange;
+    if (layout) {
+      node->_measurement.reset();
+      node->_previousMeasurement.reset();
+      ++node->_revision;
+      ++node->_arrangeRevision;
+    }
+    if (layout && node != this && node->isolatesChildLayout() && table &&
+        node->_arranged) {
+      try {
+        if (std::find(table->layoutBoundaries.begin(),
+                      table->layoutBoundaries.end(),
+                      node->_id) == table->layoutBoundaries.end())
+          table->layoutBoundaries.push_back(node->_id);
+        layout = false;
+      } catch (...) {
+        // Allocation refusal falls back to a full ancestor layout pass.
+      }
+    }
   }
-  if (auto table = _table.lock()) {
+  if (table) {
     ++table->revision;
     table->layoutDirty |=
         any(flags & (DirtyFlags::Measure | DirtyFlags::Arrange));
@@ -314,8 +339,6 @@ void Node::invalidate(DirtyFlags flags) noexcept {
       }
     }
   }
-  if (_parent && any(flags & DirtyFlags::Measure))
-    _parent->invalidate(flags);
 }
 
 bool Node::hasActiveInputInSubtree() const noexcept {
@@ -351,8 +374,17 @@ math::Insets Node::contentInsets() const noexcept {
 layout::MeasureResult Node::measure(MeasureContext &context,
                                     const layout::SizeConstraints &offered) {
   offered.validate();
+  if (context.stats)
+    ++context.stats->measureRequests;
   if (visibility() == Visibility::Collapsed)
     return {};
+  if (canReuseMeasurementOffers() && _previousMeasurement &&
+      _previousMeasurement->constraints == offered &&
+      _previousMeasurement->revision == _revision &&
+      _previousMeasurement->environment == context.environmentRevision &&
+      _previousMeasurement->pixelScale == context.pixelScale &&
+      _previousMeasurement->direction == context.direction)
+    std::swap(_measurement, _previousMeasurement);
   if (_measurement && _measurement->constraints == offered &&
       _measurement->revision == _revision &&
       _measurement->environment == context.environmentRevision &&
@@ -364,6 +396,9 @@ layout::MeasureResult Node::measure(MeasureContext &context,
   }
   if (context.stats)
     ++context.stats->measured;
+  // A custom measurement may update constraint-dependent derived state.
+  if (!canReuseMeasurementOffers())
+    ++_arrangeRevision;
   const auto insets = contentInsets();
   const float horizontal =
       layout::detail::checked(static_cast<double>(insets.left) + insets.right);
@@ -429,10 +464,13 @@ layout::MeasureResult Node::measure(MeasureContext &context,
       contentAxis(effective.height, height, vertical)};
   {
     _preparingChildren = true;
+
     struct Guard {
       bool &flag;
+
       ~Guard() { flag = false; }
     } guard{_preparingChildren};
+
     prepareChildren(context, inner);
   }
   const auto measuredRevision = _revision;
@@ -464,10 +502,16 @@ layout::MeasureResult Node::measure(MeasureContext &context,
   for (auto *baseline : {&result.firstBaseline, &result.lastBaseline})
     if (*baseline && (**baseline < 0 || **baseline > result.size.height))
       baseline->reset();
-  if (_revision == measuredRevision)
+  if (_revision == measuredRevision) {
+    if ((canReuseMeasurementOffers() ? _previousMeasurement : _measurement) &&
+        context.stats)
+      ++context.stats->measureCacheEvictions;
+    if (canReuseMeasurementOffers())
+      _previousMeasurement = _measurement;
     _measurement = Measurement{
         offered,           _revision,          context.environmentRevision,
         context.direction, context.pixelScale, result};
+  }
   return result;
 }
 
@@ -476,6 +520,17 @@ void Node::arrange(ArrangeContext &context, math::Rect bounds) {
       !std::isfinite(bounds.size.width) || !std::isfinite(bounds.size.height) ||
       bounds.size.width < 0 || bounds.size.height < 0)
     throw std::invalid_argument("Invalid arranged UI rectangle");
+  if (context.stats)
+    ++context.stats->arrangeRequests;
+  if (_arranged && _bounds == bounds && _arrangedRevision == _arrangeRevision &&
+      _arrangedEnvironment == context.environmentRevision &&
+      _arrangedDirection == context.direction &&
+      _arrangedPixelScale == context.pixelScale) {
+    if (context.stats)
+      ++context.stats->arrangeSkips;
+    return;
+  }
+  const auto revision = _arrangeRevision;
   _bounds = bounds;
   _arranged = false;
   if (context.stats)
@@ -491,20 +546,31 @@ void Node::arrange(ArrangeContext &context, math::Rect bounds) {
        std::max(0.0f, bounds.size.height - insets.top - insets.bottom)}};
   arrangeChildren(context, content);
   _layoutResult = {bounds, content, {{}, bounds.size}};
-  for (const auto &child : _children)
-    if (child->visibility() != Visibility::Collapsed)
-      _layoutResult.overflowBounds =
-          math::unite(_layoutResult.overflowBounds,
-                      child->localTransform().mapBounds(
-                          child->layoutResult().overflowBounds));
+  refreshOverflow();
   _arranged = true;
+  _arrangedRevision = revision;
+  _arrangedEnvironment = context.environmentRevision;
+  _arrangedDirection = context.direction;
+  _arrangedPixelScale = context.pixelScale;
   // Placement/environment changes can alter a cached descendant raster even
   // when no authored props changed. Do not schedule another layout pass.
   _dirty = _dirty | DirtyFlags::Paint | DirtyFlags::HitTest;
   for (auto *ancestor = this; ancestor; ancestor = ancestor->_parent)
     ++ancestor->_subtreePaintRevision;
-  if (auto table = _table.lock())
+  if (auto table = _table.lock()) {
     table->paintDirty = true;
+    ++table->geometryRevision;
+  }
+}
+
+void Node::refreshOverflow() {
+  _layoutResult.overflowBounds = {{}, _bounds.size};
+  for (const auto &child : _children)
+    if (!child->isPortal() && child->visibility() != Visibility::Collapsed)
+      _layoutResult.overflowBounds =
+          math::unite(_layoutResult.overflowBounds,
+                      child->localTransform().mapBounds(
+                          child->layoutResult().overflowBounds));
 }
 
 void Node::prepareSubtree(PrepareContext context,
@@ -531,7 +597,8 @@ void Node::prepareSubtree(PrepareContext context,
   if (context.stats)
     ++context.stats->prepared;
   for (auto &child : _children)
-    child->prepareSubtree(context, localToPixels);
+    if (!child->isPortal())
+      child->prepareSubtree(context, localToPixels);
 }
 
 void Node::prepare(PrepareContext context) {
@@ -544,13 +611,16 @@ void Node::prepare(PrepareContext context) {
 math::Rect Node::paintBounds() const {
   math::Rect result{{}, _bounds.size};
   for (const auto &child : _children)
-    if (child->visibility() == Visibility::Visible && child->isArranged())
+    if (!child->isPortal() && child->visibility() == Visibility::Visible &&
+        child->isArranged())
       result = math::unite(
           result, child->localTransform().mapBounds(child->paintBounds()));
   return clipsContent() ? math::intersect(result, clipBounds()) : result;
 }
 
-void Node::render(PaintContext &context) const {
+void Node::render(PaintContext &context, bool overlayPresentation) const {
+  if (isPortal() && !overlayPresentation)
+    return;
   if (visibility() != Visibility::Visible || !_arranged ||
       _paintStyle.opacity == 0 || !_visualProps.transform.inverse())
     return;
@@ -563,6 +633,8 @@ void Node::render(PaintContext &context) const {
     layer.emplace(context, paintBounds(), _paintStyle.opacity);
   if (_paintStyle.background)
     context.fill({{}, _bounds.size}, *_paintStyle.background);
+  else if (_paintStyle.themeBackground)
+    context.fill({{}, _bounds.size}, theme().surface);
   if (_paintStyle.borderColor) {
     const auto b = _box.borderWidths;
     const float w = _bounds.w(), h = _bounds.h();

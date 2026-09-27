@@ -7,7 +7,8 @@ ZStack::measureContent(MeasureContext &context,
                        const layout::SizeConstraints &offered) {
   math::Size2 result;
   for (std::size_t i = 0; i < children().size(); ++i) {
-    if (children()[i]->visibility() == Visibility::Collapsed)
+    if (children()[i]->isPortal() ||
+        children()[i]->visibility() == Visibility::Collapsed)
       continue;
     const auto margin = placementInParent(i).margin;
     const auto measured = children()[i]->measure(
@@ -24,7 +25,8 @@ ZStack::measureContent(MeasureContext &context,
 
 void ZStack::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
   for (std::size_t i = 0; i < children().size(); ++i) {
-    if (children()[i]->visibility() == Visibility::Collapsed)
+    if (children()[i]->isPortal() ||
+        children()[i]->visibility() == Visibility::Collapsed)
       continue;
     const auto &placement = placementInParent(i);
     container_detail::placeAligned(

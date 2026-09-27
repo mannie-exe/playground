@@ -1,12 +1,22 @@
 #pragma once
 
+#include <string>
+
+#include <SDL3/SDL_scancode.h>
+
 #include <app/IApp.hpp>
 #include <rock_paper_scissors/Config.hpp>
 
 namespace rock_paper_scissors = playground::rock_paper_scissors::config;
 
-class RockPaperScissors : public IApp {
+class RockPaperScissorsApp : public IApp {
 public:
+  RockPaperScissorsApp() {
+    input().addContext({.name = "navigation",
+                        .stage = playground::input::InputStage::BeforeUI},
+                       {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
+  }
+
   static AppInfo staticInfo() {
     return AppInfo{
         .id = AppId::RockPaperScissors,
@@ -21,6 +31,9 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
-  void render(AppContext &ctx,
-              playground::rendering::RenderFrame &frame) override {}
+  void onActions(AppContext &ctx,
+                 const playground::input::InputSnapshot &actions) override {
+    if (actions["back"].pressed)
+      ctx.requestMenu();
+  }
 };

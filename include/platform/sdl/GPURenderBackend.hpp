@@ -2,6 +2,7 @@
 
 #include <platform/sdl/GPUResources.hpp>
 #include <rendering/RenderBackend.hpp>
+#include <rendering/RenderBackendProps.hpp>
 
 namespace playground::sdl {
 
@@ -14,7 +15,8 @@ class GPURenderBackend final : public rendering::RenderBackend {
   std::unique_ptr<Impl> _impl;
 
 public:
-  GPURenderBackend(SDL_Window &window, rendering::GPUDriver driver);
+  GPURenderBackend(SDL_Window &window, rendering::GPUDriver driver,
+                   const rendering::RenderBackendProps &props = {});
   ~GPURenderBackend() override;
   rendering::ResourceDomainId resourceDomain() const noexcept override;
   std::uint64_t completedWork() override;
@@ -22,6 +24,8 @@ public:
   void setProfilingEnabled(bool enabled) override;
   bool supportsGPUTiming() const noexcept override;
   std::vector<rendering::GPUTimingSample> takeGPUTimings() override;
+  rendering::GPUTimingCollection gpuTimingCollection() const override;
+  std::optional<rendering::PaintWork> takePaintWork() override;
   rendering::RendererCandidate description() const override;
   void prepare(rendering::RendererRequirements requirements) override;
   math::Vec2i drawableSize() const override;

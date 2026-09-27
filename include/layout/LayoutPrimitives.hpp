@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "math/Geometry2D.hpp"
-#include "ui/Patch.hpp"
+#include "support/Patch.hpp"
 
 namespace playground::layout {
 
@@ -19,7 +19,6 @@ using math::Insets;
 using math::Point2;
 using math::Rect;
 using math::Size2;
-using ui::Patch;
 
 enum class Axis { Horizontal, Vertical };
 enum class LayoutDirection { LeftToRight, RightToLeft };
@@ -48,6 +47,7 @@ enum class LengthKind { Units, Percent };
 class Length {
   LengthKind _kind{LengthKind::Units};
   float _value{};
+
   Length(LengthKind kind, float value) : _kind{kind}, _value{value} {
     if (!std::isfinite(value) || value < 0)
       throw std::invalid_argument("Length must be finite and nonnegative");
@@ -55,10 +55,15 @@ class Length {
 
 public:
   Length() = default;
+
   static Length units(float value) { return {LengthKind::Units, value}; }
+
   static Length percent(float value) { return {LengthKind::Percent, value}; }
+
   LengthKind kind() const noexcept { return _kind; }
+
   float value() const noexcept { return _value; }
+
   std::optional<float> resolve(std::optional<float> basis) const {
     if (_kind == LengthKind::Units)
       return _value;
@@ -71,6 +76,7 @@ public:
       throw std::overflow_error("Length exceeds float range");
     return static_cast<float>(value);
   }
+
   bool operator==(const Length &) const = default;
 };
 
@@ -79,16 +85,19 @@ inline void nonnegative(float value, const char *message) {
   if (!std::isfinite(value) || value < 0)
     throw std::invalid_argument(message);
 }
+
 inline void finite(float value, const char *message) {
   if (!std::isfinite(value))
     throw std::invalid_argument(message);
 }
+
 inline void insets(const Insets &value) {
   nonnegative(value.top, "Inset must be finite and nonnegative");
   nonnegative(value.right, "Inset must be finite and nonnegative");
   nonnegative(value.bottom, "Inset must be finite and nonnegative");
   nonnegative(value.left, "Inset must be finite and nonnegative");
 }
+
 inline float checked(double value) {
   if (!std::isfinite(value) ||
       value > static_cast<double>(std::numeric_limits<float>::max()))
@@ -100,10 +109,13 @@ inline float checked(double value) {
 struct Alignment {
   Align horizontal{Align::Start};
   Align vertical{Align::Start};
+
   static constexpr Alignment center() { return {Align::Center, Align::Center}; }
+
   static constexpr Alignment stretch() {
     return {Align::Stretch, Align::Stretch};
   }
+
   bool operator==(const Alignment &) const = default;
 };
 
@@ -119,21 +131,25 @@ struct AxisConstraints {
         throw std::invalid_argument("Maximum is below minimum");
     }
   }
+
   static AxisConstraints tight(float value) {
     AxisConstraints result{value, value};
     result.validate();
     return result;
   }
+
   static AxisConstraints bounded(float minimum, float maximum) {
     AxisConstraints result{minimum, maximum};
     result.validate();
     return result;
   }
+
   static AxisConstraints unbounded(float minimum = 0) {
     AxisConstraints result{minimum, std::nullopt};
     result.validate();
     return result;
   }
+
   float clamp(float value) const {
     validate();
     detail::nonnegative(value,
@@ -141,6 +157,7 @@ struct AxisConstraints {
     return maximum ? std::clamp(value, minimum, *maximum)
                    : std::max(value, minimum);
   }
+
   AxisConstraints deflated(float amount) const {
     validate();
     detail::nonnegative(amount, "Deflation must be finite and nonnegative");
@@ -148,23 +165,28 @@ struct AxisConstraints {
             maximum ? std::optional{std::max(0.0f, *maximum - amount)}
                     : std::nullopt};
   }
+
   bool operator==(const AxisConstraints &) const = default;
 };
 
 struct SizeConstraints {
   AxisConstraints width;
   AxisConstraints height;
+
   void validate() const {
     width.validate();
     height.validate();
   }
+
   static SizeConstraints tight(Size2 size) {
     return {AxisConstraints::tight(size.width),
             AxisConstraints::tight(size.height)};
   }
+
   Size2 clamp(Size2 value) const {
     return {width.clamp(value.width), height.clamp(value.height)};
   }
+
   SizeConstraints deflated(Insets value) const {
     detail::insets(value);
     return {width.deflated(
@@ -172,28 +194,37 @@ struct SizeConstraints {
             height.deflated(detail::checked(static_cast<double>(value.top) +
                                             value.bottom))};
   }
+
   bool operator==(const SizeConstraints &) const = default;
 };
 
 class SizeRule {
   SizeKind _kind{SizeKind::Content};
   float _value{};
+
   constexpr SizeRule(SizeKind kind, float value) : _kind(kind), _value(value) {}
 
 public:
   constexpr SizeRule() = default;
+
   static constexpr SizeRule content() { return {}; }
+
   static SizeRule fixed(float units) {
     detail::nonnegative(units, "Fixed size must be finite and nonnegative");
     return {SizeKind::Fixed, units};
   }
+
   static SizeRule percent(float fraction) {
     detail::nonnegative(fraction, "Percentage must be finite and nonnegative");
     return {SizeKind::Percent, fraction};
   }
+
   static constexpr SizeRule fill() { return {SizeKind::Fill, 0}; }
+
   constexpr SizeKind kind() const noexcept { return _kind; }
+
   constexpr float value() const noexcept { return _value; }
+
   bool operator==(const SizeRule &) const = default;
 };
 
@@ -216,6 +247,7 @@ struct BoxProps {
     if (aspectRatio && (!std::isfinite(*aspectRatio) || *aspectRatio <= 0))
       throw std::invalid_argument("Aspect ratio must be finite and positive");
   }
+
   bool operator==(const BoxProps &) const = default;
 };
 
@@ -253,6 +285,7 @@ struct MeasureResult {
   Size2 size;
   std::optional<float> firstBaseline;
   std::optional<float> lastBaseline;
+
   void validate() const {
     detail::nonnegative(size.width,
                         "Measured width must be finite and nonnegative");
@@ -267,6 +300,7 @@ struct MeasureResult {
     if (firstBaseline && lastBaseline && *firstBaseline > *lastBaseline)
       throw std::invalid_argument("First baseline is after last baseline");
   }
+
   bool operator==(const MeasureResult &) const = default;
 };
 
@@ -280,9 +314,12 @@ struct LayoutResult {
 struct BoxPlacement {
   Insets margin;
   std::optional<Alignment> alignmentOverride;
+
   void validate() const { detail::insets(margin); }
+
   bool operator==(const BoxPlacement &) const = default;
 };
+
 using LayerPlacement = BoxPlacement;
 
 struct StackPlacement {
@@ -290,11 +327,13 @@ struct StackPlacement {
   float grow{};
   float shrink{1};
   std::optional<CrossAlignment> crossAlignmentOverride;
+
   void validate() const {
     detail::insets(margin);
     detail::nonnegative(grow, "Grow weight must be finite and nonnegative");
     detail::nonnegative(shrink, "Shrink weight must be finite and nonnegative");
   }
+
   bool operator==(const StackPlacement &) const = default;
 };
 
@@ -302,6 +341,7 @@ struct StackProps {
   float gap{};
   Distribution distribution{Distribution::Start};
   CrossAlignment childrenAlignment{CrossAlignment::Start};
+
   void validate(Axis axis = Axis::Horizontal) const {
     detail::nonnegative(gap, "Stack gap must be finite and nonnegative");
     if (axis == Axis::Vertical &&
@@ -310,6 +350,7 @@ struct StackProps {
       throw std::invalid_argument(
           "Vertical stacks do not support baseline alignment");
   }
+
   bool operator==(const StackProps &) const = default;
 };
 
@@ -317,18 +358,22 @@ class TrackSize {
   TrackKind _kind{TrackKind::Content};
   float _value{};
   AxisConstraints _limits;
+
   TrackSize(TrackKind kind, float value, AxisConstraints limits)
       : _kind(kind), _value(value), _limits(limits) {}
 
 public:
   TrackSize() = default;
+
   static TrackSize fixed(float units) {
     return {TrackKind::Fixed, units, AxisConstraints::tight(units)};
   }
+
   static TrackSize content(AxisConstraints limits = {}) {
     limits.validate();
     return {TrackKind::Content, 0, limits};
   }
+
   static TrackSize fraction(float weight = 1, AxisConstraints limits = {}) {
     if (!std::isfinite(weight) || weight <= 0)
       throw std::invalid_argument(
@@ -336,9 +381,13 @@ public:
     limits.validate();
     return {TrackKind::Fraction, weight, limits};
   }
+
   TrackKind kind() const noexcept { return _kind; }
+
   float value() const noexcept { return _value; }
+
   const AxisConstraints &limits() const noexcept { return _limits; }
+
   bool operator==(const TrackSize &) const = default;
 };
 
@@ -349,6 +398,7 @@ struct GridPlacement {
   std::size_t columnSpan{1};
   Insets margin;
   std::optional<Alignment> alignmentOverride;
+
   void validate() const {
     detail::insets(margin);
     if (!rowSpan || !columnSpan)
@@ -358,6 +408,7 @@ struct GridPlacement {
          *column > std::numeric_limits<std::size_t>::max() - columnSpan))
       throw std::invalid_argument("Grid span exceeds index range");
   }
+
   bool operator==(const GridPlacement &) const = default;
 };
 
@@ -369,6 +420,7 @@ struct GridProps {
   Alignment childrenAlignment{Alignment::stretch()};
   bool allowOverlap{};
   TrackSize implicitTrack;
+
   void validate(bool hasChildren = true) const {
     detail::nonnegative(gap.horizontal,
                         "Grid gap must be finite and nonnegative");
@@ -378,6 +430,7 @@ struct GridProps {
       throw std::invalid_argument(
           "A nonempty grid needs row and column tracks");
   }
+
   bool operator==(const GridProps &) const = default;
 };
 
@@ -387,11 +440,13 @@ struct FlowProps {
   float lineGap{};
   Distribution distribution{Distribution::Start};
   CrossAlignment childrenAlignment{CrossAlignment::Start};
+
   void validate() const {
     StackProps{itemGap, distribution, childrenAlignment}.validate(mainAxis);
     detail::nonnegative(lineGap,
                         "Flow line gap must be finite and nonnegative");
   }
+
   bool operator==(const FlowProps &) const = default;
 };
 
@@ -399,6 +454,7 @@ struct AnchorPosition {
   float parentFraction{};
   float selfFraction{};
   float offset{};
+
   void validate() const {
     if (!std::isfinite(parentFraction) || parentFraction < 0 ||
         parentFraction > 1 || !std::isfinite(selfFraction) ||
@@ -407,36 +463,45 @@ struct AnchorPosition {
           "Anchor fractions must be between zero and one");
     detail::finite(offset, "Anchor offset must be finite");
   }
+
   static AnchorPosition start(float offset = 0) { return {0, 0, offset}; }
+
   static AnchorPosition center(float offset = 0) {
     return {0.5f, 0.5f, offset};
   }
+
   static AnchorPosition end(float offset = 0) { return {1, 1, offset}; }
+
   bool operator==(const AnchorPosition &) const = default;
 };
 
 struct StretchBetween {
   float startInset{};
   float endInset{};
+
   void validate() const {
     detail::nonnegative(startInset,
                         "Anchor inset must be finite and nonnegative");
     detail::nonnegative(endInset,
                         "Anchor inset must be finite and nonnegative");
   }
+
   bool operator==(const StretchBetween &) const = default;
 };
+
 using AnchorAxis = std::variant<AnchorPosition, StretchBetween>;
 
 struct AnchorPlacement {
   AnchorAxis horizontal{AnchorPosition{}};
   AnchorAxis vertical{AnchorPosition{}};
   Insets margin;
+
   void validate() const {
     std::visit([](const auto &axis) { axis.validate(); }, horizontal);
     std::visit([](const auto &axis) { axis.validate(); }, vertical);
     detail::insets(margin);
   }
+
   bool operator==(const AnchorPlacement &) const = default;
 };
 

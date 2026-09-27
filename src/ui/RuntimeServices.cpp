@@ -29,10 +29,13 @@ void Scheduler::advance(double seconds) {
   if (_advancing)
     throw std::logic_error("Cannot recursively advance UI timers");
   _advancing = true;
+
   struct Guard {
     bool &active;
+
     ~Guard() { active = false; }
   } guard{_advancing};
+
   _now += seconds;
   const auto boundary = _order;
   while (!_timers.empty()) {
@@ -58,14 +61,17 @@ void Scheduler::advance(double seconds) {
       timer->active = false;
     }
     timer->executing = true;
+
     struct InvocationGuard {
       Timer &timer;
+
       ~InvocationGuard() {
         timer.executing = false;
         if (!timer.active)
           timer.callback = nullptr;
       }
     } invocation{*timer};
+
     timer->callback();
   }
 }

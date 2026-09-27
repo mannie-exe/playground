@@ -19,7 +19,7 @@ void Grid::validatePlacementAt(const layout::GridPlacement &p,
   }
 }
 
-void Grid::setProps(layout::GridProps value) {
+void Grid::setGridProps(layout::GridProps value) {
   value.validate(!children().empty());
   if (value == _props)
     return;
@@ -43,17 +43,18 @@ void Grid::setProps(layout::GridProps value) {
   invalidateLayout();
 }
 
-void Grid::applyPatch(const GridPatch &p) {
+void Grid::applyGridPatch(const GridPatch &p) {
   const layout::GridProps d;
-  setProps({p.columns.appliedTo(_props.columns, d.columns),
-            p.rows.appliedTo(_props.rows, d.rows),
-            p.gap.appliedTo(_props.gap, d.gap),
-            p.autoPlacementAxis.appliedTo(_props.autoPlacementAxis,
-                                          d.autoPlacementAxis),
-            p.childrenAlignment.appliedTo(_props.childrenAlignment,
-                                          d.childrenAlignment),
-            p.allowOverlap.appliedTo(_props.allowOverlap, d.allowOverlap),
-            p.implicitTrack.appliedTo(_props.implicitTrack, d.implicitTrack)});
+  setGridProps(
+      {p.columns.appliedTo(_props.columns, d.columns),
+       p.rows.appliedTo(_props.rows, d.rows),
+       p.gap.appliedTo(_props.gap, d.gap),
+       p.autoPlacementAxis.appliedTo(_props.autoPlacementAxis,
+                                     d.autoPlacementAxis),
+       p.childrenAlignment.appliedTo(_props.childrenAlignment,
+                                     d.childrenAlignment),
+       p.allowOverlap.appliedTo(_props.allowOverlap, d.allowOverlap),
+       p.implicitTrack.appliedTo(_props.implicitTrack, d.implicitTrack)});
 }
 
 void Grid::applyPlacementPatch(std::size_t index, const GridPlacementPatch &p) {
@@ -74,13 +75,13 @@ void Grid::setTracks(std::vector<layout::TrackSize> columns,
   auto p = _props;
   p.columns = std::move(columns);
   p.rows = std::move(rows);
-  setProps(std::move(p));
+  setGridProps(std::move(p));
 }
 
 void Grid::setGap(math::Gap2 gap) {
   auto p = _props;
   p.gap = gap;
-  setProps(std::move(p));
+  setGridProps(std::move(p));
 }
 
 layout::MeasureResult

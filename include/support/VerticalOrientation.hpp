@@ -9,11 +9,13 @@
 // License: docs/licenses/UNICODE.txt. Ranges with default R are omitted.
 namespace playground::ui {
 enum class VerticalOrientation { R, U, Tu, Tr };
+
 inline VerticalOrientation verticalOrientation(char32_t codepoint) {
   struct Range {
     char32_t first, last;
     VerticalOrientation value;
   };
+
   static constexpr std::array<Range, 189> ranges{{
       {0xa7, 0xa7, VerticalOrientation::U},
       {0xa9, 0xa9, VerticalOrientation::U},

@@ -241,6 +241,7 @@ constexpr std::string_view toString(AnchorAttribute value) {
   return "Unknown";
 }
 } // namespace playground::layout
+
 template <>
 struct std::formatter<playground::layout::AnchorAttribute>
     : std::formatter<std::string_view> {
@@ -264,6 +265,7 @@ constexpr std::string_view toString(ConstraintRelation value) {
   return "Unknown";
 }
 } // namespace playground::layout
+
 template <>
 struct std::formatter<playground::layout::ConstraintRelation>
     : std::formatter<std::string_view> {
@@ -289,6 +291,7 @@ constexpr std::string_view toString(ConstraintStrength value) {
   return "Unknown";
 }
 } // namespace playground::layout
+
 template <>
 struct std::formatter<playground::layout::ConstraintStrength>
     : std::formatter<std::string_view> {

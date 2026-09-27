@@ -15,6 +15,7 @@ struct VirtualListProps {
   float overscan{64};
   float wheelStep{32};
   bool operator==(const VirtualListProps &) const = default;
+
   void validate() const {
     if (!std::isfinite(itemExtent) || itemExtent <= 0)
       throw std::invalid_argument(
@@ -51,21 +52,26 @@ class VirtualList : public detail::KeyedChildren {
   float main(math::Size2 size) const {
     return _props.axis == layout::Axis::Vertical ? size.height : size.width;
   }
+
   float cross(math::Size2 size) const {
     return _props.axis == layout::Axis::Vertical ? size.width : size.height;
   }
+
   float extent() const {
     return layout::detail::checked(
         std::max(0.0, _extents.total() - (_keys.empty() ? 0 : _props.gap)));
   }
+
   void clampOffset() {
     _offset =
         std::clamp(_offset, 0.0f, std::max(0.0f, extent() - main(_viewport)));
   }
+
   struct Anchor {
     ItemKey key;
     float within;
   };
+
   std::optional<Anchor> anchor() const;
   void restoreAnchor(const std::optional<Anchor> &value);
   void rebuildIndex();
@@ -83,13 +89,20 @@ public:
   VirtualList(std::shared_ptr<const CollectionSource> source,
               ItemFactory factory, VirtualListProps props = {},
               layout::BoxProps box = {});
+
   const VirtualListProps &props() const noexcept { return _props; }
+
   void applyPatch(const VirtualListPatch &p);
   void setProps(VirtualListProps props);
+
   float offset() const noexcept { return _offset; }
+
   float contentExtent() const { return extent(); }
+
   math::Size2 viewportExtent() const noexcept { return _viewport; }
+
   std::span<const ItemKey> visibleKeys() const noexcept { return _visible; }
+
   void setOffset(float value);
   void scrollToKey(const ItemKey &key);
   void refreshItem(const ItemKey &key) override;

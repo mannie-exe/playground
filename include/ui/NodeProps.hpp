@@ -8,7 +8,8 @@
 
 #include <layout/LayoutPrimitives.hpp>
 #include <math/Color.hpp>
-#include <ui/Patch.hpp>
+#include <support/Patch.hpp>
+#include <ui/NodeIdentity.hpp>
 
 namespace playground::ui {
 
@@ -17,7 +18,36 @@ using ItemKey = std::string;
 
 enum class Visibility { Visible, Hidden, Collapsed };
 enum class HitTestPolicy { None, ChildrenOnly, Self, SelfAndChildren };
-enum class SemanticRole { None, Group, Button, Text, Image, ScrollArea };
+enum class SemanticRole {
+  None,
+  Group,
+  Button,
+  Text,
+  Image,
+  ScrollArea,
+  Checkbox,
+  Switch,
+  Radio,
+  RadioGroup,
+  Slider,
+  SpinButton,
+  TextField,
+  TextArea,
+  Password,
+  ListBox,
+  Option,
+  Select,
+  Disclosure,
+  Tabs,
+  Tab,
+  Dialog,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Progress,
+  Status
+};
+enum class SemanticExposure { Auto, Self, ChildrenOnly, HiddenSubtree };
 enum class DirtyFlags : unsigned {
   None = 0,
   Measure = 1,
@@ -27,14 +57,17 @@ enum class DirtyFlags : unsigned {
   Semantics = 16,
   All = 31
 };
+
 constexpr DirtyFlags operator|(DirtyFlags a, DirtyFlags b) {
   return static_cast<DirtyFlags>(static_cast<unsigned>(a) |
                                  static_cast<unsigned>(b));
 }
+
 constexpr DirtyFlags operator&(DirtyFlags a, DirtyFlags b) {
   return static_cast<DirtyFlags>(static_cast<unsigned>(a) &
                                  static_cast<unsigned>(b));
 }
+
 constexpr bool any(DirtyFlags flags) { return flags != DirtyFlags::None; }
 
 struct ChangeSet {
@@ -48,6 +81,7 @@ struct NodeProps {
   std::optional<ItemKey> key;
   bool operator==(const NodeProps &) const = default;
 };
+
 struct NodePatch {
   Patch<Visibility> visibility;
   Patch<std::optional<std::string>> debugName;
@@ -58,16 +92,21 @@ struct PaintStyle {
   std::optional<math::ColorRGBA8> background;
   std::optional<math::ColorRGBA8> borderColor;
   float opacity{1};
+  bool themeBackground{};
+
   void validate() const {
     if (!std::isfinite(opacity) || opacity < 0 || opacity > 1)
       throw std::invalid_argument("Opacity must be in [0,1]");
   }
+
   bool operator==(const PaintStyle &) const = default;
 };
+
 struct PaintStylePatch {
   Patch<std::optional<math::ColorRGBA8>> background;
   Patch<std::optional<math::ColorRGBA8>> borderColor;
   Patch<float> opacity;
+  Patch<bool> themeBackground;
 };
 
 struct VisualProps {
@@ -75,6 +114,7 @@ struct VisualProps {
   math::Point2 pivot{0.5f, 0.5f};
   layout::OverflowPolicy overflow{layout::OverflowPolicy::Visible};
   std::optional<math::Rect> clipRect;
+
   void validate() const {
     for (float value : {transform.a, transform.b, transform.c, transform.d,
                         transform.tx, transform.ty, pivot.x, pivot.y})
@@ -84,8 +124,10 @@ struct VisualProps {
         (!math::isFinite(*clipRect) || clipRect->w() < 0 || clipRect->h() < 0))
       throw std::invalid_argument("Invalid clip rectangle");
   }
+
   bool operator==(const VisualProps &) const = default;
 };
+
 struct VisualPatch {
   Patch<math::Transform2D> transform;
   Patch<math::Point2> pivot;
@@ -93,14 +135,26 @@ struct VisualPatch {
   Patch<std::optional<math::Rect>> clipRect;
 };
 
+struct FocusNeighbors {
+  std::optional<NodeId> next, previous, left, right, up, down;
+  bool operator==(const FocusNeighbors &) const = default;
+};
+
 struct InputProps {
   HitTestPolicy hitTest{HitTestPolicy::ChildrenOnly};
   bool focusable{};
+  bool focusScope{};
+  bool modal{};
+  bool wrapNavigation{true};
+  FocusNeighbors neighbors;
   bool operator==(const InputProps &) const = default;
 };
+
 struct InputPatch {
   Patch<HitTestPolicy> hitTest;
   Patch<bool> focusable;
+  Patch<bool> focusScope, modal, wrapNavigation;
+  Patch<FocusNeighbors> neighbors;
 };
 
 struct SemanticProps {
@@ -109,14 +163,20 @@ struct SemanticProps {
   std::string description;
   std::optional<std::string> value;
   bool enabled{true};
+  SemanticExposure exposure{SemanticExposure::Auto};
+  std::optional<NodeId> labelledBy;
+  std::optional<NodeId> describedBy;
   bool operator==(const SemanticProps &) const = default;
 };
+
 struct SemanticPatch {
   Patch<SemanticRole> role;
   Patch<std::string> name;
   Patch<std::string> description;
   Patch<std::optional<std::string>> value;
   Patch<bool> enabled;
+  Patch<SemanticExposure> exposure;
+  Patch<std::optional<NodeId>> labelledBy, describedBy;
 };
 
 struct NodeSettings {
@@ -126,13 +186,16 @@ struct NodeSettings {
   VisualProps visual;
   InputProps input;
   SemanticProps semantics;
+
   void validate() const {
     box.validate();
     paint.validate();
     visual.validate();
   }
+
   bool operator==(const NodeSettings &) const = default;
 };
+
 struct NodeSettingsPatch {
   NodePatch node;
   layout::BoxPatch box;
@@ -153,7 +216,9 @@ inline NodeSettings patched(const NodeSettings &p, const NodeSettingsPatch &v) {
                                     defaults.paint.background),
        v.paint.borderColor.appliedTo(p.paint.borderColor,
                                      defaults.paint.borderColor),
-       v.paint.opacity.appliedTo(p.paint.opacity, defaults.paint.opacity)},
+       v.paint.opacity.appliedTo(p.paint.opacity, defaults.paint.opacity),
+       v.paint.themeBackground.appliedTo(p.paint.themeBackground,
+                                         defaults.paint.themeBackground)},
       {v.visual.transform.appliedTo(p.visual.transform,
                                     defaults.visual.transform),
        v.visual.pivot.appliedTo(p.visual.pivot, defaults.visual.pivot),
@@ -171,6 +236,18 @@ inline NodeSettings patched(const NodeSettings &p, const NodeSettingsPatch &v) {
        v.semantics.enabled.appliedTo(p.semantics.enabled,
                                      defaults.semantics.enabled)}};
   result.validate();
+  result.input.focusScope =
+      v.input.focusScope.appliedTo(p.input.focusScope, false);
+  result.input.modal = v.input.modal.appliedTo(p.input.modal, false);
+  result.input.wrapNavigation =
+      v.input.wrapNavigation.appliedTo(p.input.wrapNavigation, true);
+  result.input.neighbors = v.input.neighbors.appliedTo(p.input.neighbors, {});
+  result.semantics.exposure = v.semantics.exposure.appliedTo(
+      p.semantics.exposure, SemanticExposure::Auto);
+  result.semantics.labelledBy =
+      v.semantics.labelledBy.appliedTo(p.semantics.labelledBy, {});
+  result.semantics.describedBy =
+      v.semantics.describedBy.appliedTo(p.semantics.describedBy, {});
   return result;
 }
 
@@ -180,12 +257,14 @@ struct LayoutEnvironment {
   layout::LayoutDirection direction{layout::LayoutDirection::LeftToRight};
   math::Insets usableInsets;
   Revision revision{};
+
   void validate() const {
     layout::SizeConstraints::tight(viewport);
     if (!math::isFinite(pixelScale) || pixelScale.x <= 0 || pixelScale.y <= 0)
       throw std::invalid_argument("Display scale must be finite and positive");
     layout::detail::insets(usableInsets);
   }
+
   bool operator==(const LayoutEnvironment &) const = default;
 };
 

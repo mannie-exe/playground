@@ -26,6 +26,7 @@ protected:
   virtual void validatePlacement(const Placement &placement) const {
     placement.validate();
   }
+
   virtual void validatePlacementAt(const Placement &placement,
                                    std::optional<std::size_t>) const {
     validatePlacement(placement);
@@ -41,15 +42,21 @@ public:
         return i;
     throw std::out_of_range("Node is not a child of this container");
   }
+
   const Placement &placementOf(NodeId id) const {
     return placementInParent(indexOf(id));
   }
+
   void setPlacement(NodeId id, Placement value) {
     setPlacementInParent(indexOf(id), std::move(value));
   }
+
   std::unique_ptr<Node> takeChild(NodeId id) { return takeChild(indexOf(id)); }
+
   void remove(NodeId id) { remove(indexOf(id)); }
+
   void moveChild(NodeId id, std::size_t to) { moveChild(indexOf(id), to); }
+
   Node &reparentFrom(PlacementContainer &source, NodeId id,
                      Placement placement = {}) {
     validatePlacementAt(placement, {});
@@ -60,6 +67,7 @@ public:
     _placements.push_back(std::move(placement));
     return node;
   }
+
   const Placement &placementInParent(std::size_t index) const {
     return _placements.at(index);
   }

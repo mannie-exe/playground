@@ -20,6 +20,94 @@ profiling is disabled. Ready samples within one poll are returned in submission
 order, independent of recycled query-slot indices; a delayed result can still
 arrive in a later poll, so consumers retain domain/sequence identity.
 
+## Workload reports
+
+The reporting contract groups completed samples by resource domain, collection
+generation, stable workload label and optional source/target pixel extents.
+Extents describe the primary resource of that submission, not logical UI bounds;
+omit them for uploads or heterogeneous work without one meaningful extent.
+Presentation records the actual acquired swapchain extent, which may differ
+from the size observed at frame start. Metadata is retained with the timestamp
+ticket, never reconstructed from the current window when completion arrives.
+
+`PerformanceMonitor::snapshotReport()` returns CPU phase statistics, UI work,
+GPU groups and collection health as values. Duration and completion latency have
+independent counts, totals, minima, maxima and optional averages. No samples is
+not a zero-duration measurement. `report()` formats that snapshot and resets only
+the reporting interval; raw bounded history and timing availability survive.
+
+GPU counts cover completed samples **received during** the reporting interval,
+not necessarily submissions from its CPU frames. A report is not a GPU frame
+total or a utilization percentage; command intervals may overlap or contain
+dependencies. Exact CPU/GPU frame correlation is outside this contract.
+
+At most 64 groups are retained per interval. Additional groups increment an
+omitted-sample counter without blocking rendering or merging unrelated work.
+Collection health distinguishes pending queries, query-slot exhaustion and
+completed-sample buffer eviction. Pending is a current-generation gauge; loss
+counts are interval deltas of cumulative counters. Raw history eviction is an
+intentional retention policy, not a lost report sample. `historySize` bounds CPU
+frame entries and GPU sample entries separately; their counts need not match.
+
+Enabling native profiling starts a fresh collection generation. Old queries
+remain alive until safely completed/canceled, but their results cannot enter the
+new collection. Disabling profiling clears buffered results. Recovery creates a
+new resource domain. Neither reporting nor telemetry collection waits for GPU
+completion, introduces timestamp queries beyond the existing command scopes, or
+changes rendering, frame pacing or VSync.
+
+The host observes `PerformanceMonitor::statisticsRevision()` and restarts native
+collection after a full statistics reset. This includes an off/on pair between
+rendered frames. Report-only resets leave the revision unchanged. The current
+collection status remains measured after reporting; a new interval with no
+completed results explicitly reports zero received samples instead of replaying
+the previous interval's measurements.
+
+Workload names remain stable (`paint2d`, `presentation composition`, `scene3d`,
+`scene post-processing`, `text atlas`, `layer composition`, `custom offscreen`,
+`mesh upload`, and other explicitly named command scopes). A group represents a
+command-buffer interval, not necessarily one frame or one draw call. Captures
+can produce additional `paint2d` submissions. Do not put object IDs or sizes in
+labels; use the context fields. For composition, source is the internal render
+target and target is the acquired presentation image.
+
+### Reading a report
+
+F10 toggles collection; Shift+F10 reports immediately; F11 switches the automatic
+report interval between 60 and 300 CPU frames. Each report starts with CPU phases,
+then collection health and one row per GPU group, then UI work counters. GPU rows
+include independent execution-duration and observed-completion-latency statistics.
+`unspecified` extents and `unmeasured` latency mean absent metadata, not zero.
+The raw histories remain available for consumers independently of the report.
+
+CPU render/present phases include preparation, submission and possible waiting;
+they are not substitutes for GPU execution durations. Compare workload rows at
+the same source/target size and device domain. No summed GPU-frame duration, FPS
+cap, idle-render suppression or utilization estimate is introduced by reporting.
+
+Activity policy now independently permits whole-frame idle skipping; see
+[ACTIVITY.md](../platform/ACTIVITY.md). `Idle` reports wait count and accumulated
+milliseconds outside active CPU-frame totals. Reports remain active-frame-based;
+an idle window takes longer to reach 60 samples. Shift+F10 reports immediately.
+
+These aggregates do not measure input-to-display latency. Diagnose perceived wake
+delay by separating event arrival/polling, dispatch/update, first-frame preparation,
+GPU execution and presentation. Compare the first frame after idle with subsequent
+active frames; GPU clock changes and presentation waits are possible contributors,
+not conclusions from utilization alone. The host's 100 ms fallback timeout is not
+an input debounce: queued SDL input wakes the wait. GPU completion observation is
+also not a measurement of when pixels became visible on the display.
+
+`Paint` counts considered/rejected draw records, recorded quads/batches, streamed
+record bytes and rectangular/general/presentation path selection. These include
+offscreen text/layer work and composition; they are not fragment counts or GPU
+utilization or successful queue submission. The UI line includes native-publication builds/cache hits and phase
+time totals. Phase times overlap CPU work; do not add them to frame time. Semantic
+snapshots reuse root identity/revisions, geometry, focus, viewport mapping, native
+pixel scale, title and window-focus state. IME lifecycle/caret synchronization
+still runs independently of that cache. Custom semantic changes must invalidate
+their node rather than silently mutate data behind the retained tree.
+
 ## SDL Vulkan extension
 
 Upstream SDL GPU does not expose timestamp queries. The project applies the
@@ -48,6 +136,12 @@ complete hardware-counter wrap; no finite-width counter can infer multiple
 wraps from its two endpoints. These rules follow Vulkan's
 [timestamp command](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdWriteTimestamp.html)
 and [query result contracts](https://docs.vulkan.org/spec/latest/chapters/queries.html).
+
+Timing works with GPU debug mode both enabled and disabled. The extension always
+checks pool, slot and device compatibility; pass/submission validation uses SDL's
+debug-only command state only when GPU debugging is enabled. Callers must record
+on live command buffers outside passes in either mode. SDL does not reset its
+debug validation fields when recycling non-debug command buffers.
 
 ## Submission, cancellation and lifetime
 
@@ -96,3 +190,12 @@ opt-in GPU test suite; capability absence must be distinguished from an invalid
 result on a capable device. Tests assert finite nonnegative durations and lifecycle
 behavior, not a wall-clock performance threshold. RenderDoc or vendor tools
 remain useful for detailed pipeline statistics beyond command-buffer intervals.
+`gpu_timestamp_native` warms up and recycles real Vulkan command buffers before
+toggling profiling on/off/on with both debug and non-debug devices. It checks
+rendered output and completed samples, covering runtime profiling activation
+without depending on an application's window or settings.
+It also checks captured target extents, old-generation rejection, pending-query
+counts, query exhaustion and completed-buffer eviction. `gpu_timing` covers
+delayed context publication and invalid context updates with an injected driver.
+`performance_reports` covers grouping, latency denominators, resize/domain/session
+separation, health deltas, group limits, structured snapshots and console output.

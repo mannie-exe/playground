@@ -85,9 +85,11 @@ class SurfacePainter final : public rendering::PaintContext {
 
   struct Pixel {
     double r{}, g{}, b{}, a{};
+
     Pixel operator*(double value) const {
       return {r * value, g * value, b * value, a * value};
     }
+
     Pixel &operator+=(Pixel value) {
       r += value.r;
       g += value.g;
@@ -119,6 +121,7 @@ public:
   SurfacePainter &operator=(const SurfacePainter &) = delete;
 
   void save() override { _states.push_back(_state); }
+
   void restore() noexcept override;
 
   void translate(math::Vec2f offset) override {

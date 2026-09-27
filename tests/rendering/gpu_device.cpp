@@ -1,5 +1,7 @@
+#include <cmath>
 #include <filesystem>
 #include <thread>
+#include <type_traits>
 
 #include <SDL3/SDL_log.h>
 
@@ -12,6 +14,7 @@
 #include <platform/sdl/RenderBackendFactory.hpp>
 #include <platform/sdl/SurfacePainter.hpp>
 #include <support/AssetRegistry.hpp>
+#include <support/GPUReadback.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/content/Text.hpp>
@@ -20,51 +23,57 @@ using namespace playground;
 using namespace playground::sdl;
 using namespace playground::sdl::gpu_detail;
 
-static std::vector<std::array<float, 4>> readPixels(GPUDeviceHandle device,
-                                                    const GPUImage &image) {
-  const auto size = image.pixelSize();
-  SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
-                                       Uint32(size.width * size.height * 8)};
-  Transfer transfer{device, SDL_CreateGPUTransferBuffer(device->get(), &info)};
-  Commands commands{device};
-  device->recordTexture(commands.value, image.get());
-  auto *copy = SDL_BeginGPUCopyPass(commands.value);
-  test::require(copy != nullptr, "readback copy pass");
-  const SDL_GPUTextureRegion source{.texture = image.get(),
-                                    .w = Uint32(size.width),
-                                    .h = Uint32(size.height),
-                                    .d = 1};
-  const SDL_GPUTextureTransferInfo target{.transfer_buffer = transfer.get(),
-                                          .pixels_per_row = Uint32(size.width),
-                                          .rows_per_layer =
-                                              Uint32(size.height)};
-  SDL_DownloadFromGPUTexture(copy, &source, &target);
-  SDL_EndGPUCopyPass(copy);
-  commands.submit();
-  test::require(SDL_WaitForGPUIdle(device->get()), "readback completion");
-  device->pollCompletions();
-  auto *bytes = static_cast<Uint16 *>(
-      SDL_MapGPUTransferBuffer(device->get(), transfer.get(), false));
-  test::require(bytes != nullptr, "readback mapping");
-  const auto half = [](Uint16 bits) {
-    const int e = (bits >> 10) & 31;
-    const float m = (bits & 1023) / 1024.f;
-    return (bits & 32768 ? -1.f : 1.f) *
-           (e ? std::ldexp(1 + m, e - 15) : std::ldexp(m, -14));
-  };
-  std::vector<std::array<float, 4>> result(
-      std::size_t(size.width * size.height));
-  for (std::size_t pixel = 0; pixel < result.size(); ++pixel)
-    for (int c = 0; c < 4; ++c)
-      result[pixel][c] = half(bytes[pixel * 4 + c]);
-  SDL_UnmapGPUTransferBuffer(device->get(), transfer.get());
-  return result;
-}
+static_assert(!std::is_constructible_v<GPUImage, GPUDeviceHandle, math::Vec2i>);
 
-static std::array<float, 4> readPixel(GPUDeviceHandle device,
-                                      const GPUImage &image, int x, int y) {
-  return readPixels(device,
-                    image)[std::size_t(y * int(image.pixelSize().width) + x)];
+using test::readPixel;
+using test::readPixels;
+
+static void verifyPaintFastPath(PaintDevice &paint) {
+  const auto render = [&](bool fast) {
+    paint.rectangularFastPath = fast;
+    auto target = paint.targets.color({32, 32});
+    GPUPainter p{paint, {1, 1}};
+    p.clip(math::rect(1.25f, 2.5f, 28.5f, 26.25f));
+    p.fill(math::rect(.25f, .5f, 20.5f, 24.25f), {120, 80, 220, 200});
+    p.save();
+    p.translate({24, 10});
+    p.transform(math::Transform2D::scaling({-1, 1}));
+    p.fill(math::rect(0, 0, 8, 8), {20, 255, 120, 170});
+    p.restore();
+    p.beginLayer(math::rect(5, 6, 19, 20), .6f);
+    p.fill(math::rect(6.5f, 7.25f, 12.5f, 14.5f), {255, 0, 0, 200});
+    p.endLayer();
+    p.save();
+    p.translate({10, 9});
+    p.transform(math::Transform2D::rotation(.2f));
+    p.paintRoundedBox({math::rect(0, 0, 18, 12), math::CornerRadii::all(3)},
+                      math::Insets::all(2), {20, 100, 200, 180},
+                      math::ColorRGBA8{255, 255, 0, 255});
+    p.restore();
+    p.finish(target->get(), {32, 32}, {0, 0, 0, 0});
+    return readPixels(paint.device, *target->publish());
+  };
+  const auto fast = render(true), general = render(false);
+  for (std::size_t i = 0; i < fast.size(); ++i)
+    for (int c = 0; c < 4; ++c)
+      test::require(std::abs(fast[i][c] - general[i][c]) < .015f,
+                    "rectangle specialization preserves mirrored transforms, "
+                    "fractional clips, rebased layers and rounded borders");
+  paint.rectangularFastPath = true;
+  const auto before = paint.stats();
+  GPUPainter p{paint, {1, 1}};
+  p.fill(math::rect(0, 0, 5, 5), {255, 0, 0, 255});
+  p.clip(math::rect(10, 10, 2, 2));
+  p.fill(math::rect(0, 0, 5, 5), {0, 255, 0, 255});
+  math::Path2D path;
+  path.moveTo({0, 0}).lineTo({4, 0}).lineTo({4, 4}).close();
+  p.drawPath(path, {.fill = math::ColorRGBA8{0, 0, 255, 255}});
+  auto target = paint.targets.color({32, 32});
+  p.finish(target->get(), {32, 32}, {0, 0, 0, 255});
+  test::require(paint.stats().rejected == before.rejected + 2 &&
+                    readPixel(paint.device, *target, 2, 2)[0] > .99f,
+                "empty clip intersection rejects shapes and paths without "
+                "modifying earlier draw");
 }
 
 static void verifyStyledAtlas(PaintDevice &paint, AssetRegistry &assets) {
@@ -213,10 +222,13 @@ static void verifyMixedText(PaintDevice &paint, AssetRegistry &assets) {
                 "mixed fixture exercises the fallback font");
   test::require(TTF_AddFallbackFont(normal->get(), emoji->get()),
                 "install color fallback");
+
   struct FallbackScope {
     TTF_Font *font, *fallback;
+
     ~FallbackScope() { TTF_RemoveFallbackFont(font, fallback); }
   } fallback{normal->get(), emoji->get()};
+
   const std::string value{"A  \xE3\x8A\x97  K"};
   auto engine = std::make_shared<GPUTextEngine>(paint.device);
   GPUText native{engine, normal, value};
@@ -263,6 +275,63 @@ int main(int argc, char **argv) {
       test::require(rejectedThread,
                     "owner-thread GPU boundary rejects foreign work");
       PaintDevice paint{device};
+      {
+        TargetPool pool{device};
+        auto writable = pool.color({4, 4});
+        test::rejects<std::logic_error>([&] { writable->publish(); },
+                                        "uninitialized targets are not images");
+        GPUPainter initialize{paint, {1, 1}};
+        initialize.finish(writable->get(), {4, 4}, {});
+        auto published = writable->publish();
+        test::require(SDL_WaitForGPUIdle(device->get()),
+                      "publication completion");
+        device->pollCompletions();
+        auto *identity = writable.get();
+        writable.reset();
+        auto other = pool.color({4, 4});
+        test::require(other.get() != identity,
+                      "published image ownership prevents target recycling");
+        published.reset();
+        auto reused = pool.color({4, 4});
+        test::require(reused.get() == identity,
+                      "released publication permits reuse");
+        test::rejects<std::logic_error>(
+            [&] { reused->publish(); },
+            "reuse requires a fresh initializing submission");
+      }
+      {
+        GPUCommandAPI failedSubmission;
+        failedSubmission.submit =
+            +[](SDL_GPUCommandBuffer *commands) -> SDL_GPUFence * {
+          SDL_CancelGPUCommandBuffer(commands);
+          SDL_SetError("injected submit failure");
+          return nullptr;
+        };
+        auto failing = std::make_shared<GPUDevice>(
+            GPUDeviceProps{packagedShaderFormats(), true, driver},
+            failedSubmission);
+        TargetPool pool{failing};
+        auto held = pool.color({4, 4});
+        Commands recording{failing};
+        failing->recordTexture(recording.value, held->get());
+        bool classified{};
+        try {
+          recording.submit();
+        } catch (const rendering::RenderFailure &error) {
+          classified = error.operation() == rendering::RenderOperation::Submit;
+        }
+        test::require(
+            classified && failing->pendingSubmissions() == 1 &&
+                held->isLeased(),
+            "ambiguous submit retains leases and classifies recovery");
+        test::rejects<rendering::RenderFailure>([&] { pool.color({4, 4}); },
+                                                "failed domain forbids reuse");
+        test::rejects<rendering::RenderFailure>(
+            [&] { held->publish(); }, "failed domain forbids publication");
+        failing->invalidate();
+        test::require(!held->isLeased(),
+                      "domain retirement releases unknown leases");
+      }
       {
         device->setProfilingEnabled(true);
         SDL_Log("Native Vulkan timestamp support: %s",
@@ -311,7 +380,7 @@ int main(int argc, char **argv) {
           Commands recording{device};
           auto held = pool.color({8, 8});
           const auto heldIdentity = held.get();
-          device->recordUse(recording.value, held->use());
+          device->recordTexture(recording.value, held->get());
           held.reset();
           auto distinct = pool.color({8, 8});
           test::require(
@@ -330,8 +399,7 @@ int main(int argc, char **argv) {
         test::require(pool.stats().retainedBytes == 0,
                       "pool trim drops unused targets");
       }
-      auto target =
-          std::make_shared<sdl::GPUImage>(device, math::Vec2i{32, 32});
+      auto target = paint.targets.color({32, 32});
       GPUPainter painter{paint, {1, 1}};
       painter.fill(math::rect(0, 0, 32, 32), {0, 0, 255, 255});
       painter.save();
@@ -340,13 +408,16 @@ int main(int argc, char **argv) {
       painter.fill(math::rect(0, 0, 32, 32), {255, 0, 0, 255});
       painter.restore();
       painter.finish(target->get(), {32, 32}, {0, 0, 0, 255});
-      test::require(
-          paint.stats().quads == 2 && paint.stats().drawCalls == 1,
-          "consecutive compatible shape quads use one instanced draw");
+      test::require(paint.stats().quads == 2 && paint.stats().drawCalls == 2 &&
+                        paint.stats().rectangularQuads == 1 &&
+                        paint.stats().generalQuads == 1,
+                    "rounded clips split general and rectangular batches "
+                    "without reordering");
       auto center = readPixel(device, *target, 16, 16),
            corner = readPixel(device, *target, 0, 0);
       test::require(center[0] > .99f && center[2] < .01f && corner[2] > .99f,
                     "GPU shapes and clip pixels");
+      verifyPaintFastPath(paint);
       GPUPainter subpixel{paint, {1, 1}};
       subpixel.fill(math::rect(.75f, 0, 8, 8), {255, 0, 0, 255});
       subpixel.finish(target->get(), {32, 32}, {0, 0, 0, 255});
@@ -523,7 +594,10 @@ int main(int argc, char **argv) {
             sdl::GPUDeviceProps{sdl::packagedShaderFormats(), true, driver};
         props.limits.maxResidentBytes = 4;
         props.limits.maxStreamBytes = 5632;
-        props.limits.maxMeshResidentBytes = 108;
+        const auto meshBytes =
+            mesh->data().vertices.size() * sizeof(scene::Vertex3D) +
+            mesh->data().indices.size() * sizeof(std::uint32_t);
+        props.limits.maxMeshResidentBytes = meshBytes;
         auto limited = std::make_shared<GPUDevice>(props);
         GPUImagePreparer images{limited};
         auto makeSource = [] {
@@ -554,8 +628,7 @@ int main(int argc, char **argv) {
             [&] { paint.images.prepare(first); },
             "foreign device images are rejected");
         PaintDevice streaming{limited};
-        auto streamTarget =
-            std::make_shared<GPUImage>(limited, math::Vec2i{8, 8});
+        auto streamTarget = streaming.targets.color({8, 8});
         GPUPainter streamed{streaming, {1, 1}};
         streamed.fill(math::rect(0, 0, 8, 8), {255, 0, 0, 255});
         streamed.fill(math::rect(0, 0, 4, 8), {0, 255, 0, 255});
@@ -575,7 +648,7 @@ int main(int argc, char **argv) {
         auto boundedImage = std::dynamic_pointer_cast<const GPUImage>(
             boundedScene.render({{}, {8, 8}, {0, 0, 0, 255}}, meshDraws));
         test::require(
-            boundedScene.residentBytes() <= 108 &&
+            boundedScene.meshResidentBytes() == meshBytes &&
                 readPixel(limited, *boundedImage, 4, 4)[0] > .99f,
             "mesh residency eviction retains in-flight prepared geometry");
       }

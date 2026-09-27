@@ -9,8 +9,23 @@
 #include <ui/controls/Button.hpp>
 
 using namespace playground;
+
 int main() {
   return test::run([] {
+    sdl::UISession deterministic;
+    test::rejects<std::logic_error>(
+        [&] { deterministic.activityDemand(); },
+        "caller-stepped session does not claim monotonic deadlines");
+    sdl::UISession idle{sdl::UISessionTiming::Monotonic};
+    test::require(!idle.activityDemand().wakeAt, "no timer means no deadline");
+    auto distant = idle.root().services().scheduler->schedule(1e100, [] {});
+    test::require(
+        idle.activityDemand().wakeAt ==
+            runtime::ActivityClock::time_point::max(),
+        "distant finite timer cannot overflow native steady-clock deadline");
+    distant.disconnect();
+    test::require(!idle.activityDemand().wakeAt,
+                  "deadline query prunes canceled timer");
     platform::AppViewPolicy sizing{
         .initialSizing = platform::InitialWindowSizing::FitContent};
     test::require(

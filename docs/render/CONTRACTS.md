@@ -1,4 +1,4 @@
-# Rendering contracts and implementation sequence
+# Rendering contracts
 
 Rendering is a service, not an application or UI inheritance hierarchy. A backend
 may supply 2D composition and 3D scene rendering independently. Both software and
@@ -14,6 +14,7 @@ a scene, camera, depth buffer, or glyph engine. Allocate these resources on use.
 | RendererCapabilities | Implemented services and composition color behavior |
 | RendererState | Requested preferences, selected implementation, fallback reason |
 | RenderBackend | Own renderer resources; lend one frame at a time |
+| RenderBackendProps | Immutable allocation/debug policy retained across backend replacement |
 | RenderFrame | Borrow backend; record work, then explicitly present with Submitted/Skipped outcome |
 | SubmissionId / ResourceUse | Track ordered native completion and resource leases within one domain |
 | AllocationBudget | Retain estimated allocation reservations independently of cache ownership |
@@ -29,7 +30,8 @@ requirements before preferences. A permitted fallback is reported, not silently
 treated as the requested backend. Explicit GPU driver selection does not mean a
 GPU driver is available. Unknown enum values are errors. Prefer GPU then software
 for Auto when compiled shaders and a compatible device are available. Both
-software and GPU backends implement 2D and unlit 3D; only GPU composition is linear.
+software and GPU backends implement 2D and unlit 3D; GPU additionally advertises
+metallicRoughness. Only GPU UI composition is linear.
 
 AppInfo owns requirements. PresentationProps owns preferences, merged using the
 existing project/user settings precedence. AppContext exposes resolved state.
@@ -104,7 +106,7 @@ forbids cancelling a command buffer after swapchain acquisition. The GPU backend
 must acquire late in present(), define its post-acquisition failure cleanup, and
 never throw from destructors. Already submitted uploads are not rolled back.
 
-## Implementation sequence and acceptance
+## Subsystem boundaries and acceptance
 
 | Stage | Deliverable / acceptance |
 |---|---|
@@ -113,7 +115,7 @@ never throw from destructors. Already submitted uploads are not rolled back.
 | GPU 2D | Existing shapes, images, affine/rounded clips, layers and captures; Demo/Minesweeper compatibility |
 | GPU text | SDL_ttf atlas batches preserving current wrapping, fitting, direction and style semantics |
 | Scene model | Checked handles, parent transforms, bounds, immutable meshes/materials, camera |
-| GPU 3D | Indexed unlit textured geometry, clipping, depth, explicit culling/alpha policy |
+| GPU 3D | Indexed unlit/PBR geometry, mipmapped textures, directional/IBL lighting, tone mapping, depth and culling/alpha policy |
 | Scene integration | UI viewport sizing, picking, target reuse and scene-only resolution scale |
 | Software 3D | Same submission contract; homogeneous clipping, coverage, depth and perspective-correct interpolation |
 | Replacement/recovery | Safe cache invalidation, requested/resolved state, explicit recovery/failure policy |
@@ -123,12 +125,14 @@ must share layout semantics with CPU text. Full-text raster uploads remain the
 compatibility path until glyph drawing supports those semantics. SVG remains
 rasterize-at-density then upload; direct vector-path rendering is separate.
 
-Software/GPU 3D are implemented unlit capabilities. SceneView prepares after layout,
+Software/GPU 3D share an unlit capability; GPU additionally supports PBR. SceneView prepares after layout,
 caches by scene revision, pixel extent and both scene/image resource domains, and supports independent
 resolutionScale. Scene3D provides immutable draw snapshots, cycle-safe parenting,
 checked identities, mesh bounds and CPU triangle picking. Scene2D is a separate
 ordered affine display list; Scene2DView uses either 2D painter.
-PBR, shadows, animation/skinning and advanced transparency follow the unlit path.
+Rigid TRS animation changes scene-authored state. PBR requires metallicRoughness
+capability; unlitPreview is an explicit lossy author choice. Shadows, skinning,
+VAT and advanced transparency remain extensions.
 Reconciliation is not required. Idle/damage updates, additional controls and native
 accessibility remain in the UI plan, independently of renderer work.
 

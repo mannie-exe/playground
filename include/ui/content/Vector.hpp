@@ -10,8 +10,8 @@
 #include <utility>
 
 #include <support/AssetRegistry.hpp>
+#include <support/Patch.hpp>
 #include <ui/Node.hpp>
-#include <ui/Patch.hpp>
 #include <ui/content/ContentTypes.hpp>
 
 namespace playground::ui {
@@ -23,6 +23,7 @@ struct VectorProps {
   ContentStyle content;
   float rasterScale{1};
   std::size_t maximumRasterPixels{16 * 1024 * 1024};
+  bool useTheme{};
 
   bool operator==(const VectorProps &) const = default;
 };
@@ -34,6 +35,7 @@ struct VectorPatch {
   Patch<ContentStyle> content;
   Patch<float> rasterScale;
   Patch<std::size_t> maximumRasterPixels;
+  Patch<bool> useTheme;
 };
 
 class Vector final : public Node {
@@ -75,7 +77,9 @@ public:
   Vector(AssetRegistry &assets, VectorProps props, layout::BoxProps box = {});
 
   const VectorProps &props() const noexcept { return _props; }
+
   math::Vec2i rasterSize() const noexcept { return _rasterSize; }
+
   void setProps(VectorProps props);
   void applyPatch(const VectorPatch &patch);
 };

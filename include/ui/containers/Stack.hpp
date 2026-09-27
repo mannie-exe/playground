@@ -55,6 +55,7 @@ public:
   }
 
   layout::Axis axis() const noexcept { return _axis; }
+
   const layout::StackProps &props() const noexcept { return _props; }
 
   void setAxis(layout::Axis axis);
@@ -66,11 +67,13 @@ public:
   void applyPlacementPatch(NodeId child, const StackPlacementPatch &patch) {
     applyPlacementPatch(indexOf(child), patch);
   }
+
   void applyPlacementPatch(std::size_t index, const StackPlacementPatch &patch);
 
   Node &append(std::unique_ptr<Node> child, layout::StackPlacement placement) {
     return PlacementContainer::append(std::move(child), placement);
   }
+
   Node &append(std::unique_ptr<Node> child);
 };
 

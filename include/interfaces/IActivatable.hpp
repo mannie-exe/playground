@@ -13,6 +13,7 @@ public:
   // External side effects are the application's responsibility and cannot be
   // rolled back.
   virtual void onEnter(AppContext &) {}
+
   // Cleanup-only: do not request new host operations or throw. The host
   // isolates throwing implementations, but cannot repair their external
   // effects.

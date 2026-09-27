@@ -78,7 +78,9 @@ AssetRegistry::getVector(const playground::VectorSource &source,
 }
 
 std::string AssetRegistry::fontKey(const FontProps &props) {
-  return std::to_string(props.path.size()) + ":" + props.path + ":" +
+  return std::to_string(props.cacheIdentity.size()) + ":" +
+         props.cacheIdentity + ":" + std::to_string(props.path.size()) + ":" +
+         props.path + ":" +
          std::to_string(std::bit_cast<std::uint32_t>(props.style.size)) + ":" +
          std::to_string(props.style.flags) + ":" +
          std::to_string(props.style.outline) + ":" +
@@ -107,14 +109,24 @@ FontHandle AssetRegistry::getFont(FontProps props) {
 }
 
 SurfaceHandle AssetRegistry::getImage(const std::string &path) {
-  if (const auto it{_images.find(path)}; it != _images.end()) {
+  return getImage(path, [&] {
+    return ownSurface(requireSDL(
+        IMG_Load(path.c_str()), "AssetRegistry failed to load image: " + path));
+  });
+}
+
+SurfaceHandle
+AssetRegistry::getImage(const std::string &key,
+                        const std::function<SurfaceHandle()> &create) {
+  if (const auto it{_images.find(key)}; it != _images.end()) {
     it->second.lastUse = ++_clock;
     return it->second.value;
   }
 
-  SurfaceHandle surface{ownSurface(requireSDL(
-      IMG_Load(path.c_str()), "AssetRegistry failed to load image: " + path))};
-  _images.emplace(path, Entry<SurfaceHandle>{surface, ++_clock});
+  auto surface = create();
+  if (!surface)
+    throw std::invalid_argument("Image factory returned no surface");
+  _images.emplace(key, Entry<SurfaceHandle>{surface, ++_clock});
   return surface;
 }
 

@@ -16,6 +16,7 @@ struct CornerRadii {
     return {
         {radius, radius}, {radius, radius}, {radius, radius}, {radius, radius}};
   }
+
   bool operator==(const CornerRadii &) const = default;
 
   void validate() const {

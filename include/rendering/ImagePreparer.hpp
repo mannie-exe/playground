@@ -13,9 +13,11 @@ namespace playground::rendering {
 class ImagePreparer {
 public:
   virtual ~ImagePreparer() = default;
+
   virtual ResourceDomainId resourceDomain() const noexcept {
     return ResourceDomainId::cpu();
   }
+
   virtual PaintImageHandle prepare(PaintImageHandle source) = 0;
 };
 

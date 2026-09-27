@@ -14,6 +14,10 @@ namespace playground::platform {
 // false/zero are values, never absence. These patches cannot override
 // resizability.
 struct SettingsPatch {
+  std::optional<ui::ColorSchemePreference> colorScheme;
+  std::optional<ui::ContrastPreference> contrast;
+  std::optional<ui::AccessibilityMode> accessibility;
+  std::optional<bool> sequentialNavigation, directionalNavigation;
   std::optional<WindowMode> mode;
   std::optional<DisplaySelection> display;
   std::optional<std::string> displayName;
@@ -34,16 +38,19 @@ struct SettingsPatch {
   std::optional<bool> rendererFallback;
   void apply(PresentationProps &, AppViewPolicy &) const;
 };
+
 struct SettingsDocument {
   SettingsPatch defaults;
   std::map<std::string, SettingsPatch, std::less<>> apps;
   void apply(std::string_view app, PresentationProps &, AppViewPolicy &) const;
 };
+
 struct SavedWindow {
   math::Vec2i size;
   math::Vec2i position;
   std::string displayName;
 };
+
 using SessionState = std::map<std::string, SavedWindow, std::less<>>;
 
 struct SettingsSnapshot {
@@ -67,14 +74,20 @@ class SettingsStore {
 public:
   SettingsStore(FileStore &project, FileStore &user)
       : _projectFiles{project}, _userFiles{user} {}
+
   void reload();
   SettingsSnapshot readSnapshot() const;
+
   SettingsSnapshot snapshot() const { return {_project, _user, _session}; }
+
   void publish(SettingsSnapshot snapshot) noexcept;
   void setUser(SettingsDocument document, bool persist);
   void saveSession(SessionState state);
+
   const SettingsDocument &user() const noexcept { return _user; }
+
   const SessionState &session() const noexcept { return _session; }
+
   void resolve(std::string_view app, PresentationProps &,
                AppViewPolicy &) const;
   void resolveWithUser(std::string_view app, const SettingsDocument &user,

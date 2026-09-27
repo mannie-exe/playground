@@ -12,10 +12,12 @@
 namespace ui = playground::ui;
 namespace math = playground::math;
 namespace layout = playground::layout;
+
 static void check(bool value, const char *message) {
   if (!value)
     throw std::runtime_error(message);
 }
+
 class Leaf : public ui::Node {
   math::Size2 _natural;
 
@@ -33,6 +35,7 @@ public:
   explicit Leaf(math::Size2 size = {20, 20}, layout::BoxProps props = {})
       : Node{props}, _natural{size} {}
 };
+
 int main() {
   try {
     ui::UIRoot root;
@@ -80,15 +83,15 @@ int main() {
         .columns = {layout::TrackSize::content()}, .allowOverlap = true});
     overlap->append(std::make_unique<Leaf>(), {.row = 0, .column = 0});
     overlap->append(std::make_unique<Leaf>(), {.row = 0, .column = 0});
-    auto policy = overlap->props();
+    auto policy = overlap->gridProps();
     policy.allowOverlap = false;
     bool overlapRejected{};
     try {
-      overlap->setProps(policy);
+      overlap->setGridProps(policy);
     } catch (const std::invalid_argument &) {
       overlapRejected = true;
     }
-    check(overlapRejected && overlap->props().allowOverlap,
+    check(overlapRejected && overlap->gridProps().allowOverlap,
           "overlap policy validates before commit");
     auto flow = std::make_unique<ui::Flow>(
         layout::FlowProps{.itemGap = 5, .lineGap = 3});

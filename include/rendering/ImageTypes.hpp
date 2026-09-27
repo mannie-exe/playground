@@ -11,6 +11,7 @@ enum class ColorEncoding { SRGB, Linear };
 constexpr bool isValid(AlphaMode value) {
   return value == AlphaMode::Straight || value == AlphaMode::Premultiplied;
 }
+
 constexpr bool isValid(ColorEncoding value) {
   return value == ColorEncoding::SRGB || value == ColorEncoding::Linear;
 }

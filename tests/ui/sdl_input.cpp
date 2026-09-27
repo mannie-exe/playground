@@ -37,7 +37,7 @@ int main() {
               {SDLK_RIGHT, ui::Key::Right},
               {SDLK_UP, ui::Key::Up},
               {SDLK_DOWN, ui::Key::Down},
-              {SDLK_A, ui::Key::Unknown}}})
+              {SDLK_A, ui::Key::A}}})
       test::require(sdl::toUIKey(key) == expected, "key translation table");
     for (auto type : {SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP}) {
       SDL_Event event{};
@@ -91,6 +91,21 @@ int main() {
     test::require(sdl::toUIEvent(wheel, {})->delta == math::Vec2f{-2, 3},
                   "flipped wheel mapped once");
     SDL_Event unknown{};
+    SDL_Event committed{};
+    committed.type = SDL_EVENT_TEXT_INPUT;
+    committed.text.text = "\xC3\xA9";
+    test::require(sdl::toUIEvent(committed, {})->text == "\xC3\xA9",
+                  "UTF-8 input copied into owned event");
+    SDL_Event pad{};
+    pad.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    pad.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+    test::require(sdl::toUIEvent(pad, {})->logicalKey == ui::Key::Enter &&
+                      sdl::toUIEvent(pad, {})->source ==
+                          ui::ActionSource::Gamepad,
+                  "gamepad confirm maps to control activation");
+    pad.type = SDL_EVENT_GAMEPAD_REMOVED;
+    test::require(sdl::toUIEvent(pad, {})->type == ui::EventType::InputCancel,
+                  "device loss cancels held interaction");
     unknown.type = SDL_EVENT_QUIT;
     test::require(!sdl::toUIEvent(unknown, {}),
                   "host event not reinterpreted as UI event");

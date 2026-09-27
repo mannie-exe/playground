@@ -13,6 +13,7 @@ float checked(double value) {
     throw std::overflow_error("3D arithmetic exceeds finite float range");
   return static_cast<float>(value);
 }
+
 void planes(float nearPlane, float farPlane) {
   if (!std::isfinite(nearPlane) || !std::isfinite(farPlane) || nearPlane < 0 ||
       farPlane <= nearPlane)
@@ -33,6 +34,7 @@ bool isFinite(const Matrix4 &m) {
   return std::all_of(m.elements.begin(), m.elements.end(),
                      [](float v) { return std::isfinite(v); });
 }
+
 Matrix4 operator*(const Matrix4 &a, const Matrix4 &b) {
   Matrix4 result{{}};
   for (std::size_t r = 0; r < 4; ++r)
@@ -44,6 +46,7 @@ Matrix4 operator*(const Matrix4 &a, const Matrix4 &b) {
     }
   return result;
 }
+
 Vec4f operator*(const Matrix4 &m, Vec4f v) {
   const std::array<float, 4> input{v.x, v.y, v.z, v.w};
   std::array<float, 4> result{};
@@ -55,6 +58,7 @@ Vec4f operator*(const Matrix4 &m, Vec4f v) {
   }
   return {result[0], result[1], result[2], result[3]};
 }
+
 Matrix4 translation(Vec3f offset) {
   if (!isFinite(offset))
     throw std::invalid_argument("Invalid 3D translation");
@@ -64,6 +68,7 @@ Matrix4 translation(Vec3f offset) {
   m.at(2, 3) = offset.z;
   return m;
 }
+
 Matrix4 scaling(Vec3f scale) {
   if (!isFinite(scale))
     throw std::invalid_argument("Invalid 3D scale");
@@ -73,6 +78,7 @@ Matrix4 scaling(Vec3f scale) {
   m.at(2, 2) = scale.z;
   return m;
 }
+
 Matrix4 perspectiveLH(float fov, float aspect, float nearPlane,
                       float farPlane) {
   planes(nearPlane, farPlane);
@@ -89,6 +95,7 @@ Matrix4 perspectiveLH(float fov, float aspect, float nearPlane,
   m.at(3, 2) = 1;
   return m;
 }
+
 Matrix4 orthographicLH(float width, float height, float nearPlane,
                        float farPlane) {
   planes(nearPlane, farPlane);
@@ -103,6 +110,7 @@ Matrix4 orthographicLH(float width, float height, float nearPlane,
   m.at(2, 3) = checked(-nearPlane / depth);
   return m;
 }
+
 Matrix4 lookAtLH(Vec3f eye, Vec3f target, Vec3f up) {
   if (!isFinite(eye) || !isFinite(target) || !isFinite(up))
     throw std::invalid_argument("Invalid camera basis");

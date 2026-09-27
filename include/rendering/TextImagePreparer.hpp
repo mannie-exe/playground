@@ -19,7 +19,9 @@ class TextImagePreparer {
 public:
   virtual ~TextImagePreparer() = default;
   virtual ResourceDomainId resourceDomain() const noexcept = 0;
+
   virtual bool isEnabled() const noexcept { return true; }
+
   virtual PaintImageHandle prepareText(const TextSource &source) = 0;
 };
 

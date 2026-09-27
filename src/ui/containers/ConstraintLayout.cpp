@@ -39,6 +39,7 @@ ConstraintLayout::solve(const std::vector<Entry> &constraints,
   struct Variables {
     kiwi::Variable x, y, width, height, baseline;
   };
+
   kiwi::Solver solver;
   Variables parent;
   std::vector<Variables> vars(_keys.size());
@@ -121,7 +122,7 @@ ConstraintLayout::solve(const std::vector<Entry> &constraints,
     auto dimension = [&](const kiwi::Variable &variable,
                          const kiwi::Variable &parentVariable,
                          layout::Axis axis, float measured) {
-      if (node.visibility() == Visibility::Collapsed) {
+      if (node.isPortal() || node.visibility() == Visibility::Collapsed) {
         add(variable == 0);
         return;
       }
@@ -209,7 +210,8 @@ ConstraintLayout::layout(MeasureContext &context,
                          const layout::SizeConstraints &offered) {
   _intrinsic.clear();
   for (const auto &child : children())
-    _intrinsic.push_back(child->measure(context, {}));
+    _intrinsic.push_back(child->isPortal() ? layout::MeasureResult{}
+                                           : child->measure(context, {}));
   for (std::size_t pass = 0; pass < _props.maximumPasses; ++pass) {
     Solution result;
     bool provisional{};
@@ -223,6 +225,8 @@ ConstraintLayout::layout(MeasureContext &context,
     }
     bool stable = true;
     for (std::size_t i = 0; i < children().size(); ++i) {
+      if (children()[i]->isPortal())
+        continue;
       const auto next =
           children()[i]->measure(context, {{0, result.children[i].w()}, {}});
       stable &= std::abs(next.size.width - _intrinsic[i].size.width) <=
@@ -246,6 +250,8 @@ void ConstraintLayout::arrangeChildren(ArrangeContext &context,
       layout(context, layout::SizeConstraints::tight(content.size));
   // Solve and remeasure completely before committing any child placement.
   for (std::size_t i = 0; i < children().size(); ++i) {
+    if (children()[i]->isPortal())
+      continue;
     auto bounds = solution.children[i];
     bounds.position.x += content.x();
     bounds.position.y += content.y();

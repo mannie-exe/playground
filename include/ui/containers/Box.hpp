@@ -35,16 +35,17 @@ public:
   explicit Box(layout::BoxProps box = {}, BoxContentProps props = {})
       : PlacementContainer{box}, _props{props} {}
 
-  const BoxContentProps &props() const noexcept { return _props; }
+  const BoxContentProps &contentProps() const noexcept { return _props; }
 
-  void setProps(BoxContentProps props);
+  void setContentProps(BoxContentProps props);
 
-  void applyPatch(const BoxContentPatch &patch) {
-    setProps({patch.contentAlignment.appliedTo(_props.contentAlignment, {})});
+  void applyContentPatch(const BoxContentPatch &patch) {
+    setContentProps(
+        {patch.contentAlignment.appliedTo(_props.contentAlignment, {})});
   }
 
   void setContentAlignment(layout::Alignment alignment) {
-    setProps({alignment});
+    setContentProps({alignment});
   }
 
   void applyPlacementPatch(const BoxPlacementPatch &patch);
@@ -69,6 +70,7 @@ private:
 class Component : public Box {
 public:
   using Box::Box;
+
   Node &replaceContent(std::unique_ptr<Node> content) {
     return setChild(std::move(content));
   }
@@ -92,10 +94,12 @@ protected:
     return _callbacks.measure ? _callbacks.measure(context, offered)
                               : layout::MeasureResult{};
   }
+
   void paint(PaintContext &context) const override {
     if (_callbacks.paint)
       _callbacks.paint(context);
   }
+
   void onEvent(UIEvent &event) override {
     if (_callbacks.event)
       _callbacks.event(event);

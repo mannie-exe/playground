@@ -21,14 +21,18 @@
 
 #include <platform/sdl/GPUDevice.hpp>
 #include <platform/sdl/GPUTimestamps.hpp>
+#include <platform/sdl/RenderError.hpp>
 #include <rendering/GPUTiming.hpp>
 #include <rendering/RenderFailure.hpp>
 #include <rendering/Submission.hpp>
 #include <support/SDLError.hpp>
 
 namespace playground::sdl {
-GPUDevice::GPUDevice(GPUDeviceProps props) : _limits{props.limits} {
+GPUDevice::GPUDevice(GPUDeviceProps props, GPUCommandAPI commands)
+    : _limits{props.limits}, _commands{commands} {
   _limits.validate();
+  if (!_commands.submit)
+    throw std::invalid_argument("GPU command API requires a submit function");
   if (!props.shaderFormats)
     throw std::invalid_argument("GPU device requires supported shader formats");
   if (props.driver && std::string_view{props.driver} != "vulkan")
@@ -73,20 +77,24 @@ void GPUDevice::invalidate() noexcept {
   _timestamps.reset();
 }
 
-SDL_GPUCommandBuffer *GPUDevice::acquireCommands(std::string_view label) {
+SDL_GPUCommandBuffer *
+GPUDevice::acquireCommands(std::string_view label,
+                           rendering::GPUWorkContext context) {
   checkOwnerThread();
   rendering::validateGPUTimingLabel(label);
+  rendering::validateGPUWorkContext(context);
   pollCompletions();
   if (_recordings.size() + _pending.size() >= _limits.maxInFlightSubmissions)
     throw std::length_error("GPU submission capacity exhausted");
   auto *commands = SDL_AcquireGPUCommandBuffer(get());
   if (!commands)
-    throw rendering::RenderFailure(
-        std::string{"Cannot acquire GPU commands: "} + SDL_GetError());
+    throwRenderError("Cannot acquire GPU commands",
+                     rendering::RenderOperation::Acquire);
   try {
     auto &recording = _recordings.emplace(commands, Recording{}).first->second;
     if (_profiling && _timestamps)
-      recording.timestamp = _timestamps->begin(commands, label);
+      recording.timestamp =
+          _timestamps->begin(commands, label, context, _collectionGeneration);
   } catch (...) {
     _recordings.erase(commands);
     if (!SDL_CancelGPUCommandBuffer(commands))
@@ -94,6 +102,15 @@ SDL_GPUCommandBuffer *GPUDevice::acquireCommands(std::string_view label) {
     throw;
   }
   return commands;
+}
+
+void GPUDevice::setTimingContext(SDL_GPUCommandBuffer *commands,
+                                 rendering::GPUWorkContext context) {
+  checkOwnerThread();
+  rendering::validateGPUWorkContext(context);
+  const auto &recording = _recordings.at(commands);
+  if (recording.timestamp)
+    _timestamps->setContext(*recording.timestamp, context);
 }
 
 void GPUDevice::recordUse(SDL_GPUCommandBuffer *commands,
@@ -126,15 +143,15 @@ rendering::SubmissionId GPUDevice::submit(SDL_GPUCommandBuffer *commands) {
   _recordings.erase(recording);
   if (timestamp)
     pending.submittedAt = std::chrono::steady_clock::now();
-  pending.fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
+  pending.fence = _commands.submit(commands);
   if (!pending.fence) {
     if (timestamp)
       _timestamps->abandon(*timestamp);
     // SDL has consumed the command buffer, but completion is unknown. Keep its
     // leases and forbid any subsequent recording/reuse in this domain.
     _valid = false;
-    throw rendering::RenderFailure(
-        std::string{"GPU command submission failed: "} + SDL_GetError());
+    throwRenderError("GPU command submission failed",
+                     rendering::RenderOperation::Submit);
   }
   pending.id = ++_submitted;
   if (timestamp) {
@@ -217,8 +234,13 @@ void GPUDevice::pollCompletions() {
         sample.completionLatencyMilliseconds = it->second;
         _completionLatencies.erase(it);
       }
-      if (_timings.size() >= _limits.maxTimestampScopes)
+      if (!_profiling || sample.collectionGeneration != _collectionGeneration)
+        continue;
+      if (_timings.size() >= _limits.maxTimestampScopes) {
         _timings.erase(_timings.begin());
+        if (_bufferDiscards != std::numeric_limits<std::uint64_t>::max())
+          ++_bufferDiscards;
+      }
       _timings.push_back(std::move(sample));
     }
   }
@@ -226,6 +248,11 @@ void GPUDevice::pollCompletions() {
 
 void GPUDevice::setProfilingEnabled(bool enabled) {
   checkOwnerThread();
+  if (enabled == _profiling)
+    return;
+  if (enabled &&
+      _collectionGeneration == std::numeric_limits<std::uint64_t>::max())
+    throw std::overflow_error("GPU profiling generation exhausted");
   if (enabled && _timestampSupported && !_timestamps) {
     try {
       _timestamps = std::make_unique<GPUTimestampRing>(
@@ -235,6 +262,12 @@ void GPUDevice::setProfilingEnabled(bool enabled) {
       SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "GPU timing unavailable: %s",
                   error.what());
     }
+  }
+  _timings.clear();
+  if (enabled) {
+    ++_collectionGeneration;
+    _queryDropBaseline = _timestamps ? _timestamps->dropped() : 0;
+    _bufferDiscards = 0;
   }
   _profiling = enabled;
 }
@@ -246,6 +279,17 @@ bool GPUDevice::supportsTimestamps() const noexcept {
 std::vector<rendering::GPUTimingSample> GPUDevice::takeGPUTimings() {
   pollCompletions();
   return std::exchange(_timings, {});
+}
+
+rendering::GPUTimingCollection GPUDevice::gpuTimingCollection() const {
+  checkOwnerThread();
+  return {_domain,
+          _collectionGeneration,
+          _timestampSupported,
+          _profiling,
+          _timestamps ? _timestamps->pending(_collectionGeneration) : 0,
+          _timestamps ? _timestamps->dropped() - _queryDropBaseline : 0,
+          _bufferDiscards};
 }
 
 } // namespace playground::sdl

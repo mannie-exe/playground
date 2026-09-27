@@ -17,6 +17,7 @@ struct SurfacePainter::ModulationGuard {
         !SDL_GetSurfaceBlendMode(surface, &blend))
       throw std::runtime_error(SDL_GetError());
   }
+
   ~ModulationGuard() {
     SDL_SetSurfaceColorMod(surface, r, g, b);
     SDL_SetSurfaceAlphaMod(surface, alpha);

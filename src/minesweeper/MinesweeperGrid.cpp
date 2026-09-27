@@ -1,108 +1,83 @@
 #include <minesweeper/MinesweeperGrid.hpp>
 
 MinesweeperGrid::MinesweeperGrid(
-    MinesweeperGridProps props, const MinesweeperCellStyle &cellStyle,
-    const playground::minesweeper::MinesweeperEvents &events,
-    const playground::minesweeper::ViewResources &resources,
-    const BombSelector &selectBomb)
-    : Grid{layoutFor(props)}, _events{events}, _props{props},
-      _cellStyle{cellStyle} {
-  _cells.reserve(static_cast<std::size_t>(_props.size.y) * _props.size.x);
-  for (int row = 0; row < _props.size.y; ++row) {
-    for (int col = 0; col < _props.size.x; ++col) {
-      const playground::math::Vec2i position{col, row};
-      const bool bomb = selectBomb
-                            ? selectBomb(position)
-                            : _random.get(0.0f, 1.0f) < _props.bombChance;
+    MinesweeperGridProps props, const MinesweeperCellStyle &style,
+    MinesweeperModel &model,
+    const playground::minesweeper::ViewResources &resources)
+    : Grid{layoutFor(props)}, _model{model}, _props{props}, _cellStyle{style} {
+  if (model.props().size != props.size)
+    throw std::invalid_argument("Grid props must describe their model");
+  _cells.reserve(static_cast<std::size_t>(props.size.x) * props.size.y);
+  for (int y = 0; y < props.size.y; ++y)
+    for (int x = 0; x < props.size.x; ++x) {
       auto cell = std::make_unique<MinesweeperCell>(
-          static_cast<float>(_props.cellSize), bomb, position, _cellStyle,
-          _events, resources, _generation,
-          [this](const SDL_Event &event) { return handleEvent(event); });
+          static_cast<float>(props.cellSize), model,
+          playground::math::Vec2i{x, y}, style, resources,
+          [this](playground::math::Vec2i p, int button) {
+            focusCell(p);
+            if (button == 1)
+              _model.clear(p);
+            else if (button == 3)
+              _model.toggleFlag(p);
+          });
       _cells.push_back(cell.get());
-      append(std::move(cell), {.row = static_cast<std::size_t>(row),
-                               .column = static_cast<std::size_t>(col)});
-      if (bomb)
-        _bombs.push_back(position);
+      cell->setFocusable(x == 0 && y == 0);
+      append(std::move(cell), {.row = static_cast<std::size_t>(y),
+                               .column = static_cast<std::size_t>(x)});
     }
-  }
-
-  _cellsToClear =
-      _props.size.y * _props.size.x - static_cast<int>(_bombs.size());
-
-  for (const auto gridPos : _bombs) {
-    for (int i = -1; i <= 1; ++i) {
-      for (int j = -1; j <= 1; ++j) {
-        if (i == 0 && j == 0)
-          continue;
-        playground::math::Vec2i target{gridPos.x + i, gridPos.y + j};
-        if (inBoundsExclusive(target, _props.size))
-          getCellAt(target).incrementAdjacentBombs();
-      }
-    }
-  }
 }
 
-MinesweeperCell &
-MinesweeperGrid::getCellAt(const playground::math::Vec2i &gridPos) {
-  if (!inBoundsExclusive(gridPos, _props.size))
-    throw std::out_of_range("MinesweeperGrid coordinate out of bounds");
-  return *_cells.at(
-      static_cast<std::size_t>(gridPos.y * _props.size.x + gridPos.x));
+void MinesweeperGrid::focusCell(playground::math::Vec2i p) {
+  if (!inBoundsExclusive(p, _props.size))
+    return;
+  if (p != _focused)
+    cellAt(_focused).setFocusable(false);
+  _focused = p;
+  cellAt(p).setFocusable(true);
+  cellAt(p).requestFocus();
+}
+
+void MinesweeperGrid::onDefaultEvent(playground::ui::UIEvent &event) {
+  using namespace playground::ui;
+  if (event.handled || event.type != EventType::KeyDown)
+    return;
+  auto next = _focused;
+  switch (event.logicalKey) {
+  case Key::Left:
+    --next.x;
+    break;
+  case Key::Right:
+    ++next.x;
+    break;
+  case Key::Up:
+    --next.y;
+    break;
+  case Key::Down:
+    ++next.y;
+    break;
+  default:
+    return;
+  }
+  event.handled = true;
+  focusCell(next);
+}
+
+MinesweeperCell &MinesweeperGrid::cellAt(const playground::math::Vec2i &p) {
+  if (!inBoundsExclusive(p, _props.size))
+    throw std::out_of_range("Cell outside grid");
+  return *_cells.at(static_cast<std::size_t>(p.y) * _props.size.x + p.x);
 }
 
 const MinesweeperCell &
-MinesweeperGrid::getCellAt(const playground::math::Vec2i &gridPos) const {
-  if (!inBoundsExclusive(gridPos, _props.size))
-    throw std::out_of_range("MinesweeperGrid coordinate out of bounds");
-  return *_cells.at(
-      static_cast<std::size_t>(gridPos.y * _props.size.x + gridPos.x));
+MinesweeperGrid::cellAt(const playground::math::Vec2i &p) const {
+  if (!inBoundsExclusive(p, _props.size))
+    throw std::out_of_range("Cell outside grid");
+  return *_cells.at(static_cast<std::size_t>(p.y) * _props.size.x + p.x);
 }
 
-EventResult MinesweeperGrid::handleEvent(const SDL_Event &event) {
-  EventResult result{EventResult::Ignored};
-
-  if (event.type == _events.cellHit) {
-    return EventResult::Consumed;
-  }
-
-  if (event.type == _events.bombDetonated) {
-    for (const auto &gridPos : _bombs) {
-      MinesweeperCell &cell = getCellAt(gridPos);
-      if (cell.isCleared())
-        continue;
-      cell.clearCell(false);
-    }
-    SDL_Event gameLost{.user = {.type = _events.gameLost, .code = _generation}};
-    SDL_PushEvent(&gameLost);
-    return EventResult::Consumed;
-  }
-
-  if (event.type == _events.cellCleared) {
-    --_cellsToClear;
-
-    if (!_cellsToClear) {
-      for (const auto &gridPos : _bombs) {
-        MinesweeperCell &cell = getCellAt(gridPos);
-        cell.setRevealed();
-        cell.clearCell(false);
-      }
-      SDL_Event gameWon{.user = {.type = _events.gameWon, .code = _generation}};
-      SDL_PushEvent(&gameWon);
-      return EventResult::Consumed;
-    }
-
-    if ((*static_cast<const MinesweeperCell *>(event.user.data2))
-            .getAdjacentBombs())
-      return EventResult::Consumed;
-  }
-
-  for (const auto &cell : _cells) {
-    result = combine(result, cell->handleEvent(event));
-    if (isTerminal(result))
-      break;
-  }
-
-  return result;
+void MinesweeperGrid::synchronize() {
+  for (auto *cell : _cells)
+    cell->synchronize();
 }
 
 playground::layout::GridProps

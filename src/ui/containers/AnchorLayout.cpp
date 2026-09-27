@@ -21,7 +21,7 @@ AnchorLayout::measureContent(MeasureContext &context,
 void AnchorLayout::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
   for (std::size_t i = 0; i < children().size(); ++i) {
     auto &child = *children()[i];
-    if (child.visibility() == Visibility::Collapsed)
+    if (child.isPortal() || child.visibility() == Visibility::Collapsed)
       continue;
     const auto &placement = placementInParent(i);
     const bool fixedWidth =

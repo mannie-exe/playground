@@ -16,11 +16,13 @@ std::filesystem::path fromUTF8(std::string_view text) {
   return std::filesystem::path{std::u8string{
       reinterpret_cast<const char8_t *>(text.data()), text.size()}};
 }
+
 std::string utf8(const std::filesystem::path &path) {
   const auto value = path.u8string();
   return {reinterpret_cast<const char *>(value.data()), value.size()};
 }
 } // namespace
+
 DirectoryStore::DirectoryStore(std::filesystem::path root, bool writable)
     : _root{std::filesystem::absolute(std::move(root))}, _writable{writable} {}
 
@@ -33,6 +35,7 @@ std::filesystem::path DirectoryStore::resolve(std::string_view name) const {
     throw std::invalid_argument("Expected a relative document filename");
   return _root / fromUTF8(name);
 }
+
 std::optional<std::string> DirectoryStore::read(std::string_view name) const {
   const auto path = resolve(name);
   if (!std::filesystem::exists(path))
@@ -49,6 +52,7 @@ std::optional<std::string> DirectoryStore::read(std::string_view name) const {
     throw std::runtime_error("Settings document changed or failed during read");
   return result;
 }
+
 void DirectoryStore::replace(std::string_view name, std::string_view content) {
   if (!_writable)
     throw std::logic_error("This document store is read-only");
@@ -66,15 +70,18 @@ void DirectoryStore::replace(std::string_view name, std::string_view content) {
                        std::ios::binary | std::ios::out | std::ios::noreplace};
   if (!stream)
     throw std::runtime_error("Cannot create settings temporary file");
+
   struct Cleanup {
     std::filesystem::path path;
     std::ofstream &stream;
+
     ~Cleanup() {
       stream.close();
       std::error_code ignored;
       std::filesystem::remove(path, ignored);
     }
   } cleanup{temporary, stream};
+
   stream.write(content.data(), static_cast<std::streamsize>(content.size()));
   stream.flush();
   if (!stream)
@@ -85,18 +92,23 @@ void DirectoryStore::replace(std::string_view name, std::string_view content) {
   if (!SDL_RenamePath(utf8(temporary).c_str(), utf8(destination).c_str()))
     throwSDLError("Cannot replace settings document");
 }
+
 std::filesystem::path preferenceDirectory(std::string_view organization,
                                           std::string_view application) {
   auto *value = SDL_GetPrefPath(std::string{organization}.c_str(),
                                 std::string{application}.c_str());
   if (!value)
     throwSDLError("Cannot obtain preferences directory");
+
   struct Guard {
     char *value;
+
     ~Guard() { SDL_free(value); }
   } guard{value};
+
   return fromUTF8(value);
 }
+
 std::filesystem::path executableDirectory() {
   const char *value = SDL_GetBasePath();
   if (!value)

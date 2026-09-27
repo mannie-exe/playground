@@ -10,6 +10,7 @@ struct ConstraintLayoutProps {
   float tolerance{0.01f};
   bool operator==(const ConstraintLayoutProps &) const = default;
 };
+
 struct ConstraintLayoutPatch {
   Patch<std::size_t> maximumPasses;
   Patch<float> tolerance;
@@ -20,6 +21,7 @@ class ConstraintLayout : public Node {
     layout::ConstraintId id;
     layout::LayoutConstraint value;
   };
+
   struct Solution {
     math::Size2 size;
     std::vector<math::Rect> children;
@@ -49,6 +51,7 @@ protected:
                  const layout::SizeConstraints &offered) override {
     return {layout(context, offered).size};
   }
+
   void arrangeChildren(ArrangeContext &context, math::Rect content) override;
 
 public:
@@ -57,7 +60,9 @@ public:
       : Node{box}, _props{props} {
     validate(props);
   }
+
   const ConstraintLayoutProps &props() const noexcept { return _props; }
+
   void setProps(ConstraintLayoutProps props);
   void applyPatch(const ConstraintLayoutPatch &p);
   Node &append(std::string key, std::unique_ptr<Node> child);

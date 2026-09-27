@@ -1,4 +1,6 @@
 #include <ui/UIRoot.hpp>
+#include <ui/collections/ScrollView.hpp>
+#include <ui/containers/Popup.hpp>
 
 namespace playground::ui {
 
@@ -13,7 +15,7 @@ std::optional<math::Transform2D> UIRoot::inputInverse(Node &node) {
 
 Node *UIRoot::hit(Node &node, math::Point2 local) {
   if (node.visibility() != Visibility::Visible || !node.isArranged() ||
-      !node.semanticProps().enabled)
+      !node.isInteractionEnabled())
     return nullptr;
   const bool inside = node.containsLocal(local);
   if (node.clipsContent() && !node.containsClip(local))
@@ -30,6 +32,8 @@ Node *UIRoot::hit(Node &node, math::Point2 local) {
       policy == HitTestPolicy::SelfAndChildren) {
     for (auto it = node.children().rbegin(); it != node.children().rend();
          ++it) {
+      if ((*it)->isPortal())
+        continue;
       if (auto inverse = inputInverse(**it))
         if (auto *found = hit(**it, inverse->mapPoint(local)))
           return found;
@@ -44,15 +48,23 @@ Node *UIRoot::hit(Node &node, math::Point2 local) {
 bool UIRoot::acceptsInput(const Node &node) noexcept {
   if (!node.isArranged() || node.visibility() != Visibility::Visible ||
       node.hitTestPolicy() == HitTestPolicy::None ||
-      !node.semanticProps().enabled || !node.worldTransform().inverse())
+      !node.isInteractionEnabled() || !node.worldTransform().inverse())
     return false;
   for (auto *parent = node.parent(); parent; parent = parent->parent()) {
     if (!parent->isArranged() || parent->visibility() != Visibility::Visible ||
-        !parent->semanticProps().enabled ||
+        !parent->isInteractionEnabled() ||
         parent->hitTestPolicy() == HitTestPolicy::None ||
         parent->hitTestPolicy() == HitTestPolicy::Self)
       return false;
   }
+  return true;
+}
+
+bool UIRoot::acceptsAction(const Node &node) noexcept {
+  for (auto *p = &node; p; p = p->parent())
+    if (!p->isArranged() || p->visibility() != Visibility::Visible ||
+        !p->isInteractionEnabled())
+      return false;
   return true;
 }
 
@@ -81,9 +93,7 @@ void UIRoot::direct(Node &node, UIEvent &event) {
 void UIRoot::synchronizeHover(const UIEvent &event) {
   if (!_content || event.type != EventType::PointerMove)
     return;
-  Node *target{};
-  if (auto inverse = inputInverse(*_content))
-    target = hit(*_content, inverse->mapPoint(event.position));
+  Node *target = presentationHit(event.position);
   auto previous =
       std::find_if(_hovered.begin(), _hovered.end(), [&](const auto &entry) {
         return entry.pointer == event.pointer;
@@ -138,8 +148,7 @@ std::optional<HitResult> UIRoot::hitTest(math::Point2 position) {
   if (!_content)
     return {};
   Traversal traversal{*_table};
-  const auto inverse = inputInverse(*_content);
-  auto *node = inverse ? hit(*_content, inverse->mapPoint(position)) : nullptr;
+  auto *node = presentationHit(position);
   if (!node)
     return {};
   HitResult result{
@@ -173,6 +182,8 @@ void UIRoot::setContent(std::unique_ptr<Node> content) {
   if (_content)
     _content->detach();
   _content = std::move(content);
+  _overlays.clear();
+  _dismissedPointers.clear();
   _table->layoutDirty = _table->paintDirty = true;
   ++_table->revision;
 }
@@ -183,10 +194,13 @@ void UIRoot::flushMutations() {
   if (_flushingMutations)
     throw std::logic_error("Cannot recursively flush UI mutations");
   _flushingMutations = true;
+
   struct FlushGuard {
     bool &active;
+
     ~FlushGuard() { active = false; }
   } guard{_flushingMutations};
+
   // Newly enqueued work waits for the next boundary; a callback cannot spin
   // forever.
   const auto count = _deferred.size();
@@ -206,6 +220,7 @@ void UIRoot::flushLayout(math::Size2 viewport,
 }
 
 math::Size2 UIRoot::preferredSize(math::Size2 maximum, math::Vec2f pixelScale) {
+  UIWorkTiming::Scope timing{_timing, UIWorkPhase::Layout};
   if (_table->traversals || _table->lifecycleCallbacks)
     throw std::logic_error("Cannot measure preferred size during UI traversal");
   if (!math::isFinite(maximum) || !math::hasArea(maximum) ||
@@ -215,6 +230,8 @@ math::Size2 UIRoot::preferredSize(math::Size2 maximum, math::Vec2f pixelScale) {
     return {};
   auto context = _context;
   context.pixelScale = pixelScale;
+  // A custom measurement can replace offer-dependent derived state.
+  _table->layoutDirty = true;
   Traversal traversal{*_table};
   return _content->measure(context, {{0, maximum.width}, {0, maximum.height}})
       .size;
@@ -252,23 +269,33 @@ void UIRoot::flushChanges() {
 }
 
 void UIRoot::prepare(PrepareContext context) {
+  UIWorkTiming::Scope timing{_timing, UIWorkPhase::Prepare};
   if (_environment)
     flushLayout(*_environment);
   Traversal traversal{*_table};
   context.stats = &_stats;
   if (_content)
     _content->prepare(context);
+  for (auto id : _overlays)
+    if (auto *node = resolve(id))
+      node->prepare(context);
 }
 
 void UIRoot::update(double seconds) {
   if (_updating)
     throw std::logic_error("Cannot recursively update UI runtime");
   _updating = true;
+
   struct UpdateGuard {
     bool &active;
+
     ~UpdateGuard() { active = false; }
   } guard{_updating};
-  _completions.drain();
+
+  {
+    UIWorkTiming::Scope timing{_timing, UIWorkPhase::Completions};
+    _completions.drain();
+  }
   _services.scheduler->advance(seconds);
   flushMutations();
   flushChanges();
@@ -277,21 +304,46 @@ void UIRoot::update(double seconds) {
 }
 
 void UIRoot::render(PaintContext &context) const {
+  UIWorkTiming::Scope timing{_timing, UIWorkPhase::Paint};
   Traversal traversal{*_table};
+  const auto revision = _table->revision;
   if (_content)
     _content->render(context);
-  if (_content)
-    clearDirty(*_content, DirtyFlags::Paint);
-  _table->paintDirty = false;
+  PaintScope overlayScope{context};
+  context.clip({{}, _viewport});
+  for (auto id : _overlays)
+    if (auto *node = dynamic_cast<Portal *>(resolve(id));
+        node && node->popupProps().open) {
+      if (node->popupProps().backdrop)
+        context.fill({{}, _viewport}, *node->popupProps().backdrop);
+      node->render(context, true);
+    }
+  if (_table->revision == revision) {
+    if (_content)
+      clearDirty(*_content, DirtyFlags::Paint);
+    _table->paintDirty = false;
+  }
 }
 
 void UIRoot::focusNext(bool reverse) {
   if (!_content)
     return;
   std::vector<Node *> candidates;
-  collect(*_content, candidates);
+  auto *scope = navigationScope();
+  if (auto *current = resolve(_table->focused)) {
+    const auto neighbor = reverse ? current->inputProps().neighbors.previous
+                                  : current->inputProps().neighbors.next;
+    if (neighbor)
+      if (auto *next = resolve(*neighbor); next && next->isFocusable() &&
+                                           acceptsAction(*next) &&
+                                           withinScope(*next, scope)) {
+        requestFocus(*neighbor);
+        return;
+      }
+  }
+  collect(*(scope ? scope : _content.get()), candidates);
   std::erase_if(candidates, [](Node *node) {
-    return !node->isFocusable() || !acceptsInput(*node);
+    return !node->isFocusable() || !acceptsAction(*node);
   });
   if (candidates.empty()) {
     _table->focused = {};
@@ -300,6 +352,10 @@ void UIRoot::focusNext(bool reverse) {
   const auto it =
       std::find_if(candidates.begin(), candidates.end(),
                    [&](Node *node) { return node->id() == _table->focused; });
+  if (scope && !scope->inputProps().wrapNavigation && it != candidates.end() &&
+      ((reverse && it == candidates.begin()) ||
+       (!reverse && it + 1 == candidates.end())))
+    return;
   const std::size_t index =
       it == candidates.end()
           ? (reverse ? candidates.size() - 1 : 0)
@@ -311,7 +367,9 @@ void UIRoot::focusNext(bool reverse) {
 
 void UIRoot::requestFocus(NodeId id) {
   auto *node = resolve(id);
-  if (node && (!node->isFocusable() || !acceptsInput(*node)))
+  if (_modal != NodeId{} && node && !withinScope(*node, resolve(_modal)))
+    return;
+  if (node && (!node->isFocusable() || !acceptsAction(*node)))
     return;
   if (_table->focused == id)
     return;
@@ -324,15 +382,24 @@ void UIRoot::requestFocus(NodeId id) {
   if (node) {
     UIEvent event{.type = EventType::FocusGained};
     direct(*node, event);
+    for (auto *p = node->parent(); p; p = p->parent())
+      if (p->isPortal())
+        break;
+      else if (auto *scroll = dynamic_cast<ScrollView *>(p))
+        scroll->scrollIntoView(*node);
   }
 }
 
 void UIRoot::dispatch(UIEvent &event) {
+  UIWorkTiming::Scope timing{_timing, UIWorkPhase::Input};
   if (_environment)
     flushLayout(*_environment);
+  auto *scope = navigationScope();
   {
     Traversal traversal{*_table};
     const auto route = [&] {
+      if (routeOverlayDismissal(event))
+        return;
       if (event.type == EventType::PointerLeave) {
         for (const auto &entry : _hovered)
           for (auto *node = resolve(entry.node); node; node = node->parent()) {
@@ -361,13 +428,15 @@ void UIRoot::dispatch(UIEvent &event) {
         }
       }
       if (auto *focused = resolve(_table->focused);
-          !focused || !focused->isFocusable() || !acceptsInput(*focused))
-        _table->focused = {};
+          !focused || !focused->isFocusable() || !acceptsAction(*focused))
+        requestFocus({});
       if (!_content)
         return;
       synchronizeHover(event);
       Node *target{};
-      if (event.type == EventType::KeyDown || event.type == EventType::KeyUp ||
+      if (event.type == EventType::TextInput ||
+          event.type == EventType::TextEditing ||
+          event.type == EventType::KeyDown || event.type == EventType::KeyUp ||
           event.type == EventType::FocusGained) {
         target = resolve(_table->focused);
       } else {
@@ -375,11 +444,11 @@ void UIRoot::dispatch(UIEvent &event) {
           if (capture.pointer == event.pointer)
             target = resolve(capture.node);
         if (!target) {
-          if (auto inverse = inputInverse(*_content))
-            target = hit(*_content, inverse->mapPoint(event.position));
+          target = presentationHit(event.position);
         }
       }
-      if (event.type == EventType::FocusLost) {
+      if (event.type == EventType::FocusLost ||
+          event.type == EventType::InputCancel) {
         for (const auto &entry : _hovered)
           for (auto *node = resolve(entry.node); node; node = node->parent()) {
             UIEvent leave{.type = EventType::PointerLeave,
@@ -399,17 +468,22 @@ void UIRoot::dispatch(UIEvent &event) {
         _table->captures.clear();
         if (auto *focused = resolve(_table->focused))
           direct(*focused, event);
-        _table->focused = {};
+        if (event.type == EventType::FocusLost)
+          _table->focused = {};
         return;
       }
       if (event.type == EventType::KeyDown && event.logicalKey == Key::Tab &&
-          !target) {
+          !target && _interaction.sequentialNavigation) {
         focusNext(event.shift);
         event.handled = true;
         return;
       }
       if (!target)
         return;
+      if (_modal != NodeId{} && !withinScope(*target, scope)) {
+        event.handled = true;
+        return;
+      }
       std::vector<Node *> path;
       for (auto *node = target; node; node = node->parent())
         path.push_back(node);
@@ -426,7 +500,8 @@ void UIRoot::dispatch(UIEvent &event) {
       for (std::size_t i = 1; i < path.size() && !event.propagationStopped; ++i)
         deliver(*path[i], EventPhase::Bubble);
       if (!event.defaultPrevented) {
-        if (event.type == EventType::KeyDown && event.logicalKey == Key::Tab) {
+        if (event.type == EventType::KeyDown && event.logicalKey == Key::Tab &&
+            _interaction.sequentialNavigation) {
           focusNext(event.shift);
           event.handled = true;
         } else {
@@ -443,6 +518,22 @@ void UIRoot::dispatch(UIEvent &event) {
       }
     };
     route();
+    if (!event.handled && !event.defaultPrevented &&
+        !event.propagationStopped && event.type == EventType::KeyDown &&
+        _interaction.directionalNavigation) {
+      math::Vec2f direction{};
+      if (event.logicalKey == Key::Left)
+        direction.x = -1;
+      if (event.logicalKey == Key::Right)
+        direction.x = 1;
+      if (event.logicalKey == Key::Up)
+        direction.y = -1;
+      if (event.logicalKey == Key::Down)
+        direction.y = 1;
+      if (direction != math::Vec2f{}) {
+        event.handled = focusDirection(direction);
+      }
+    }
   }
   flushMutations();
   flushChanges();

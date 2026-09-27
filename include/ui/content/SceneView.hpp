@@ -1,8 +1,8 @@
 #pragma once
 
 #include <scene/SceneViewport.hpp>
+#include <support/Patch.hpp>
 #include <ui/Node.hpp>
-#include <ui/Patch.hpp>
 
 namespace playground::ui {
 
@@ -15,6 +15,9 @@ struct SceneViewProps {
   std::optional<float> aspectRatio;
   scene::TransparentOrder transparentOrder{
       scene::TransparentOrder::BackToFront};
+  scene::SceneRenderProps::Lighting lighting;
+  float exposure{1};
+  bool toneMap{};
 };
 
 struct SceneViewPatch {
@@ -25,6 +28,9 @@ struct SceneViewPatch {
   Patch<float> resolutionScale;
   Patch<std::optional<float>> aspectRatio;
   Patch<scene::TransparentOrder> transparentOrder;
+  Patch<scene::SceneRenderProps::Lighting> lighting;
+  Patch<float> exposure;
+  Patch<bool> toneMap;
 };
 
 class SceneView final : public Node {
@@ -45,9 +51,12 @@ protected:
 
 public:
   explicit SceneView(SceneViewProps props, layout::BoxProps box = {});
+
   const SceneViewProps &props() const noexcept { return _props; }
+
   void setProps(SceneViewProps props);
   void applyPatch(const SceneViewPatch &patch);
+
   const std::optional<scene::SceneViewport> &viewport() const noexcept {
     return _viewport;
   }

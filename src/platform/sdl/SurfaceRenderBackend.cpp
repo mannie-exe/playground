@@ -1,6 +1,7 @@
 #include <optional>
 #include <stdexcept>
 
+#include <platform/sdl/RenderError.hpp>
 #include <platform/sdl/SoftwareSceneRenderer.hpp>
 #include <platform/sdl/SurfacePainter.hpp>
 #include <platform/sdl/SurfaceRenderBackend.hpp>
@@ -30,15 +31,17 @@ class SurfaceFrame final : public rendering::RenderFrame,
 public:
   SurfaceFrame(SDL_Window &window, bool &frameActive,
                std::uint64_t &completedWork, rendering::RenderFrameProps props,
-               SDL_Surface *scaled)
+               SDL_Surface *scaled, const rendering::AllocationLimits &limits)
       : _window{window}, _frameActive{frameActive},
-        _completedWork{completedWork}, _scaled{scaled} {
+        _completedWork{completedWork}, _scaled{scaled}, _scene{limits} {
     auto *surface = scaled ? scaled : SDL_GetWindowSurface(&_window);
     if (!surface)
-      throwSDLError("Failed to acquire window surface for frame");
+      throwRenderError("Failed to acquire window surface for frame",
+                       rendering::RenderOperation::Acquire);
     int width{}, height{};
     if (!SDL_GetWindowSize(&_window, &width, &height))
-      throwSDLError("Failed to query frame logical size");
+      throwRenderError("Failed to query frame logical size",
+                       rendering::RenderOperation::Query);
     if (width <= 0 || height <= 0)
       throw std::runtime_error("Surface frame requires positive logical size");
 
@@ -51,7 +54,8 @@ public:
     if (!SDL_FillSurfaceRect(
             surface, nullptr,
             SDL_MapSurfaceRGBA(surface, color.r, color.g, color.b, color.a)))
-      throwSDLError("Failed to clear frame surface");
+      throwRenderError("Failed to clear frame surface",
+                       rendering::RenderOperation::Record);
     _frameActive = true;
   }
 
@@ -75,22 +79,28 @@ public:
     if (_scaled) {
       auto *target = SDL_GetWindowSurface(&_window);
       if (!target)
-        throwSDLError("Failed to acquire scaled presentation target");
+        throwRenderError("Failed to acquire scaled presentation target",
+                         rendering::RenderOperation::Acquire);
       SDL_Rect clip{};
       SDL_GetSurfaceClipRect(target, &clip);
+
       struct ClipGuard {
         SDL_Surface *target;
         SDL_Rect clip;
+
         ~ClipGuard() { SDL_SetSurfaceClipRect(target, &clip); }
       } guard{target, clip};
+
       SDL_SetSurfaceClipRect(target, nullptr);
       if (!SDL_SetSurfaceBlendMode(_scaled, SDL_BLENDMODE_NONE) ||
           !SDL_BlitSurfaceScaled(_scaled, nullptr, target, nullptr,
                                  SDL_SCALEMODE_LINEAR))
-        throwSDLError("Failed to scale frame for presentation");
+        throwRenderError("Failed to scale frame for presentation",
+                         rendering::RenderOperation::Present);
     }
     if (!SDL_UpdateWindowSurface(&_window))
-      throwSDLError("Failed to present frame surface");
+      throwRenderError("Failed to present frame surface",
+                       rendering::RenderOperation::Present);
     ++_completedWork;
     return rendering::PresentationOutcome::Submitted;
   }
@@ -101,7 +111,8 @@ public:
 math::Vec2i SurfaceRenderBackend::drawableSize() const {
   math::Vec2i size;
   if (!SDL_GetWindowSizeInPixels(&_window, &size.x, &size.y))
-    throwSDLError("Failed to query drawable size");
+    throwRenderError("Failed to query drawable size",
+                     rendering::RenderOperation::Query);
   return size;
 }
 
@@ -114,10 +125,15 @@ SurfaceRenderBackend::beginFrame(rendering::RenderFrameProps props) {
   if ((SDL_GetWindowFlags(&_window) & SDL_WINDOW_MINIMIZED) ||
       !math::hasArea(drawable))
     return {};
+  const auto targetSize = props.settings.targetSize(drawable);
+  _props.allocations.validateTarget(targetSize, 4);
+  if (rendering::AllocationLimits::textureBytes(targetSize, 1) >
+      _props.allocations.maxSoftwareTargetPixels)
+    throw std::length_error("Software frame exceeds pixel policy");
   if (props.settings.resolutionScale == 1) {
     _scaledTarget.reset();
   } else {
-    const auto size = props.settings.targetSize(drawable);
+    const auto size = targetSize;
     if (!_scaledTarget || _scaledTarget->w != size.x ||
         _scaledTarget->h != size.y) {
       SDLResource<SDL_Surface, SDL_DestroySurface> replacement{
@@ -128,7 +144,8 @@ SurfaceRenderBackend::beginFrame(rendering::RenderFrameProps props) {
     }
   }
   return std::make_unique<SurfaceFrame>(_window, _frameActive, _completedWork,
-                                        props, _scaledTarget.get());
+                                        props, _scaledTarget.get(),
+                                        _props.allocations);
 }
 
 } // namespace playground::sdl

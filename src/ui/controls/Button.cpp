@@ -1,6 +1,45 @@
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+
 #include <ui/controls/Button.hpp>
+#include <ui/controls/ControlPaint.hpp>
 
 namespace playground::ui {
+SemanticState Button::semanticState() const {
+  auto state = Node::semanticState();
+  state.description.enabled = _props.enabled;
+  if (_props.enabled)
+    state.actions.push_back(SemanticAction::Activate);
+  return state;
+}
+
+ActionResult Button::performAction(const UIAction &action, ActionSource) {
+  if (!_props.enabled)
+    return ActionResult::Unavailable;
+  if (!std::holds_alternative<Activate>(action))
+    return ActionResult::Unsupported;
+  _activated.emit();
+  return ActionResult::Applied;
+}
+
+void ButtonProps::validate() const {
+  if (!std::isfinite(focusWidth) || focusWidth < 0)
+    throw std::invalid_argument("Invalid button focus width");
+}
+
+void Button::paintSubtree(PaintContext &context) const {
+  Box::paintSubtree(context);
+  if (!hasFocus() || !_props.enabled)
+    return;
+  const auto size = bounds().size;
+  const float t =
+      std::min({_props.focusWidth, size.width / 2, size.height / 2});
+  if (t <= 0)
+    return;
+  control_paint::outline(context, {{}, size},
+                         _props.useTheme ? theme().focus : _props.focus, t);
+}
 
 void Button::cancel() noexcept {
   _pointer.reset();
@@ -11,6 +50,17 @@ void Button::cancel() noexcept {
 }
 
 void Button::paint(PaintContext &context) const {
+  if (_props.useTheme) {
+    const auto &t = theme();
+    context.fill({{}, bounds().size}, !_props.enabled ? t.surface
+                                      : isPressed()   ? t.pressed
+                                      : isHovered()   ? t.hover
+                                                      : t.elevated);
+    control_paint::outline(context, {{}, bounds().size},
+                           !_props.enabled ? t.mutedText : t.border,
+                           t.highContrast ? 2.f : 1.f);
+    return;
+  }
   const auto color = !_props.enabled      ? _props.disabled
                      : (_pointer || _key) ? _props.pressed
                      : _hovered           ? _props.hover
@@ -19,8 +69,13 @@ void Button::paint(PaintContext &context) const {
 }
 
 void Button::onDefaultEvent(UIEvent &event) {
+  if (event.type == EventType::FocusGained) {
+    invalidatePaint();
+    return;
+  }
   if (event.type == EventType::PointerCancel ||
-      event.type == EventType::FocusLost) {
+      event.type == EventType::FocusLost ||
+      event.type == EventType::InputCancel) {
     cancel();
     return;
   }
@@ -62,22 +117,23 @@ void Button::onDefaultEvent(UIEvent &event) {
       _hovered = inside;
       event.handled = true;
       if (inside)
-        _activated.emit();
+        performAction(Activate{}, ActionSource::Pointer);
     }
     break;
   case EventType::KeyDown:
-    if (hasFocus() && !event.repeat && !_pointer &&
+    if (hasFocus() && !event.repeat && !_pointer && !_key &&
         (event.logicalKey == Key::Space || event.logicalKey == Key::Enter)) {
       _key = event.logicalKey;
+      _keySource = event.source;
       invalidatePaint();
       event.handled = true;
     }
     break;
   case EventType::KeyUp:
-    if (hasFocus() && _key == event.logicalKey) {
+    if (hasFocus() && _key == event.logicalKey && _keySource == event.source) {
       cancel();
       event.handled = true;
-      _activated.emit();
+      performAction(Activate{}, event.source);
     }
     break;
   default:
@@ -88,6 +144,7 @@ void Button::onDefaultEvent(UIEvent &event) {
 Button::Button(std::unique_ptr<Node> content, ButtonProps props,
                layout::BoxProps box)
     : Box{box, {layout::Alignment::center()}}, _props{props} {
+  _props.validate();
   setHitTestPolicy(HitTestPolicy::SelfAndChildren);
   setFocusable(true);
   setSemanticProps({.role = SemanticRole::Button, .enabled = props.enabled});
@@ -95,7 +152,8 @@ Button::Button(std::unique_ptr<Node> content, ButtonProps props,
     setChild(std::move(content));
 }
 
-void Button::setProps(ButtonProps value) {
+void Button::setButtonProps(ButtonProps value) {
+  value.validate();
   if (value == _props)
     return;
   auto semantics = semanticProps();
@@ -112,16 +170,19 @@ void Button::setProps(ButtonProps value) {
 void Button::setEnabled(bool value) {
   auto p = _props;
   p.enabled = value;
-  setProps(p);
+  setButtonProps(p);
 }
 
-void Button::applyPatch(const ButtonPatch &p) {
+void Button::applyButtonPatch(const ButtonPatch &p) {
   const ButtonProps d;
-  setProps({p.enabled.appliedTo(_props.enabled, d.enabled),
-            p.normal.appliedTo(_props.normal, d.normal),
-            p.hover.appliedTo(_props.hover, d.hover),
-            p.pressed.appliedTo(_props.pressed, d.pressed),
-            p.disabled.appliedTo(_props.disabled, d.disabled)});
+  setButtonProps({p.enabled.appliedTo(_props.enabled, d.enabled),
+                  p.normal.appliedTo(_props.normal, d.normal),
+                  p.hover.appliedTo(_props.hover, d.hover),
+                  p.pressed.appliedTo(_props.pressed, d.pressed),
+                  p.disabled.appliedTo(_props.disabled, d.disabled),
+                  p.focus.appliedTo(_props.focus, d.focus),
+                  p.focusWidth.appliedTo(_props.focusWidth, d.focusWidth),
+                  p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
 }
 
 } // namespace playground::ui

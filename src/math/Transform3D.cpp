@@ -12,6 +12,7 @@ float finiteFloat(double value) {
     throw std::overflow_error("Transform exceeds finite float range");
   return static_cast<float>(value);
 }
+
 void affine(const Matrix4 &matrix) {
   if (!isFinite(matrix) || matrix.at(3, 0) != 0 || matrix.at(3, 1) != 0 ||
       matrix.at(3, 2) != 0 || matrix.at(3, 3) != 1)
@@ -29,6 +30,7 @@ Quaternion normalizedRotation(Quaternion q) {
   return {finiteFloat(q.x / length), finiteFloat(q.y / length),
           finiteFloat(q.z / length), finiteFloat(q.w / length)};
 }
+
 Quaternion axisAngle(Vec3f axis, float radians) {
   if (!std::isfinite(radians))
     throw std::invalid_argument("Rotation angle must be finite radians");
@@ -38,6 +40,7 @@ Quaternion axisAngle(Vec3f axis, float radians) {
       finiteFloat(axis.x * sine), finiteFloat(axis.y * sine),
       finiteFloat(axis.z * sine), finiteFloat(std::cos(double(radians) / 2))});
 }
+
 Quaternion operator*(Quaternion a, Quaternion b) {
   a = normalizedRotation(a);
   b = normalizedRotation(b);
@@ -51,6 +54,7 @@ Quaternion operator*(Quaternion a, Quaternion b) {
                  finiteFloat(double(a.w) * b.w - double(a.x) * b.x -
                              double(a.y) * b.y - double(a.z) * b.z)});
 }
+
 Matrix4 rotation(Quaternion value) {
   const auto q = normalizedRotation(value);
   const double x = q.x, y = q.y, z = q.z, w = q.w;
@@ -66,6 +70,7 @@ Matrix4 rotation(Quaternion value) {
   result.at(2, 2) = finiteFloat(1 - 2 * (x * x + y * y));
   return result;
 }
+
 Matrix4 inverse(const Matrix4 &matrix) {
   if (!isFinite(matrix))
     throw std::invalid_argument("Cannot invert nonfinite matrix");
@@ -101,6 +106,7 @@ Matrix4 inverse(const Matrix4 &matrix) {
       result.at(r, c) = finiteFloat(rows[r][c + 4]);
   return result;
 }
+
 Vec3f transformPoint(const Matrix4 &matrix, Vec3f point) {
   const auto p = matrix * Vec4f{point.x, point.y, point.z, 1};
   if (p.w == 0)
@@ -108,11 +114,13 @@ Vec3f transformPoint(const Matrix4 &matrix, Vec3f point) {
   return {finiteFloat(double(p.x) / p.w), finiteFloat(double(p.y) / p.w),
           finiteFloat(double(p.z) / p.w)};
 }
+
 Vec3f transformDirection(const Matrix4 &matrix, Vec3f direction) {
   affine(matrix);
   const auto v = matrix * Vec4f{direction.x, direction.y, direction.z, 0};
   return {v.x, v.y, v.z};
 }
+
 Vec3f transformNormal(const Matrix4 &model, Vec3f normal) {
   affine(model);
   const auto inverted = inverse(model);
@@ -126,6 +134,7 @@ Vec3f transformNormal(const Matrix4 &model, Vec3f normal) {
                                       double(inverted.at(1, 2)) * normal.y +
                                       double(inverted.at(2, 2)) * normal.z)});
 }
+
 Matrix4 Transform3D::matrix() const {
   return translation(position) * rotation(orientation) * scaling(scale);
 }

@@ -34,6 +34,7 @@ file(
     EXPECTED_HASH SHA256=1c40fc102ce9625d7de7eb14f541cab30cc3138dca627f0b0ec40293ce6c2934
 )
 include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
+include(cmake/Accessibility.cmake)
 
 #[[
 Keep clangd/VSCode pointed at a stable compile database path.
@@ -206,6 +207,48 @@ CPMAddPackage(
     "SPIRV_REFLECT_EXAMPLES OFF"
     "SPIRV_REFLECT_INSTALL OFF"
 )
+CPMAddPackage(NAME mikktspace GITHUB_REPOSITORY mmikk/MikkTSpace
+    GIT_TAG 3e895b49d05ea07e4c2133156cfa94369e19e409 DOWNLOAD_ONLY YES)
+CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb
+    GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20 DOWNLOAD_ONLY YES)
+CPMAddPackage(
+    URI "gh:zeux/meshoptimizer#9e1f07b159d3cb777f1c67ed31fc11fd117986f4@1.3"
+    OPTIONS "MESHOPT_BUILD_DEMO OFF" "MESHOPT_BUILD_GLTFPACK OFF" "MESHOPT_BUILD_SHARED_LIBS OFF")
+CPMAddPackage(NAME ktx GITHUB_REPOSITORY KhronosGroup/KTX-Software
+    GIT_TAG 936b655d10fe75f900967f524ba31005bebcbb47
+    GIT_SUBMODULES "" DOWNLOAD_ONLY YES)
+# Only the reader/transcoder is linked; dependency tools, tests and install
+# rules are excluded from our application build/package.
+set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TOOLS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_LOADTEST_APPS OFF CACHE STRING "" FORCE)
+set(KTX_FEATURE_DOC OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_JNI OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_PY OFF CACHE BOOL "" FORCE)
+# 4.4.2's generic reader references KTX1 symbols even in a KTX2-only static
+# build. Compile that internal reader; our public decoder still accepts KTX2 only.
+set(KTX_FEATURE_KTX1 ON CACHE BOOL "" FORCE)
+set(KTX_FEATURE_KTX2 ON CACHE BOOL "" FORCE)
+set(KTX_FEATURE_VK_UPLOAD OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_GL_UPLOAD OFF CACHE BOOL "" FORCE)
+set(BASISU_SUPPORT_OPENCL OFF CACHE BOOL "" FORCE)
+function(playground_add_ktx)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(${ktx_SOURCE_DIR} ${ktx_BINARY_DIR} EXCLUDE_FROM_ALL)
+endfunction()
+playground_add_ktx()
+install(FILES ${meshoptimizer_SOURCE_DIR}/LICENSE.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME meshoptimizer.txt)
+install(DIRECTORY ${ktx_SOURCE_DIR}/LICENSES/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses/ktx)
+install(FILES ${ktx_SOURCE_DIR}/LICENSE.md ${ktx_SOURCE_DIR}/NOTICE.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses/ktx)
+add_library(playground_mikktspace STATIC ${mikktspace_SOURCE_DIR}/mikktspace.c)
+target_include_directories(playground_mikktspace SYSTEM PUBLIC ${mikktspace_SOURCE_DIR})
+install(FILES ${mikktspace_SOURCE_DIR}/mikktspace.h
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME mikktspace.txt)
+install(FILES ${stb_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses RENAME stb.txt)
 include(cmake/Modules.cmake)
 include(cmake/Shaders.cmake)
 
@@ -231,7 +274,15 @@ playground_add_sdl_target(playground
     src/main.cpp
     src/app/AppHost.cpp
     src/app/AppContext.cpp
+    src/app/UISession.cpp
+    src/demo2d/Demo2DUI.cpp
+    src/demo3d/Demo3DApp.cpp
+    src/menu/MenuApp.cpp
+    src/menu/MenuUI.cpp
     src/minesweeper/MinesweeperCell.cpp
+    src/minesweeper/MinesweeperApp.cpp
+    src/minesweeper/DifficultyUI.cpp
+    src/minesweeper/MinesweeperModel.cpp
     src/minesweeper/MinesweeperGrid.cpp
     src/minesweeper/MinesweeperUI.cpp
     INCLUDES

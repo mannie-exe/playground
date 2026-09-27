@@ -14,13 +14,16 @@ struct RepeatProps {
   RepeatLayout layout{RepeatLayout::Stack};
   playground::layout::GridProps grid;
   playground::layout::FlowProps flow;
+
   void validate() const {
     stack.validate(axis);
     grid.validate();
     flow.validate();
   }
+
   bool operator==(const RepeatProps &) const = default;
 };
+
 struct RepeatPatch {
   Patch<layout::Axis> axis;
   Patch<layout::StackProps> stack;
@@ -39,6 +42,7 @@ protected:
                        const layout::SizeConstraints &) override {
     reconcile(_keys);
   }
+
   layout::MeasureResult
   measureContent(MeasureContext &context,
                  const layout::SizeConstraints &offered) override;
@@ -51,11 +55,15 @@ public:
         _props{props} {
     _props.validate();
   }
+
   const RepeatProps &props() const noexcept { return _props; }
+
   void setProps(RepeatProps value);
+
   void setArrangement(layout::Axis axis, layout::StackProps stack = {}) {
     setProps({axis, stack});
   }
+
   void setArrangement(layout::GridProps props);
   void setArrangement(layout::FlowProps props);
   void applyPatch(const RepeatPatch &p);

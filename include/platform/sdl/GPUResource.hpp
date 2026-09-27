@@ -17,6 +17,7 @@ template <typename T, auto Release> class GPUResource {
 
 public:
   GPUResource() = default;
+
   GPUResource(GPUDeviceHandle device, T *value)
       : _device{std::move(device)}, _value{value} {
     if (!_device)
@@ -24,15 +25,19 @@ public:
     if (!_value)
       throwSDLError("GPU resource creation failed");
   }
+
   ~GPUResource() {
     if (_value)
       Release(_device->get(), _value);
   }
+
   GPUResource(const GPUResource &) = delete;
   GPUResource &operator=(const GPUResource &) = delete;
+
   GPUResource(GPUResource &&other) noexcept
       : _device{std::move(other._device)},
         _value{std::exchange(other._value, nullptr)} {}
+
   GPUResource &operator=(GPUResource &&other) noexcept {
     if (this != &other) {
       GPUResource temporary{std::move(other)};
@@ -43,6 +48,7 @@ public:
   }
 
   T *get() const noexcept { return _value; }
+
   explicit operator bool() const noexcept { return _value != nullptr; }
 };
 

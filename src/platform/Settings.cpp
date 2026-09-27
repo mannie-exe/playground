@@ -22,6 +22,9 @@ constexpr std::array viewports{"reflow", "fixed-canvas"};
 constexpr std::array fits{"contain", "cover", "stretch"};
 constexpr std::array renderers{"auto", "software", "sdl-gpu"};
 constexpr std::array gpuDrivers{"auto", "vulkan"};
+constexpr std::array accessibilityModes{"auto", "enabled", "disabled"};
+constexpr std::array colorSchemes{"system", "light", "dark"};
+constexpr std::array contrasts{"system", "normal", "high"};
 
 template <class T> T value(const toml::node &node) {
   if constexpr (std::is_same_v<T, bool>) {
@@ -33,6 +36,7 @@ template <class T> T value(const toml::node &node) {
     throw std::invalid_argument("Settings field has the wrong type");
   return *result;
 }
+
 template <class E, std::size_t N>
 E enumeration(const toml::node &node,
               const std::array<const char *, N> &names) {
@@ -42,6 +46,7 @@ E enumeration(const toml::node &node,
       return static_cast<E>(i);
   throw std::invalid_argument("Unknown settings enum value: " + name);
 }
+
 template <class E, std::size_t N>
 const char *enumName(E entry, const std::array<const char *, N> &names) {
   const auto index = static_cast<std::size_t>(entry);
@@ -49,6 +54,7 @@ const char *enumName(E entry, const std::array<const char *, N> &names) {
     throw std::invalid_argument("Unknown settings enum");
   return names[index];
 }
+
 float number(const toml::node &node) {
   const double result = value<double>(node);
   if (!std::isfinite(result) ||
@@ -56,12 +62,14 @@ float number(const toml::node &node) {
     throw std::invalid_argument("Nonfinite/out-of-range settings number");
   return static_cast<float>(result);
 }
+
 math::Vec2f pair(const toml::node &node) {
   const auto *array = node.as_array();
   if (!array || array->size() != 2)
     throw std::invalid_argument("Expected a two-element settings array");
   return {number(*array->get(0)), number(*array->get(1))};
 }
+
 math::Vec2i integers(const toml::node &node) {
   const auto *array = node.as_array();
   if (!array || array->size() != 2)
@@ -77,12 +85,14 @@ math::Vec2i integers(const toml::node &node) {
   };
   return {axis(*array->get(0)), axis(*array->get(1))};
 }
+
 const toml::table &table(const toml::node &node) {
   auto *result = node.as_table();
   if (!result)
     throw std::invalid_argument("Expected a settings table");
   return *result;
 }
+
 toml::table document(std::string_view text, int maximumVersion = 1) {
   auto result = toml::parse(text);
   const auto *version = result.get("schema_version");
@@ -92,11 +102,24 @@ toml::table document(std::string_view text, int maximumVersion = 1) {
         "Unsupported or missing settings schema_version");
   return result;
 }
+
 SettingsPatch readPatch(const toml::table &fields) {
   SettingsPatch p;
   for (const auto &[key, node] : fields) {
     const auto name = key.str();
-    if (name == "mode")
+    if (name == "color_scheme")
+      p.colorScheme =
+          enumeration<ui::ColorSchemePreference>(node, colorSchemes);
+    else if (name == "contrast")
+      p.contrast = enumeration<ui::ContrastPreference>(node, contrasts);
+    else if (name == "accessibility")
+      p.accessibility =
+          enumeration<ui::AccessibilityMode>(node, accessibilityModes);
+    else if (name == "sequential_navigation")
+      p.sequentialNavigation = value<bool>(node);
+    else if (name == "directional_navigation")
+      p.directionalNavigation = value<bool>(node);
+    else if (name == "mode")
       p.mode = enumeration<WindowMode>(node, modes);
     else if (name == "display")
       p.display = enumeration<DisplaySelection>(node, displays);
@@ -152,8 +175,19 @@ SettingsPatch readPatch(const toml::table &fields) {
   policy.validate();
   return p;
 }
+
 toml::table writePatch(const SettingsPatch &p) {
   toml::table t;
+  if (p.colorScheme)
+    t.insert("color_scheme", enumName(*p.colorScheme, colorSchemes));
+  if (p.contrast)
+    t.insert("contrast", enumName(*p.contrast, contrasts));
+  if (p.accessibility)
+    t.insert("accessibility", enumName(*p.accessibility, accessibilityModes));
+  if (p.sequentialNavigation)
+    t.insert("sequential_navigation", *p.sequentialNavigation);
+  if (p.directionalNavigation)
+    t.insert("directional_navigation", *p.directionalNavigation);
   if (p.mode)
     t.insert("mode", enumName(*p.mode, modes));
   if (p.display)
@@ -198,6 +232,7 @@ toml::table writePatch(const SettingsPatch &p) {
     t.insert("renderer_fallback", *p.rendererFallback);
   return t;
 }
+
 std::string format(const toml::table &t) {
   std::ostringstream out;
   out << t;
@@ -206,6 +241,16 @@ std::string format(const toml::table &t) {
 } // namespace
 
 void SettingsPatch::apply(PresentationProps &p, AppViewPolicy &v) const {
+  if (colorScheme)
+    v.colorScheme = *colorScheme;
+  if (contrast)
+    v.userContrast = *contrast;
+  if (accessibility)
+    v.interaction.accessibility = *accessibility;
+  if (sequentialNavigation)
+    v.interaction.sequentialNavigation = *sequentialNavigation;
+  if (directionalNavigation)
+    v.interaction.directionalNavigation = *directionalNavigation;
   if (mode)
     p.window.mode = *mode;
   if (display)
@@ -247,14 +292,16 @@ void SettingsPatch::apply(PresentationProps &p, AppViewPolicy &v) const {
   if (rendererFallback)
     p.renderer.allowFallback = *rendererFallback;
 }
+
 void SettingsDocument::apply(std::string_view app, PresentationProps &p,
                              AppViewPolicy &v) const {
   defaults.apply(p, v);
   if (const auto found = apps.find(app); found != apps.end())
     found->second.apply(p, v);
 }
+
 SettingsDocument parseSettings(std::string_view text) {
-  const auto root = document(text, 2);
+  const auto root = document(text, 4);
   SettingsDocument result;
   for (const auto &[key, node] : root) {
     if (key == "schema_version")
@@ -269,14 +316,16 @@ SettingsDocument parseSettings(std::string_view text) {
   }
   return result;
 }
+
 std::string serializeSettings(const SettingsDocument &document) {
   toml::table apps;
   for (const auto &[key, patch] : document.apps)
     apps.insert(key, writePatch(patch));
-  return format(toml::table{{"schema_version", 2},
+  return format(toml::table{{"schema_version", 4},
                             {"defaults", writePatch(document.defaults)},
                             {"apps", std::move(apps)}});
 }
+
 SessionState parseSession(std::string_view text) {
   const auto root = document(text);
   for (const auto &[key, node] : root)
@@ -302,6 +351,7 @@ SessionState parseSession(std::string_view text) {
   }
   return result;
 }
+
 std::string serializeSession(const SessionState &state) {
   toml::table apps;
   for (const auto &[app, saved] : state)
@@ -312,7 +362,9 @@ std::string serializeSession(const SessionState &state) {
                             {"display_name", saved.displayName}});
   return format(toml::table{{"schema_version", 1}, {"apps", std::move(apps)}});
 }
+
 void SettingsStore::reload() { publish(readSnapshot()); }
+
 SettingsSnapshot SettingsStore::readSnapshot() const {
   auto project = _projectFiles.read("project.toml");
   auto user = _userFiles.read("settings.toml");
@@ -322,11 +374,13 @@ SettingsSnapshot SettingsStore::readSnapshot() const {
   auto nextSession = session ? parseSession(*session) : SessionState{};
   return {std::move(nextProject), std::move(nextUser), std::move(nextSession)};
 }
+
 void SettingsStore::publish(SettingsSnapshot snapshot) noexcept {
   _project = std::move(snapshot.project);
   _user = std::move(snapshot.user);
   _session = std::move(snapshot.session);
 }
+
 void SettingsStore::setUser(SettingsDocument document, bool persist) {
   const auto text = serializeSettings(document);
   auto checked = parseSettings(text);
@@ -334,16 +388,19 @@ void SettingsStore::setUser(SettingsDocument document, bool persist) {
     _userFiles.replace("settings.toml", text);
   _user = std::move(checked);
 }
+
 void SettingsStore::saveSession(SessionState state) {
   const auto text = serializeSession(state);
   auto checked = parseSession(text);
   _userFiles.replace("session.toml", text);
   _session = std::move(checked);
 }
+
 void SettingsStore::resolve(std::string_view app, PresentationProps &p,
                             AppViewPolicy &v) const {
   resolveWithUser(app, _user, p, v);
 }
+
 void SettingsStore::resolveWithUser(std::string_view app,
                                     const SettingsDocument &user,
                                     PresentationProps &p,
@@ -351,6 +408,7 @@ void SettingsStore::resolveWithUser(std::string_view app,
   auto presentation = p;
   auto policy = v;
   _project.apply(app, presentation, policy);
+  policy.userContrast = ui::ContrastPreference::System;
   user.apply(app, presentation, policy);
   presentation.validate();
   policy.validate();

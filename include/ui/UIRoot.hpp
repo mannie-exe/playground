@@ -33,6 +33,7 @@ class CompletionSink {
 public:
   explicit CompletionSink(runtime::CompletionSink sink)
       : _sink{std::move(sink)} {}
+
   template <typename T, typename Callback>
   bool post(NodeHandle<T> handle, Revision revision, Callback callback) const {
     return _sink.post([handle, revision,
@@ -59,7 +60,17 @@ class UIRoot {
   math::Size2 _viewport{};
   std::optional<LayoutEnvironment> _environment;
   MeasureContext _context;
-  LayoutStats _stats;
+  UIWorkStats _stats;
+  InteractionProps _interaction;
+  NodeId _modal;
+  std::vector<NodeId> _overlays;
+  std::vector<std::uint64_t> _dismissedPointers;
+  void layoutOverlays();
+  Node *presentationHit(math::Point2);
+  bool routeOverlayDismissal(UIEvent &);
+  std::vector<std::pair<NodeId, NodeId>> _modalHistory;
+  const std::uint64_t _workId{nextUIWorkId()};
+  mutable UIWorkTiming _timing;
   LayoutDiagnostics _diagnostics;
 
   class Traversal {
@@ -69,6 +80,7 @@ class UIRoot {
     explicit Traversal(detail::NodeTable &table) : _table{table} {
       ++_table.traversals;
     }
+
     ~Traversal() { --_table.traversals; }
 
     Traversal(const Traversal &) = delete;
@@ -80,38 +92,106 @@ class UIRoot {
   Node *hit(Node &node, math::Point2 local);
 
   static bool acceptsInput(const Node &node) noexcept;
+  static bool acceptsAction(const Node &node) noexcept;
 
   static void clearDirty(Node &node, DirtyFlags flags) noexcept;
   static void collect(Node &node, std::vector<Node *> &nodes);
   static void direct(Node &node, UIEvent &event);
   void synchronizeHover(const UIEvent &event);
+  Node *navigationScope();
+  bool withinScope(const Node &node, const Node *scope) const;
 
 public:
   explicit UIRoot(UIServices services = {},
                   runtime::CompletionQueueProps completions = {});
+
+  struct PublicationKey {
+    std::uint64_t root{}, revision{}, geometry{};
+    NodeId focused;
+    bool operator==(const PublicationKey &) const = default;
+  };
+
+  PublicationKey publicationKey() const noexcept {
+    return {_workId, _table->revision, _table->geometryRevision, focusedNode()};
+  }
+
+  UIWorkTiming::Scope publicationScope() {
+    return {_timing, UIWorkPhase::Publication};
+  }
+
+  void recordPublication(bool cached) noexcept {
+    if (cached)
+      ++_stats.publicationHits;
+    else
+      ++_stats.publications;
+  }
+
   ~UIRoot() {
     _completions.close();
     if (_content)
       _content->detach();
   }
+
   UIRoot(const UIRoot &) = delete;
   UIRoot &operator=(const UIRoot &) = delete;
 
   Node *content() const noexcept { return _content.get(); }
+
   Node *resolve(NodeId id) const noexcept { return _table->resolve(id); }
-  const LayoutStats &stats() const noexcept { return _stats; }
+
+  const UIWorkStats &stats() const noexcept { return _stats; }
+
+  UIWorkSample workSample() const noexcept {
+    return {_workId, _stats, _timing.totals()};
+  }
+
+  void setTimingEnabled(bool enabled) noexcept { _timing.setEnabled(enabled); }
+
   const LayoutDiagnostics &diagnostics() const noexcept { return _diagnostics; }
+
   math::Size2 viewport() const noexcept { return _viewport; }
+
   const std::optional<LayoutEnvironment> &environment() const noexcept {
     return _environment;
   }
+
   UIServices &services() noexcept { return _services; }
+
+  void setTheme(ThemePalette value) {
+    if (_services.theme == value)
+      return;
+    _services.theme = std::move(value);
+    if (_content)
+      _content->refreshTheme();
+  }
+
   CompletionSink completionSink() const {
     return CompletionSink{_completions.sink()};
   }
+
   std::optional<HitResult> hitTest(math::Point2 position);
+
   bool needsPaint() const noexcept { return _table->paintDirty; }
-  void requestPaint() noexcept { _table->paintDirty = true; }
+
+  bool needsUpdate() const {
+    return _completions.pending() || !_deferred.empty() ||
+           _table->layoutDirty || !_table->dirty.empty() ||
+           _table->dirtyFallback;
+  }
+
+  std::optional<double> nextUpdateDelay() {
+    return _services.scheduler->nextDelay();
+  }
+
+  void setWakeCallback(std::function<void()> callback) {
+    _completions.setWakeCallback(std::move(callback));
+  }
+
+  void requestPaint() noexcept {
+    _table->paintDirty = true;
+    ++_table->revision;
+  }
+
   std::vector<NodeInspection> inspectTree() const;
 
   void setContent(std::unique_ptr<Node> content);
@@ -135,6 +215,7 @@ public:
 
   template <std::same_as<LayoutEnvironment> Environment>
   void flushLayout(const Environment &environment) {
+    UIWorkTiming::Scope timing{_timing, UIWorkPhase::Layout};
     if (_table->traversals || _table->lifecycleCallbacks)
       throw std::logic_error(
           "Cannot flush layout during UI traversal or lifecycle callbacks");
@@ -152,8 +233,11 @@ public:
     }
     if (!_content)
       return;
-    if (!_table->layoutDirty && _content->isArranged())
+    if (!_table->layoutDirty && _content->isArranged()) {
+      Traversal traversal{*_table};
+      layoutOverlays();
       return;
+    }
     Traversal traversal{*_table};
     const auto revision = _table->revision;
     const auto available =
@@ -161,9 +245,31 @@ public:
     const auto constraints = layout::SizeConstraints::tight(available.size);
     _content->measure(_context, constraints);
     _content->arrange(_context, available);
+    // Snapshot identities: callbacks may append work, and detach invalidates
+    // IDs.
+    const auto boundaries = _table->layoutBoundaries;
+    for (const auto id : boundaries)
+      if (auto *boundary = resolve(id)) {
+        bool covered = false;
+        for (auto *parent = boundary->parent(); parent;
+             parent = parent->parent())
+          if (std::find(boundaries.begin(), boundaries.end(), parent->id()) !=
+              boundaries.end()) {
+            covered = true;
+            break;
+          }
+        if (covered)
+          continue;
+        boundary->arrange(_context, boundary->bounds());
+        for (auto *parent = boundary->parent(); parent;
+             parent = parent->parent())
+          parent->refreshOverflow();
+      }
+    layoutOverlays();
     if (_table->revision == revision) {
       clearDirty(*_content, DirtyFlags::Measure | DirtyFlags::Arrange);
       _table->layoutDirty = false;
+      _table->layoutBoundaries.clear();
     }
   }
 
@@ -173,6 +279,7 @@ public:
     prepare(PrepareContext{.pixelScale = _environment ? _environment->pixelScale
                                                       : math::Vec2f{1, 1}});
   }
+
   void prepare(PrepareContext context);
 
   void update(double seconds);
@@ -180,15 +287,36 @@ public:
   void render(PaintContext &context) const;
 
   void focusNext(bool reverse = false);
+  // True when navigation belongs to UI, including an occupied focus boundary.
+  // False lets an AfterUI application action handle otherwise unused arrows.
+  bool focusDirection(math::Vec2f direction);
+
+  NodeId focusedNode() const noexcept { return _table->focused; }
+
+  const InteractionProps &interactionProps() const noexcept {
+    return _interaction;
+  }
+
+  void setInteractionProps(InteractionProps props) {
+    props.validate();
+    _interaction = props;
+  }
+
+  ActionResult performAction(NodeId target, const UIAction &,
+                             ActionSource = ActionSource::Program);
+  SemanticSnapshot semanticSnapshot();
   void requestFocus(NodeId id);
+
   void capturePointer(NodeId id, std::uint64_t pointer) {
     if (auto *node = resolve(id); node && acceptsInput(*node))
       node->capturePointer(pointer);
   }
+
   void releasePointer(NodeId id, std::uint64_t pointer) {
     if (auto *node = resolve(id))
       node->releasePointer(pointer);
   }
+
   template <typename Container, typename Placement>
   Node &reparent(NodeId child, Container &from, Container &to,
                  Placement placement) {

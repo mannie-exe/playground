@@ -6,13 +6,16 @@ template <typename T, auto DestroyFn> class SDLResource {
 public:
   // Empty constructor
   SDLResource() = default;
+
   // Initialized constructor
   explicit SDLResource(T *ptr) : _ptr{ptr} {}
+
   // Destructor
   ~SDLResource() { reset(); }
 
   // Move constructor/move assignment operator
   SDLResource(SDLResource &&other) noexcept : _ptr{other.release()} {}
+
   SDLResource &operator=(SDLResource &&other) noexcept {
     if (this == &other)
       return *this;
@@ -26,6 +29,7 @@ public:
 
   // Pointer-like operators
   T &operator*() const { return *_ptr; }
+
   T *operator->() const { return _ptr; }
 
   explicit operator bool() const { return _ptr != nullptr; }

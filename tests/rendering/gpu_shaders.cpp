@@ -86,6 +86,18 @@ int main() {
       test::require(native != nullptr,
                     "active GPU frame exposes explicit native extension");
       auto device = native->gpuDevice();
+      assets::AssetCatalog catalog{directory};
+      const assets::AssetId<assets::ShaderAsset> vertexId{"vertex"},
+          fragmentId{"fragment"};
+      catalog.add(vertexId,
+                  assets::ShaderAsset{assets::FileSource{"vertex.spirv"},
+                                      rendering::ShaderStage::Vertex});
+      catalog.add(fragmentId,
+                  assets::ShaderAsset{assets::FileSource{"fragment.spirv"},
+                                      rendering::ShaderStage::Fragment,
+                                      "main",
+                                      {.uniformBuffers = 1}});
+      catalog.freeze();
       sdl::GPUPipelineProps props{
           .vertex = {.path = vs},
           .fragment = {.path = fs, .layout = {.uniformBuffers = 1}},
@@ -93,6 +105,11 @@ int main() {
               {.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT}}};
       sdl::GPUShaderPipeline pipeline{device, props};
       auto original = pipeline.snapshot();
+      sdl::GPUShaderPipeline assetPipeline{
+          device, props, assets::prepareShader(catalog, vertexId),
+          assets::prepareShader(catalog, fragmentId)};
+      test::require(assetPipeline.poll() == sdl::PipelineReload::Unchanged,
+                    "immutable asset pipeline does not poll disk");
       const auto draw = [&](const auto &snapshot) {
         return native->renderOffscreen(
             {.size = {8, 8}}, [&](sdl::GPURecordingContext context) {
@@ -105,6 +122,10 @@ int main() {
             });
       };
       auto red = std::dynamic_pointer_cast<const sdl::GPUImage>(draw(original));
+      auto assetRed = std::dynamic_pointer_cast<const sdl::GPUImage>(
+          draw(assetPipeline.snapshot()));
+      test::require(readPixel(device, *assetRed)[0] > .99f,
+                    "catalog-prepared pipeline renders equivalently");
       test::require(readPixel(device, *red)[0] > .99f,
                     "custom pipeline executes and renders red");
       frame->paint2D().drawImage(red, {{}, red->pixelSize()},

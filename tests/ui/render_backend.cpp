@@ -4,8 +4,10 @@
 #include <app/SDLGuard.hpp>
 #include <platform/Window.hpp>
 #include <platform/sdl/RenderBackendFactory.hpp>
+#include <platform/sdl/RenderError.hpp>
 #include <platform/sdl/SurfaceRenderBackend.hpp>
 #include <platform/sdl/UISession.hpp>
+#include <scene/SceneRenderer.hpp>
 #include <support/Test.hpp>
 #include <ui/containers/Box.hpp>
 #include <ui/content/Rectangle.hpp>
@@ -17,9 +19,13 @@ public:
   int depth{}, fills{};
 
   void save() override { ++depth; }
+
   void restore() noexcept override { --depth; }
+
   void translate(math::Vec2f) override {}
+
   void clip(math::Rect) override {}
+
   void fill(math::Rect, math::ColorRGBA8) override { ++fills; }
 };
 
@@ -74,6 +80,26 @@ int main() {
         },
         "factory rejects unsupported software composition needs");
     auto created = sdl::createRenderBackend(*window.get(), selected);
+    {
+      rendering::RenderBackendProps limited{
+          .allocations = {.maxTargetBytes = 16}};
+      auto constrained =
+          sdl::createRenderBackend(*window.get(), selected, limited);
+      test::rejects<std::length_error>(
+          [&] { constrained->beginFrame({}); },
+          "factory threads per-target policy into software frames");
+      SDL_SetError("test native presentation");
+      try {
+        sdl::throwRenderError("test context",
+                              rendering::RenderOperation::Present);
+      } catch (const rendering::RenderFailure &failure) {
+        test::require(
+            failure.operation() == rendering::RenderOperation::Present &&
+                std::string{failure.what()}.find("test native presentation") !=
+                    std::string::npos,
+            "typed native failure retains operation and diagnostic");
+      }
+    }
     test::require(created->description().capabilities ==
                       selected.selected.capabilities,
                   "factory realization matches negotiated capabilities");

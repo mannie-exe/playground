@@ -11,7 +11,7 @@
 
 namespace {
 using namespace playground::layout;
-using playground::ui::Patch;
+using playground::Patch;
 
 void require(bool condition, std::string_view message) {
   if (!condition)
@@ -34,30 +34,35 @@ void rejects(Function &&function, std::string_view message) {
 }
 
 void patches() {
-  require(Patch<int>{}.isKeep(), "Default patch must Keep");
-  require(Patch<int>::keep().appliedTo(8, 4) == 8, "Keep preserves current");
-  require(Patch<int>::set(0).appliedTo(8, 4) == 0, "Set accepts zero");
-  require(!Patch<bool>::set(false).appliedTo(true, true), "Set accepts false");
-  require(Patch<int>::reset().appliedTo(8, 4) == 4, "Reset uses baseline");
-  rejects([] { (void)Patch<int>::reset().appliedTo(8); },
+  require(playground::Patch<int>{}.isKeep(), "Default patch must Keep");
+  require(playground::Patch<int>::keep().appliedTo(8, 4) == 8,
+          "Keep preserves current");
+  require(playground::Patch<int>::set(0).appliedTo(8, 4) == 0,
+          "Set accepts zero");
+  require(!playground::Patch<bool>::set(false).appliedTo(true, true),
+          "Set accepts false");
+  require(playground::Patch<int>::reset().appliedTo(8, 4) == 4,
+          "Reset uses baseline");
+  rejects([] { (void)playground::Patch<int>::reset().appliedTo(8); },
           "Required value without baseline rejects Reset");
-  using OptionalPatch = Patch<std::optional<float>>;
+  using OptionalPatch = playground::Patch<std::optional<float>>;
   require(!OptionalPatch::set(std::nullopt).appliedTo(3.0f, 7.0f),
           "Set nullopt clears an optional");
   require(OptionalPatch::reset().appliedTo(3.0f, 7.0f) == 7.0f,
           "Reset optional restores nonempty baseline");
-  require(Patch<int>::set(9).value() && *Patch<int>::set(9).value() == 9,
+  require(playground::Patch<int>::set(9).value() &&
+              *playground::Patch<int>::set(9).value() == 9,
           "Set exposes its value");
-  require(Patch<int>::keep().value() == nullptr,
+  require(playground::Patch<int>::keep().value() == nullptr,
           "Keep has no replacement value");
 
   BoxProps props;
   props.maxWidth = 100.0f;
   BoxPatch patch;
-  patch.maxWidth = Patch<std::optional<float>>::set(std::nullopt);
+  patch.maxWidth = playground::Patch<std::optional<float>>::set(std::nullopt);
   require(!patched(props, patch).maxWidth, "Box patch clears maximum");
-  patch.maxWidth = Patch<std::optional<float>>::set(10.0f);
-  patch.minWidth = Patch<float>::set(20);
+  patch.maxWidth = playground::Patch<std::optional<float>>::set(10.0f);
+  patch.minWidth = playground::Patch<float>::set(20);
   rejects([&] { (void)patched(props, patch); },
           "Box patch validates combined fields");
   require(props.maxWidth == 100 && props.minWidth == 0,

@@ -5,11 +5,15 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
+
+#include <ui/Theme.hpp>
 
 namespace playground::ui {
 
@@ -18,11 +22,15 @@ class Connection {
 
 public:
   Connection() = default;
+
   explicit Connection(std::move_only_function<void() noexcept> disconnect)
       : _disconnect{std::move(disconnect)} {}
+
   ~Connection() { disconnect(); }
+
   Connection(Connection &&other) noexcept
       : _disconnect{std::exchange(other._disconnect, {})} {}
+
   Connection &operator=(Connection &&other) noexcept {
     if (this != &other) {
       disconnect();
@@ -30,6 +38,7 @@ public:
     }
     return *this;
   }
+
   Connection(const Connection &) = delete;
   Connection &operator=(const Connection &) = delete;
 
@@ -49,16 +58,20 @@ template <typename... Args> class Signal {
 
     void invoke(Args... args) {
       ++executions;
+
       struct Guard {
         Slot &slot;
+
         ~Guard() {
           if (--slot.executions == 0 && !slot.active)
             slot.callback = nullptr;
         }
       } guard{*this};
+
       callback(args...);
     }
   };
+
   std::vector<std::shared_ptr<Slot>> _slots;
 
 public:
@@ -98,6 +111,7 @@ class Scheduler {
     std::move_only_function<void()> callback;
     bool executing{};
   };
+
   struct Later {
     bool operator()(const std::shared_ptr<Timer> &a,
                     const std::shared_ptr<Timer> &b) const {
@@ -116,6 +130,14 @@ class Scheduler {
 public:
   double now() const noexcept { return _now; }
 
+  std::optional<double> nextDelay() {
+    while (!_timers.empty() && !_timers.top()->active)
+      _timers.pop();
+    if (_timers.empty())
+      return {};
+    return std::max(0.0, _timers.top()->deadline - _now);
+  }
+
   TimerHandle schedule(double delay, std::move_only_function<void()> callback,
                        double interval = 0);
 
@@ -123,11 +145,16 @@ public:
 };
 
 struct UIServices {
+  ThemePalette theme{defaultTheme()};
+  std::function<std::string()> readClipboard;
+  std::function<void(std::string_view)> writeClipboard;
   Scheduler *scheduler{};
   std::function<void(std::string)> diagnostic;
+
   struct CacheBudget {
     std::size_t limit{64 * 1024 * 1024};
     std::size_t used{};
+
     bool reserve(std::size_t bytes) noexcept {
       if (used > limit || bytes > limit - used)
         return false;
@@ -135,6 +162,7 @@ struct UIServices {
       return true;
     }
   };
+
   std::shared_ptr<CacheBudget> rasterBudget{std::make_shared<CacheBudget>()};
 };
 

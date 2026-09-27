@@ -40,6 +40,8 @@ struct FontRenderProps {
 
 struct FontProps {
   std::string path;
+  // Optional catalog-generation identity; copied by font variants.
+  std::string cacheIdentity;
 
   FontStyleProps style;
   FontLayoutProps layout;
@@ -73,23 +75,31 @@ public:
   explicit Font(FontProps props);
 
   TTF_Font *get() const { return _font.get(); }
-  const FontProps &getProps() const noexcept { return _props; }
+
+  const FontProps &props() const noexcept { return _props; }
 
   std::string_view getPath() const { return _props.path; }
 
   float getSize() const { return _props.style.size; }
+
   TTF_FontStyleFlags getStyleFlags() const { return _props.style.flags; }
+
   int getOutline() const { return _props.style.outline; }
 
   TTF_HorizontalAlignment getAlignment() const {
     return _props.layout.alignment;
   }
+
   TTF_Direction getDirection() const { return _props.layout.direction; }
+
   std::optional<int> getLineSpace() const { return _props.layout.lineSpace; }
+
   int getLineSkip() const { return TTF_GetFontLineSkip(_font.get()); }
 
   TTF_HintingFlags getHinting() const { return _props.render.hinting; }
+
   bool isSDF() const { return _props.render.sdf; }
+
   bool isKerningEnabled() const { return _props.render.kern; }
 
   FontInfo getInfo() const { return getInfo(_font); }

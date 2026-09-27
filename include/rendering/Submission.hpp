@@ -17,6 +17,7 @@ struct ResourceUse {
   SubmissionId lastSubmission{};
   std::shared_ptr<void> allocation;
 };
+
 using ResourceLease = std::shared_ptr<ResourceUse>;
 
 } // namespace playground::rendering

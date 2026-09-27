@@ -21,6 +21,7 @@ public:
     _previous = counter;
     return elapsed;
   }
+
   void rebase() noexcept { _previous.reset(); }
 };
 

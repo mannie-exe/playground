@@ -19,6 +19,7 @@ struct PathPaint {
          fillRule != math::FillRule::EvenOdd))
       throw std::invalid_argument("Invalid path paint");
   }
+
   bool operator==(const PathPaint &) const = default;
 };
 } // namespace playground::rendering

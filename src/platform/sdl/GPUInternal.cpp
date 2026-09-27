@@ -5,6 +5,7 @@
 #include <SDL3/SDL_filesystem.h>
 
 #include "GPUInternal.hpp"
+#include <assets/AssetCatalog.hpp>
 #include <rendering/Shader.hpp>
 
 namespace playground::sdl::gpu_detail {
@@ -44,7 +45,8 @@ SDL_GPUBuffer *StreamBuffer::write(SDL_GPUCommandBuffer *commands,
   _upload.unmap();
   auto *copy = SDL_BeginGPUCopyPass(commands);
   if (!copy)
-    throwSDLError("Cannot begin streaming copy pass");
+    throwRenderError("Cannot begin streaming copy pass",
+                     rendering::RenderOperation::Record);
   const SDL_GPUTransferBufferLocation source{_upload.get(), 0};
   const SDL_GPUBufferRegion destination{_buffer.get(), 0,
                                         static_cast<Uint32>(bytes.size())};
@@ -77,7 +79,7 @@ bool TargetPool::makeRoom(std::size_t bytes) {
 }
 
 std::shared_ptr<void> TargetPool::reserve(std::size_t bytes) {
-  const auto cap = _device->limits().maxLiveTargetBytes;
+  const auto cap = _device->limits().maxLivePoolBytes;
   if (bytes <= cap && _allocations.bytes() > cap - bytes)
     trim();
   try {
@@ -88,7 +90,7 @@ std::shared_ptr<void> TargetPool::reserve(std::size_t bytes) {
   }
 }
 
-std::shared_ptr<GPUImage> TargetPool::color(math::Vec2i size) {
+std::shared_ptr<ColorTarget> TargetPool::color(math::Vec2i size) {
   _device->checkOwnerThread();
   _device->pollCompletions();
   trimAged();
@@ -103,12 +105,13 @@ std::shared_ptr<GPUImage> TargetPool::color(math::Vec2i size) {
       }
       ++_stats.reuses;
       entry.lastUse = _device->completedSubmission();
+      entry.target->beginWrite();
       return entry.target;
     }
   const bool retain = makeRoom(bytes);
   auto reservation = reserve(bytes);
-  auto result = std::make_shared<GPUImage>(_device, size);
-  result->use()->allocation = std::move(reservation);
+  auto result = std::make_shared<ColorTarget>(_device, size);
+  result->reserve(std::move(reservation));
   ++_stats.allocations;
   if (retain) {
     _colors.push_back({result, bytes, _device->completedSubmission()});
@@ -225,15 +228,18 @@ Shader loadShader(GPUDeviceHandle device, const char *name,
     path = std::filesystem::path(PLAYGROUND_SHADER_DIRECTORY) /
            (std::string{name} + extension);
 #endif
-  auto words = rendering::readSPIRV(path);
-  const auto reflection = rendering::reflectSPIRV(words, entry);
   const auto expectedStage = stage == SDL_GPU_SHADERSTAGE_VERTEX
                                  ? rendering::ShaderStage::Vertex
                                  : rendering::ShaderStage::Fragment;
-  if (reflection.stage != expectedStage)
-    throw std::invalid_argument(
-        "Shader bytecode stage does not match requested stage");
-  reflection.validateLayout({samplers, 0, storageBuffers, uniforms});
+  assets::AssetCatalog catalog{path.parent_path()};
+  const assets::AssetId<assets::ShaderAsset> id{name};
+  catalog.add(id, assets::ShaderAsset{assets::FileSource{path.filename()},
+                                      expectedStage,
+                                      entry,
+                                      {samplers, 0, storageBuffers, uniforms}});
+  catalog.freeze();
+  auto compiled = assets::prepareShader(catalog, id);
+  const auto &words = compiled.words;
   SDL_GPUShaderCreateInfo info{};
   info.code_size = words.size() * sizeof(std::uint32_t);
   info.code = reinterpret_cast<const Uint8 *>(words.data());

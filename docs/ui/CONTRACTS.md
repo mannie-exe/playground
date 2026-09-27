@@ -1,5 +1,11 @@
 # UI interfaces and runtime contracts
 
+C++ remains the UI authoring language. Reconstructible views receive app-owned
+models, explicit props and resource bundles; runtime node IDs, callbacks and
+layout caches are not serialized descriptions. See
+[asset and reconstruction contracts](../platform/ASSETS.md). Rebuilding a view
+does not imply resetting its model or restoring transient focus/capture state.
+
 This is the author/host agreement for the retained UI, not an algorithm guide.
 Use [REFERENCE.md](REFERENCE.md) for the node/property catalog and
 [GUIDE.md](GUIDE.md) for additive usage. Source declarations remain authoritative
@@ -7,6 +13,14 @@ for signatures. Renderer contracts live in [2D](../render/2D.md),
 [GPU](../render/GPU.md) and [3D](../render/3D.md).
 
 ## 1. Responsibility boundaries
+
+Appearance and transient presentation are described in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+The root owns a resolved palette and portal presentation order; nodes retain logical
+ownership, event ancestry and semantic identity. Portal anchors use validated NodeIds.
+UI sessions remain transparent unless an authored node requests a themed background.
+Palette notifications are nonthrowing cache invalidations, not resource acquisition
+hooks; resource preparation happens in the normal prepare phase. Reparenting refreshes
+inherited appearance. Modal scopes and popup placement are distinct responsibilities.
 
 | Participant | Owns the decision | Must not take over |
 |---|---|---|
@@ -74,6 +88,12 @@ timer/job owned by its surrounding application.
 
 ## 4. Host-facing sequence
 
+Named input contexts bracket UI routing: BeforeUI can consume shortcuts; a UI
+Handled/Consumed result blocks AfterUI gameplay actions. Focus loss still reaches
+UI capture/focus cleanup. Text/IME and pointer hit testing remain UI responsibilities.
+Optional fixed simulation runs separately; UI update/timers continue while simulation
+is paused. See [runtime input and lifetime](../platform/RUNTIME.md).
+
 The host supplies these existing APIs, directly or through a session adapter:
 
 | Entry point | Preconditions and effect |
@@ -101,6 +121,9 @@ Some entry points synchronize layout internally; this does not allow drawing wit
 stale preparation. A host can update without drawing when the target is unavailable.
 needsPaint is a signal, not a complete exposure/damage/idle scheduler. A cleared
 target needs the whole visible composition drawn, even if all nodes are unchanged.
+`IApp::activityProps/activityDemand` and `UISession::activityDemand` connect this
+signal to [whole-frame host activity](../platform/ACTIVITY.md). Default apps remain
+continuous; opt-in UI apps declare timers, completions and visual changes.
 
 ## 5. Node extension protocol
 
@@ -120,6 +143,7 @@ points so validation, revision tracking and traversal scopes are not bypassed.
 | onAttach(UIServices&) | Acquire attachment-scoped subscriptions/services | Do not retain transient traversal references |
 | onDetach() noexcept | Cancel/release attachment-scoped state | Must be safe during cleanup |
 | onPropsChanged(const ChangeSet&) | Respond to coalesced committed changes | Not a pre-commit validation hook |
+| validateBoxProps(const BoxProps&) const | Enforce a specialized node's box invariant before commit | No mutations; throw to reject, as LayoutBoundary does for nonfixed size rules |
 
 Input geometry must agree with paint geometry: specialize containsLocal,
 containsClip and applyContentClip consistently when changing shapes. A transform
@@ -193,10 +217,42 @@ versus app/frame isolation at the host boundary, not inside random leaf catches.
 
 ## 9. What is not promised
 
-No full-tree reconciliation, implicit property observation, OS accessibility bridge,
-complete text-editor controls, automatic backend switching, damage presentation,
-hard total-memory budget, or thread-safe UI mutation is provided. Planned controls,
-accessibility and idle/damage work remain in [the scope record](REFERENCE.md#scope).
+No full-tree reconciliation, implicit property observation, rich text editor,
+automatic backend switching, damage presentation, hard total-memory budget, or
+thread-safe UI mutation is provided. Plain text editing and desktop accessibility
+adapters are described in [ACCESSIBILITY.md](ACCESSIBILITY.md). Additional controls
+and partial-damage work remain in [the scope record](REFERENCE.md#scope).
 The [test inventory](TESTING.md) distinguishes tested contracts from exhaustive
 coverage. A backend-neutral interface is a compatibility boundary, not a promise
 that every backend already implements every operation.
+
+## 10. Work reuse and diagnostics
+
+Operation-only `Patch`, `Keep`, and `Reset` live in
+`support/Patch.hpp` in `playground`. Reusable property groups have distinct names:
+Node settings, Box content props, Button button props, and Grid grid props.
+App-specific props retain the shorter `props`/`applyPatch` vocabulary.
+
+Layout optimization must preserve mutation and exception semantics. Invalidation
+visits ancestors once; successful arrangement may be reused only when bounds,
+environment and relevant descendant revisions agree. Text layout caching is
+separate from raster realization. Collection preparation remains conservative:
+an A/B/A size-cache hit must not restore a size without the corresponding children.
+
+Authored-change notifications and sourceRevision belong to the locally invalidated
+node. Inherited layout invalidation updates ancestor layout dependencies and paint
+revisions, not ancestor authored-property notifications. A worker result depending
+on an aggregate subtree needs its own request generation/validation, not just the
+parent's sourceRevision. Measurement cache reuse does not replay diagnostics or
+application actions; measurement hooks must not depend on being called each pass.
+
+A layout boundary has an explicit child-independent extent and exports no child
+baseline. It isolates size dependencies, not paint, overflow, focus or resource
+dependencies. Queued work uses attachment-validated identities and survives failed
+passes. Fixed width alone and paint layers do not establish this contract.
+
+UI work counters measure requests, executed work, reuse and ancestor visits;
+instrumented buffer growth is not a count of every allocation. Optional root-phase
+timings are overlapping breakdowns of host phases, never additional frame time.
+Acceptance uses deterministic counter/behavior checks, not wall-clock thresholds.
+The test inventory records the corresponding checks and coverage boundaries.

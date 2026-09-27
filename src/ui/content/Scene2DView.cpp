@@ -9,10 +9,12 @@ void validate(const Scene2DViewProps &props) {
     throw std::invalid_argument("Invalid 2D scene view");
 }
 } // namespace
+
 Scene2DView::Scene2DView(Scene2DViewProps props, layout::BoxProps box)
     : Node{box}, _props{std::move(props)} {
   validate(_props);
 }
+
 void Scene2DView::setProps(Scene2DViewProps props) {
   validate(props);
   _props = std::move(props);
@@ -20,6 +22,7 @@ void Scene2DView::setProps(Scene2DViewProps props) {
   _prepared = false;
   invalidateLayout();
 }
+
 void Scene2DView::applyPatch(const Scene2DViewPatch &patch) {
   const Scene2DViewProps defaults;
   setProps({patch.scene.appliedTo(_props.scene),
@@ -27,10 +30,12 @@ void Scene2DView::applyPatch(const Scene2DViewPatch &patch) {
             patch.preferredSize.appliedTo(_props.preferredSize,
                                           defaults.preferredSize)});
 }
+
 layout::MeasureResult
 Scene2DView::measureContent(MeasureContext &, const layout::SizeConstraints &) {
   return {.size = _props.preferredSize};
 }
+
 void Scene2DView::prepareContent(PrepareContext &context) {
   _prepared = false;
   const auto domain = context.images ? context.images->resourceDomain()
@@ -49,6 +54,7 @@ void Scene2DView::prepareContent(PrepareContext &context) {
   _prepared = true;
   invalidatePaint();
 }
+
 void Scene2DView::paint(PaintContext &context) const {
   if (!_prepared)
     throw std::logic_error("Scene2DView must be prepared before painting");

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -9,10 +10,14 @@
 #include <math/Geometry2D.hpp>
 #include <rendering/GPUTiming.hpp>
 #include <rendering/PaintContext.hpp>
+#include <rendering/PaintWork.hpp>
 #include <rendering/RenderSettings.hpp>
 #include <rendering/RendererTypes.hpp>
 #include <rendering/ResourceDomain.hpp>
-#include <scene/SceneRenderer.hpp>
+
+namespace playground::scene {
+class SceneRenderer;
+}
 
 namespace playground::rendering {
 
@@ -36,8 +41,10 @@ protected:
 public:
   virtual ~RenderFrame() = default;
   virtual rendering::PaintContext &paint2D() = 0;
+
   // Optional capability, not a no-op renderer. Check requirements before entry.
   virtual scene::SceneRenderer *scene3D() noexcept { return nullptr; }
+
   virtual PresentationOutcome present() = 0;
 
   RenderFrame(const RenderFrame &) = delete;
@@ -51,23 +58,35 @@ protected:
 public:
   virtual ~RenderBackend() = default;
   virtual RendererCandidate description() const = 0;
+
   virtual ResourceDomainId resourceDomain() const noexcept {
     return ResourceDomainId::cpu();
   }
+
   // Owner-thread, nonblocking completion polling. Sequence belongs to this
   // backend instance; never infer completion from a successful submission.
   virtual std::uint64_t completedWork() { return 0; }
+
   // Failed native domains reject new work even while retained handles survive.
   virtual void invalidate() noexcept {}
+
   virtual bool supportsGPUTiming() const noexcept { return false; }
+
   virtual void setProfilingEnabled(bool) {}
+
   virtual std::vector<GPUTimingSample> takeGPUTimings() { return {}; }
+
+  virtual GPUTimingCollection gpuTimingCollection() const { return {}; }
+
+  virtual std::optional<PaintWork> takePaintWork() { return {}; }
+
   // Realize required optional services before publishing a backend/app change.
   // Optional capabilities may stay lazy until requested by a frame.
   virtual void prepare(RendererRequirements requirements) {
     if (!description().capabilities.supports(requirements))
       throw std::runtime_error("Renderer cannot satisfy required capabilities");
   }
+
   virtual math::Vec2i drawableSize() const = 0;
   // Only one live frame at a time. Null means the target is temporarily
   // unavailable; update/input continue, but this frame must not be painted.

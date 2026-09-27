@@ -28,13 +28,16 @@ public:
   Path2D &quadraticTo(Point2 control, Point2 end);
   Path2D &cubicTo(Point2 first, Point2 second, Point2 end);
   Path2D &close();
+
   std::span<const PathCommand> commands() const noexcept { return _commands; }
+
   bool operator==(const Path2D &) const = default;
 };
 
 struct PathSegment {
   Point2 from, to;
 };
+
 struct FlattenedPath {
   std::vector<PathSegment> segments;
   Rect bounds;
@@ -42,6 +45,7 @@ struct FlattenedPath {
   bool contains(Point2 point, FillRule rule) const;
   bool touchesStroke(Point2 point, float radius) const;
 };
+
 struct PathFlattenProps {
   float tolerance{0.25f};
   std::size_t maximumSegments{4096};

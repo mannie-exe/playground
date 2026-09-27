@@ -10,6 +10,7 @@ struct AdaptiveStackProps {
                                                         layout::Axis::Vertical};
   layout::StackProps stack;
   bool operator==(const AdaptiveStackProps &) const = default;
+
   void validate() const {
     layout::BreakpointSet<layout::Axis>::validate(breakpoints);
     stack.validate(breakpoints.fallback);
@@ -17,6 +18,7 @@ struct AdaptiveStackProps {
       stack.validate(rule.mode);
   }
 };
+
 struct AdaptiveStackPatch {
   layout::BreakpointPatch<layout::Axis> breakpoints;
   Patch<layout::StackProps> stack;
@@ -44,12 +46,17 @@ public:
         _breakpoints{_props.breakpoints} {
     _props.validate();
   }
+
   const AdaptiveStackProps &props() const noexcept { return _props; }
+
   void applyPlacementPatch(NodeId child, const StackPlacementPatch &patch) {
     applyPlacementPatch(indexOf(child), patch);
   }
+
   void applyPlacementPatch(std::size_t index, const StackPlacementPatch &patch);
+
   layout::Axis selectedAxis() const noexcept { return _selected; }
+
   void setProps(AdaptiveStackProps value);
   void applyPatch(const AdaptiveStackPatch &p);
 };

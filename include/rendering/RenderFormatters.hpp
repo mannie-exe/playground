@@ -27,6 +27,7 @@ struct std::formatter<playground::rendering::Sampling>
         playground::rendering::toString(value), context);
   }
 };
+
 template <>
 struct std::formatter<playground::rendering::RendererKind>
     : std::formatter<std::string_view> {
@@ -36,6 +37,7 @@ struct std::formatter<playground::rendering::RendererKind>
         playground::rendering::toString(value), context);
   }
 };
+
 template <>
 struct std::formatter<playground::rendering::RendererChoice>
     : std::formatter<std::string_view> {
@@ -45,6 +47,7 @@ struct std::formatter<playground::rendering::RendererChoice>
         playground::rendering::toString(value), context);
   }
 };
+
 template <>
 struct std::formatter<playground::rendering::GPUDriver>
     : std::formatter<std::string_view> {

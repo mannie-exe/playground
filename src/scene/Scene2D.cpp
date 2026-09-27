@@ -7,6 +7,7 @@
 namespace playground::scene {
 namespace {
 std::atomic<std::uint64_t> nextOwner{1};
+
 void validate(const Item2DProps &props) {
   if (props.paint.sampling != rendering::Sampling::Nearest &&
       props.paint.sampling != rendering::Sampling::Linear)
@@ -23,10 +24,12 @@ void validate(const Item2DProps &props) {
     throw std::invalid_argument("Invalid 2D scene image");
 }
 } // namespace
+
 Scene2D::Scene2D() : _owner{nextOwner.fetch_add(1)} {
   if (!_owner)
     throw std::overflow_error("Scene identity exhausted");
 }
+
 Item2DId Scene2D::create(Item2DProps props) {
   validate(props);
   if (!_next)
@@ -37,25 +40,30 @@ Item2DId Scene2D::create(Item2DProps props) {
   ++_revision;
   return {_owner, id};
 }
+
 bool Scene2D::contains(Item2DId id) const noexcept {
   return id.owner == _owner && _items.contains(id.value);
 }
+
 const Item2DProps &Scene2D::props(Item2DId id) const {
   if (!contains(id))
     throw std::invalid_argument("Stale or foreign scene item");
   return _items.at(id.value);
 }
+
 void Scene2D::setProps(Item2DId id, Item2DProps props) {
   this->props(id);
   validate(props);
   _items.at(id.value) = std::move(props);
   ++_revision;
 }
+
 void Scene2D::remove(Item2DId id) {
   props(id);
   _items.erase(id.value);
   ++_revision;
 }
+
 void Scene2D::applyPatch(Item2DId id, const Item2DPatch &patch) {
   auto value = props(id);
   if (patch.bounds)
@@ -72,6 +80,7 @@ void Scene2D::applyPatch(Item2DId id, const Item2DPatch &patch) {
     value.visible = *patch.visible;
   setProps(id, std::move(value));
 }
+
 std::vector<Item2DProps> Scene2D::snapshot() const {
   std::vector<Item2DProps> result;
   for (const auto &[id, item] : _items)

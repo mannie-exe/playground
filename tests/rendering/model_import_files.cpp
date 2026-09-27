@@ -28,10 +28,12 @@ public:
     }
     throw std::runtime_error("Cannot create isolated model-import directory");
   }
+
   ~TemporaryDirectory() {
     std::error_code error;
     std::filesystem::remove_all(_path, error);
   }
+
   const std::filesystem::path &path() const noexcept { return _path; }
 };
 
@@ -42,6 +44,7 @@ public:
   explicit WorkingDirectory(const std::filesystem::path &path) {
     std::filesystem::current_path(path);
   }
+
   ~WorkingDirectory() {
     std::error_code error;
     std::filesystem::current_path(_previous, error);

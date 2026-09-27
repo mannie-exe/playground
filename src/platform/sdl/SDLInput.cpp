@@ -4,6 +4,26 @@ namespace playground::sdl {
 
 ui::Key toUIKey(SDL_Keycode value) {
   switch (value) {
+  case SDLK_HOME:
+    return ui::Key::Home;
+  case SDLK_END:
+    return ui::Key::End;
+  case SDLK_BACKSPACE:
+    return ui::Key::Backspace;
+  case SDLK_DELETE:
+    return ui::Key::Delete;
+  case SDLK_A:
+    return ui::Key::A;
+  case SDLK_C:
+    return ui::Key::C;
+  case SDLK_V:
+    return ui::Key::V;
+  case SDLK_X:
+    return ui::Key::X;
+  case SDLK_Y:
+    return ui::Key::Y;
+  case SDLK_Z:
+    return ui::Key::Z;
   case SDLK_SPACE:
     return ui::Key::Space;
   case SDLK_RETURN:
@@ -30,6 +50,51 @@ std::optional<ui::UIEvent> toUIEvent(const SDL_Event &event,
                                      math::Size2 windowSize) {
   ui::UIEvent result;
   switch (event.type) {
+  case SDL_EVENT_GAMEPAD_REMOVED:
+  case SDL_EVENT_KEYBOARD_REMOVED:
+    result.type = ui::EventType::InputCancel;
+    break;
+  case SDL_EVENT_TEXT_INPUT:
+    result.type = ui::EventType::TextInput;
+    if (event.text.text)
+      result.text = event.text.text;
+    break;
+  case SDL_EVENT_TEXT_EDITING:
+    result.type = ui::EventType::TextEditing;
+    if (event.edit.text)
+      result.text = event.edit.text;
+    result.compositionStart = event.edit.start;
+    result.compositionLength = event.edit.length;
+    break;
+  case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+  case SDL_EVENT_GAMEPAD_BUTTON_UP:
+    result.source = ui::ActionSource::Gamepad;
+    result.type = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN
+                      ? ui::EventType::KeyDown
+                      : ui::EventType::KeyUp;
+    switch (event.gbutton.button) {
+    case SDL_GAMEPAD_BUTTON_SOUTH:
+      result.logicalKey = ui::Key::Enter;
+      break;
+    case SDL_GAMEPAD_BUTTON_EAST:
+      result.logicalKey = ui::Key::Escape;
+      break;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP:
+      result.logicalKey = ui::Key::Up;
+      break;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+      result.logicalKey = ui::Key::Down;
+      break;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+      result.logicalKey = ui::Key::Left;
+      break;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+      result.logicalKey = ui::Key::Right;
+      break;
+    default:
+      return {};
+    }
+    break;
   case SDL_EVENT_MOUSE_MOTION:
     if (event.motion.which == SDL_TOUCH_MOUSEID)
       return {};
@@ -66,6 +131,9 @@ std::optional<ui::UIEvent> toUIEvent(const SDL_Event &event,
     result.logicalKey = toUIKey(event.key.key);
     result.repeat = event.key.repeat;
     result.shift = (event.key.mod & SDL_KMOD_SHIFT) != 0;
+    result.control = (event.key.mod & SDL_KMOD_CTRL) != 0;
+    result.alt = (event.key.mod & SDL_KMOD_ALT) != 0;
+    result.command = (event.key.mod & SDL_KMOD_GUI) != 0;
     break;
   case SDL_EVENT_WINDOW_FOCUS_LOST:
     result.type = ui::EventType::FocusLost;

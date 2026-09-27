@@ -16,7 +16,9 @@ See [WINDOWING.md](WINDOWING.md) for the presentation values they configure.
 Resolve app baseline -> project defaults -> project app overrides -> user defaults
 -> user app overrides. Session state does not override settings; it is consulted
 only for RestorePrevious sizing. Keys are stable strings: `menu`, `demo`,
-`minesweeper`, `rock-paper-scissors`, `snake`. Unknown app keys can be retained for
+`material-lab`, `minesweeper`, `rock-paper-scissors`, `snake`. Demo 2D retains
+`demo` and Demo 3D retains `material-lab` so existing preferences survive renames.
+Unknown app keys can be retained for
 future apps; this does not register/implement those apps.
 
 No current-working-directory dependence, hard-coded home directory, registry key,
@@ -24,10 +26,11 @@ or PATH change is required. Install prepares runtime files. Running directly fro
 the build tree need not find `project.toml`; absent files retain compiled defaults.
 The project root is not treated as a writable preferences directory.
 
-Settings readers accept integer schema versions 1 and 2; writers emit version 2.
+Settings readers accept integer schema versions 1 through 4; writers emit version 4.
 Version 1 settings retain their defaults and are upgraded on the next explicit
-save. Renderer preference fields are additive and accepted by this reader in both
-versions; older readers will reject them. Session documents remain version 1.
+save. Renderer and interaction preference fields are additive and accepted by this
+reader in older documents; older readers reject unknown fields. Version 3 adds
+accessibility/navigation preferences; version 4 adds appearance. Session documents remain version 1.
 Missing files mean no overrides;
 malformed/unreadable files are errors, not silently replaced defaults. Unknown
 sections, fields and enum strings are rejected to expose spelling/schema errors.
@@ -35,12 +38,31 @@ Unknown versions still fail rather than being silently repaired.
 
 ## Settings schema
 
+Interaction keys configure AppViewPolicy::interaction, not the renderer.
+`accessibility` accepts auto/enabled/disabled; `sequential_navigation` and
+`directional_navigation` are independent booleans, both true by default. Normal
+project/user/app precedence applies. Disabling a navigation fallback does not
+disable a control's editing keys or a native assistive action.
+
+`color_scheme` accepts system/light/dark (default system); normal app/project/user
+precedence applies. `contrast` accepts system/normal/high (default system), but
+only user-file overrides participate in effective contrast resolution. Project
+or app appearance cannot suppress an OS high-contrast request. `userContrast` on
+the resolved AppViewPolicy is a settings result, not an app preference. Native
+appearance is observed by UISession, separate from persisted intent; unknown
+scheme/contrast use light/normal fallbacks. No OS setting is modified.
+
 Both project and user files use this shape; every field inside the tables is optional:
 
 ```toml
-schema_version = 2
+schema_version = 4
 
 [defaults]
+accessibility = "auto"
+color_scheme = "system"
+contrast = "system" # effective override only in the user settings file
+sequential_navigation = true
+directional_navigation = true
 mode = "windowed"
 display = "current"
 decorated = true
@@ -97,7 +119,8 @@ persisting them. Old `metal` and `direct3d12` preferences are rejected explicitl
 These are owner-thread safe-boundary operations, not atomic OS/GPU transactions.
 
 The shipped project file specifies shared presentation defaults, not a duplicate
-Demo sizing policy. App configs declare FitContent; an explicit per-app user/project
+Demo sizing policy. Demo2D starts with a preferred resizable gallery viewport;
+content-sized apps such as Minesweeper declare FitContent. An explicit user/project
 override can still change it.
 
 Unused mode-specific fields remain valid for a later mode change. Numeric values

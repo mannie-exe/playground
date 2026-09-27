@@ -19,12 +19,12 @@ template <class Container, class Patch> void checkPlacementPatch() {
   const ui::NodeId id = child.id();
 
   Patch patch;
-  patch.margin = ui::Patch<math::Insets>::set(math::Insets::all(7));
+  patch.margin = playground::Patch<math::Insets>::set(math::Insets::all(7));
   parentPtr->applyPlacementPatch(id, patch);
   test::require(parentPtr->placementOf(id).margin == math::Insets::all(7),
                 "NodeId placement patch targets attached child");
 
-  patch.margin = ui::Patch<math::Insets>::reset();
+  patch.margin = playground::Patch<math::Insets>::reset();
   parentPtr->applyPlacementPatch(id, patch);
   test::require(parentPtr->placementOf(id).margin == math::Insets{},
                 "placement Reset uses baseline");

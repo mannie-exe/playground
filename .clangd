@@ -8,3 +8,7 @@ CompileFlags:
     - /Yu*
     - /Fp*
     - /FI*
+
+Style:
+  AngledHeaders:
+    - '(app|assets|demo|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui)/.*'

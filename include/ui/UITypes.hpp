@@ -12,17 +12,12 @@
 #include <math/Geometry2D.hpp>
 #include <ui/NodeProps.hpp>
 #include <ui/RuntimeServices.hpp>
+#include <ui/Semantics.hpp>
+#include <ui/WorkDiagnostics.hpp>
 
 namespace playground::ui {
 
 class Node;
-
-struct NodeId {
-  std::uint32_t index{std::numeric_limits<std::uint32_t>::max()};
-  std::uint64_t generation{};
-
-  bool operator==(const NodeId &) const = default;
-};
 
 enum class EventType {
   PointerMove,
@@ -35,10 +30,33 @@ enum class EventType {
   KeyDown,
   KeyUp,
   FocusLost,
-  FocusGained
+  FocusGained,
+  TextInput,
+  TextEditing,
+  InputCancel
 };
 enum class EventPhase { Capture, Target, Bubble };
-enum class Key { Unknown, Space, Enter, Tab, Escape, Left, Right, Up, Down };
+enum class Key {
+  Unknown,
+  Space,
+  Enter,
+  Tab,
+  Escape,
+  Left,
+  Right,
+  Up,
+  Down,
+  Home,
+  End,
+  Backspace,
+  Delete,
+  A,
+  C,
+  V,
+  X,
+  Y,
+  Z
+};
 
 struct UIEvent {
   EventType type{};
@@ -53,22 +71,18 @@ struct UIEvent {
   Key logicalKey{Key::Unknown};
   bool repeat{};
   bool shift{};
+  bool control{}, alt{}, command{};
+  std::string text;
+  int compositionStart{}, compositionLength{};
+  ActionSource source{ActionSource::Keyboard};
 
   bool handled{};
   bool propagationStopped{};
   bool defaultPrevented{};
 
   void stopPropagation() noexcept { propagationStopped = true; }
-  void preventDefault() noexcept { defaultPrevented = true; }
-};
 
-struct LayoutStats {
-  std::uint64_t measured{};
-  std::uint64_t measureCacheHits{};
-  std::uint64_t arranged{};
-  std::uint64_t prepared{};
-  std::uint64_t painted{};
-  std::uint64_t realized{};
+  void preventDefault() noexcept { defaultPrevented = true; }
 };
 
 enum class LayoutPhase { Measure, Arrange, Prepare, Paint, Input };
@@ -81,12 +95,14 @@ enum class LayoutIssue {
   NonInvertibleTransform,
   IndefiniteAnchor
 };
+
 struct LayoutDiagnostic {
   NodeId node;
   LayoutPhase phase;
   LayoutIssue issue;
   std::string message;
 };
+
 class LayoutDiagnostics {
   std::vector<LayoutDiagnostic> _entries;
 
@@ -97,9 +113,11 @@ public:
       _entries.erase(_entries.begin());
     _entries.push_back({node, phase, issue, std::move(message)});
   }
+
   const std::vector<LayoutDiagnostic> &entries() const noexcept {
     return _entries;
   }
+
   void clear() noexcept { _entries.clear(); }
 };
 
@@ -122,12 +140,14 @@ struct NodeTable {
   std::size_t lifecycleCallbacks{};
 
   UIServices *services{};
-  LayoutStats *stats{};
+  UIWorkStats *stats{};
   std::vector<NodeId> dirty;
+  std::vector<NodeId> layoutBoundaries;
   bool dirtyFallback{};
   bool layoutDirty{true};
   bool paintDirty{true};
   std::uint64_t revision{1};
+  std::uint64_t geometryRevision{1};
 
   NodeId focused{};
   std::function<void(NodeId)> requestFocus;
@@ -148,6 +168,7 @@ template <typename T = Node> class NodeHandle {
 
 public:
   NodeHandle() = default;
+
   NodeHandle(std::weak_ptr<detail::NodeTable> table, NodeId id)
       : _table{std::move(table)}, _id{id} {}
 
@@ -155,7 +176,9 @@ public:
     auto table = _table.lock();
     return table ? dynamic_cast<T *>(table->resolve(_id)) : nullptr;
   }
+
   explicit operator bool() const noexcept { return get() != nullptr; }
+
   NodeId id() const noexcept { return _id; }
 };
 

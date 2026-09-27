@@ -17,6 +17,7 @@ static scene::MeshHandle triangle(float depth) {
       {{{-.8f, -.8f, depth}}, {{.8f, -.8f, depth}}, {{0, .8f, depth}}},
       {0, 1, 2}});
 }
+
 static math::ColorRGBA8 pixel(const rendering::PaintImageHandle &image, int x,
                               int y) {
   const auto &surface = dynamic_cast<const sdl::SurfacePaintImage &>(*image);
@@ -32,6 +33,7 @@ class CountingScene final : public scene::SceneRenderer {
 
 public:
   int calls{};
+
   rendering::PaintImageHandle
   render(const scene::SceneRenderProps &view,
          std::span<const scene::MeshDraw> draws) override {
@@ -44,9 +46,11 @@ class CountingImages final : public rendering::ImagePreparer {
 public:
   int calls{};
   rendering::ResourceDomainId domain{rendering::acquireResourceDomain()};
+
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return domain;
   }
+
   rendering::PaintImageHandle
   prepare(rendering::PaintImageHandle image) override {
     ++calls;

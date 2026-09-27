@@ -1,12 +1,11 @@
 #pragma once
 
-#include <cmath>
 #include <functional>
+#include <optional>
 #include <vector>
 
-#include <minesweeper/MinesweeperEvents.hpp>
+#include <minesweeper/MinesweeperModel.hpp>
 #include <minesweeper/ViewResources.hpp>
-#include <platform/sdl/EventResult.hpp>
 #include <ui/containers/ZStack.hpp>
 #include <ui/controls/Button.hpp>
 
@@ -14,7 +13,6 @@ struct MinesweeperCellStyle {
   playground::math::ColorRGBA8 bombColor;
   playground::math::ColorRGBA8 revealedColor;
   playground::math::ColorRGBA8 clearedColor;
-
   playground::math::ColorRGBA8 flagColor{255, 255, 255, 255};
   int iconPadding{16};
   std::vector<playground::math::ColorRGBA8> labelColors;
@@ -22,58 +20,42 @@ struct MinesweeperCellStyle {
 };
 
 class MinesweeperCell : public playground::ui::Button {
-  playground::minesweeper::MinesweeperEvents _events;
-  Sint32 _gridGeneration;
-  std::function<EventResult(const SDL_Event &)> _publish;
-
+  const MinesweeperModel &_model;
   playground::math::Vec2i _gridPos;
   MinesweeperCellStyle _style;
   playground::minesweeper::ViewResources _resources;
   playground::math::Size2 _labelSize;
-
-  int _adjacentBombs{};
-  bool _bomb{};
-  bool _flagged{};
-  bool _cleared{};
-  bool _revealed{};
-  bool _dirty{};
+  std::function<void(playground::math::Vec2i, int)> _activate;
 
   playground::ui::Text *_label{};
   playground::ui::Node *_bombIcon{};
   playground::ui::Node *_flagIcon{};
+  std::optional<std::uint64_t> _revision;
 
 protected:
-  void onDefaultEvent(playground::ui::UIEvent &event) override;
+  void onDefaultEvent(playground::ui::UIEvent &) override;
 
 public:
-  MinesweeperCell(float cellSize, bool bomb, playground::math::Vec2i position,
-                  const MinesweeperCellStyle &style,
-                  const playground::minesweeper::MinesweeperEvents &events,
-                  const playground::minesweeper::ViewResources &resources,
-                  Sint32 generation,
-                  std::function<EventResult(const SDL_Event &)> publish);
+  MinesweeperCell(float cellSize, const MinesweeperModel &,
+                  playground::math::Vec2i, const MinesweeperCellStyle &,
+                  const playground::minesweeper::ViewResources &,
+                  std::function<void(playground::math::Vec2i, int)>);
 
-  int getAdjacentBombs() const { return _adjacentBombs; }
-  bool isBomb() const { return _bomb; }
-  bool isFlagged() const { return _flagged; }
-  bool isCleared() const { return _cleared; }
-  bool isRevealed() const { return _revealed; }
+  const MinesweeperCellState &state() const { return _model.cellAt(_gridPos); }
 
-  void incrementAdjacentBombs();
+  int adjacentBombs() const { return state().adjacentBombs; }
 
-  void setFlagged(bool flagged = true);
+  bool isBomb() const { return state().bomb; }
 
-  void setRevealed(bool revealed = true) { _revealed = revealed; }
+  bool isFlagged() const { return state().flagged; }
 
-  bool isAdjacent(playground::math::Vec2i position) const {
-    return std::abs(position.x - _gridPos.x) <= 1 &&
-           std::abs(position.y - _gridPos.y) <= 1 && position != _gridPos;
-  }
+  bool isCleared() const { return state().cleared; }
 
-  void clearCell(bool propagate = true);
+  bool isRevealed() const { return state().revealed; }
 
-  EventResult handleEvent(const SDL_Event &event);
-
-private:
-  void synchronizeIcons();
+  void synchronize();
+  playground::ui::SemanticState semanticState() const override;
+  playground::ui::ActionResult
+  performAction(const playground::ui::UIAction &,
+                playground::ui::ActionSource) override;
 };

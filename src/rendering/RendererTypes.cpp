@@ -17,7 +17,9 @@ bool RendererCapabilities::supports(RendererRequirements needs) const {
       composition != CompositionSpace::Linear)
     throw std::invalid_argument("Unknown composition space");
   return (!needs.paint2D || paint2D) && (!needs.scene3D || scene3D) &&
-         (!needs.linearComposition || composition == CompositionSpace::Linear);
+         (!needs.linearComposition ||
+          composition == CompositionSpace::Linear) &&
+         (!needs.metallicRoughness || (metallicRoughness && scene3D));
 }
 
 void RendererCandidate::validate() const {
@@ -83,6 +85,7 @@ std::string_view toString(RendererKind kind) {
   }
   throw std::invalid_argument("Unknown renderer kind");
 }
+
 std::string_view toString(RendererChoice choice) {
   switch (choice) {
   case RendererChoice::Auto:
@@ -94,6 +97,7 @@ std::string_view toString(RendererChoice choice) {
   }
   throw std::invalid_argument("Unknown renderer choice");
 }
+
 std::string_view toString(GPUDriver driver) {
   switch (driver) {
   case GPUDriver::Auto:

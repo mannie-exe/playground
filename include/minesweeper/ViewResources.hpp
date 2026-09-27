@@ -6,6 +6,8 @@
 #include <string>
 #include <utility>
 
+#include <minesweeper/Assets.hpp>
+#include <platform/sdl/AssetResources.hpp>
 #include <support/SDLError.hpp>
 #include <ui/content/Text.hpp>
 #include <ui/content/Vector.hpp>
@@ -15,9 +17,14 @@ namespace playground::minesweeper {
 struct ViewResources {
   AssetRegistry &registry;
   FontHandle font;
-  std::string bombPath;
-  std::string flagPath;
+  SVGDocumentHandle bomb;
+  SVGDocumentHandle flag;
 };
+
+inline ViewResources acquireResources(sdl::AssetResources &assets) {
+  return {assets.cache(), assets.font(fontAsset, {.style = {.size = 32}}),
+          assets.vector(bombAsset), assets.vector(flagAsset)};
+}
 
 inline FontHandle fittedFont(const ViewResources &resources,
                              const std::string &value, math::Size2 box) {
@@ -31,7 +38,7 @@ inline FontHandle fittedFont(const ViewResources &resources,
     throwSDLError("TTF_GetStringSize");
   if (width <= 0 || height <= 0)
     return resources.font;
-  auto props = resources.font->getProps();
+  auto props = resources.font->props();
   // Preserve the original fit: enlargement as well as shrinking, on both axes.
   props.style.size =
       std::max(1.0f, props.style.size * std::min(box.width * 0.825f / width,
@@ -49,7 +56,8 @@ inline std::unique_ptr<ui::Text> makeLabel(const ViewResources &resources,
       ui::TextProps{.value = std::move(value),
                     .font = std::move(font),
                     .foreground = color,
-                    .contentAlignment = layout::Alignment::center()});
+                    .contentAlignment = layout::Alignment::center(),
+                    .useTheme = false});
 }
 
 inline std::unique_ptr<ui::Vector>
@@ -57,7 +65,7 @@ makeIcon(const ViewResources &resources, bool bomb,
          math::ColorRGBA8 tint = {255, 255, 255, 255}) {
   return std::make_unique<ui::Vector>(
       resources.registry,
-      ui::VectorProps{.source = bomb ? resources.bombPath : resources.flagPath,
+      ui::VectorProps{.source = bomb ? resources.bomb : resources.flag,
                       .content = {.paint = {.tint = tint}}});
 }
 

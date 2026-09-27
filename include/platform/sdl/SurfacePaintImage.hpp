@@ -25,15 +25,20 @@ public:
     if (!rendering::isValid(encoding))
       throw std::invalid_argument("Unknown surface color encoding");
   }
+
   math::Size2 pixelSize() const noexcept override {
     return {static_cast<float>(_surface->w), static_cast<float>(_surface->h)};
   }
+
   const SurfaceHandle &surface() const noexcept { return _surface; }
+
   bool isPremultiplied() const noexcept { return _premultiplied; }
+
   rendering::AlphaMode alphaMode() const noexcept override {
     return _premultiplied ? rendering::AlphaMode::Premultiplied
                           : rendering::AlphaMode::Straight;
   }
+
   rendering::ColorEncoding colorEncoding() const noexcept override {
     return _encoding;
   }

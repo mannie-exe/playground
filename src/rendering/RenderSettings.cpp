@@ -11,6 +11,7 @@ void RenderSettings::validate() const {
       resolutionScale > 4)
     throw std::invalid_argument("Render scale must be finite and in (0, 4]");
 }
+
 math::Vec2i RenderSettings::targetSize(math::Vec2i drawable) const {
   validate();
   if (!math::hasArea(drawable))

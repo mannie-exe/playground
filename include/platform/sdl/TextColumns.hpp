@@ -13,6 +13,7 @@ struct TextColumnRun {
   math::Rect bounds;
   bool sideways{};
 };
+
 struct TextColumns {
   math::Size2 size;
   std::size_t count{};

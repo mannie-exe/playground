@@ -4,20 +4,24 @@
 #include <support/Test.hpp>
 
 using namespace playground;
+
 class MemoryStore final : public platform::FileStore {
 public:
   std::map<std::string, std::string, std::less<>> files;
   bool failWrite{};
+
   std::optional<std::string> read(std::string_view name) const override {
     const auto it = files.find(name);
     return it == files.end() ? std::nullopt : std::optional{it->second};
   }
+
   void replace(std::string_view name, std::string_view content) override {
     if (failWrite)
       throw std::runtime_error("simulated write failure");
     files.insert_or_assign(std::string{name}, std::string{content});
   }
 };
+
 int main() {
   return test::run([] {
     MemoryStore project, user;
@@ -40,6 +44,58 @@ int main() {
             policy.initialSizing == platform::InitialWindowSizing::FitContent,
         "per-app overrides preserve false/zero and cannot change resizability");
     const auto saved = platform::serializeSettings(store.user());
+    const auto appearance = platform::parseSettings(
+        "schema_version=4\n[defaults]\ncolor_scheme='dark'\ncontrast='high'\n");
+    platform::AppViewPolicy themed;
+    platform::PresentationProps themedPresentation;
+    appearance.apply("demo", themedPresentation, themed);
+    test::require(themed.colorScheme == ui::ColorSchemePreference::Dark &&
+                      themed.userContrast == ui::ContrastPreference::High,
+                  "appearance settings parsed");
+    test::require(platform::serializeSettings(platform::parseSettings(
+                      platform::serializeSettings(appearance))) ==
+                      platform::serializeSettings(appearance),
+                  "appearance settings roundtrip");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=4\n[defaults]\ncontrast='blue'");
+        },
+        "invalid contrast rejected");
+    MemoryStore themeProject, themeUser;
+    themeProject.files["project.toml"] = "schema_version=4\n[defaults]\ncolor_"
+                                         "scheme='dark'\ncontrast='normal'\n";
+    platform::SettingsStore appearanceStore{themeProject, themeUser};
+    appearanceStore.reload();
+    appearanceStore.resolve("demo", themedPresentation, themed);
+    test::require(themed.userContrast == ui::ContrastPreference::System &&
+                      themed.colorScheme == ui::ColorSchemePreference::Dark,
+                  "project cannot suppress system contrast");
+    appearanceStore.resolveWithUser("demo", appearance, themedPresentation,
+                                    themed);
+    test::require(themed.userContrast == ui::ContrastPreference::High,
+                  "user contrast override applied");
+    const auto access = platform::parseSettings(
+        "schema_version=3\n[defaults]\naccessibility='disabled'\nsequential_"
+        "navigation=false\ndirectional_navigation=true\n");
+    platform::PresentationProps accessPresentation;
+    platform::AppViewPolicy accessView;
+    access.defaults.apply(accessPresentation, accessView);
+    test::require(accessView.interaction.accessibility ==
+                          ui::AccessibilityMode::Disabled &&
+                      !accessView.interaction.sequentialNavigation &&
+                      accessView.interaction.directionalNavigation,
+                  "independent interaction settings");
+    test::require(platform::serializeSettings(platform::parseSettings(
+                      platform::serializeSettings(access))) ==
+                      platform::serializeSettings(access),
+                  "accessibility settings roundtrip");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=3\n[defaults]\naccessibility='sometimes'");
+        },
+        "invalid accessibility mode rejected");
     auto rendererSettings = platform::parseSettings(
         "schema_version=2\n[defaults]\nglyph_atlases=false\nvsync=false\n");
     platform::PresentationProps renderProps;
@@ -61,7 +117,7 @@ int main() {
                       replacement.viewport.followSystemScale,
                   "removing user overrides resolves from project/app values, "
                   "not previous effective settings");
-    user.files["settings.toml"] = "schema_version=3";
+    user.files["settings.toml"] = "schema_version=5";
     test::rejects([&] { store.reload(); }, "unsupported schema rejected");
     test::require(platform::serializeSettings(store.user()) == saved,
                   "failed reload preserves published settings");

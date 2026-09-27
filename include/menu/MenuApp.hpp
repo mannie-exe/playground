@@ -1,40 +1,41 @@
 #pragma once
 
-#include <SDL3/SDL_keycode.h>
+#include <optional>
 
 #include <app/IApp.hpp>
+#include <menu/MenuUI.hpp>
+#include <platform/sdl/UISession.hpp>
 
-class MenuApp : public IApp {
+class MenuApp final : public IApp {
+  playground::sdl::UISession _ui{playground::sdl::UISessionTiming::Monotonic};
+  playground::menu::MenuUI *_view{};
+  std::optional<AppId> _pending;
+
+  void synchronize(AppContext &);
+  void launchPending(AppContext &);
+
 public:
-  static AppInfo staticInfo() {
-    return AppInfo{.id = AppId::Menu,
-                   .name = "Menu",
-                   .window = AppWindowProps{.title = "Me n' U",
-                                            .clearColor = {24, 24, 24, 255}}};
-  }
+  MenuApp();
+  static AppInfo staticInfo();
 
   AppInfo info() const override { return staticInfo(); }
 
-  EventResult handleEvent(AppContext &ctx, const SDL_Event &event) override {
-    if (event.type != SDL_EVENT_KEY_DOWN)
-      return EventResult::Ignored;
-
-    switch (event.key.key) {
-    case SDLK_1:
-      ctx.requestSwitch(AppId::Demo);
-      return EventResult::Consumed;
-    case SDLK_2:
-      ctx.requestSwitch(AppId::Minesweeper);
-      return EventResult::Consumed;
-    case SDLK_3:
-      ctx.requestSwitch(AppId::Snake);
-      return EventResult::Consumed;
-    case SDLK_ESCAPE:
-    case SDLK_Q:
-      ctx.requestQuit();
-      return EventResult::Consumed;
-    default:
-      return EventResult::Ignored;
-    }
+  playground::runtime::ActivityProps activityProps() const override {
+    return {false, false};
   }
+
+  playground::runtime::ActivityDemand activityDemand() override {
+    return _ui.activityDemand();
+  }
+
+  std::optional<playground::math::Size2>
+  preferredContentSize(playground::math::Size2 maximum,
+                       playground::math::Vec2f density) override;
+  void onEnter(AppContext &) override;
+  void onExit(AppContext &) override;
+  void onActions(AppContext &,
+                 const playground::input::InputSnapshot &) override;
+  EventResult handleEvent(AppContext &, const SDL_Event &) override;
+  void update(AppContext &, float) override;
+  void render(AppContext &, playground::rendering::RenderFrame &) override;
 };

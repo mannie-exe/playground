@@ -15,6 +15,7 @@ public:
       : _limits{limits} {
     _limits.validate();
   }
+
   rendering::PaintImageHandle
   render(const scene::SceneRenderProps &view,
          std::span<const scene::MeshDraw> draws) override;

@@ -1,3 +1,6 @@
+#include <utility>
+#include <vector>
+
 #include <platform/sdl/FontTextSource.hpp>
 #include <platform/sdl/SDLGeometry.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
@@ -47,7 +50,7 @@ void Text::validate(const TextProps &props) {
 Text::Measurement Text::atSize(float size,
                                const layout::SizeConstraints &offered,
                                layout::LayoutDirection direction, float scale) {
-  auto fontProps = _props.font->getProps();
+  auto fontProps = _props.font->props();
   fontProps.style.size = size * scale;
   fontProps.style.outline =
       sdl::checkedPixel(static_cast<double>(fontProps.style.outline) * scale);
@@ -63,11 +66,16 @@ Text::Measurement Text::atSize(float size,
           ? TTF_HORIZONTAL_ALIGN_RIGHT
           : TTF_HORIZONTAL_ALIGN_LEFT;
   auto font = _assets.getFont(std::move(fontProps));
+  // Avoid losing a pixel when an integer extent made a float / scale round
+  // trip.
+  constexpr double wrapRoundTripTolerance = 0.0001;
   const int wrap =
       _props.wrap == TextWrap::AvailableInlineSize && offered.width.maximum
-          ? std::max(1, sdl::checkedPixel(
-                            static_cast<double>(*offered.width.maximum) * scale,
-                            sdl::PixelRounding::Floor))
+          ? std::max(1,
+                     sdl::checkedPixel(
+                         static_cast<double>(*offered.width.maximum) * scale +
+                             wrapRoundTripTolerance,
+                         sdl::PixelRounding::Floor))
           : 0;
   if (_props.value.empty())
     return {std::move(font), {}, wrap, scale};
@@ -101,16 +109,19 @@ Text::Measurement Text::atSize(float size,
 }
 
 Text::Measurement Text::measured(const layout::SizeConstraints &offered,
-                                 layout::LayoutDirection direction) {
+                                 layout::LayoutDirection direction,
+                                 UIWorkStats *stats, float scale) {
   float size = _props.font->getSize();
   if (_props.fontFit == FontFit::None)
-    return atSize(size, offered, direction);
+    return atSize(size, offered, direction, scale);
   size = std::min(size, _props.maxFontSize);
   size = std::max(size, _props.minFontSize);
   for (std::size_t step = 0; step <= 4096; ++step) {
+    if (stats)
+      ++stats->fontFitAttempts;
     const float candidate = std::max(
         _props.minFontSize, size - static_cast<float>(step) * _props.fitStep);
-    auto result = atSize(candidate, offered, direction);
+    auto result = atSize(candidate, offered, direction, scale);
     if ((!offered.width.maximum ||
          result.size.width <= *offered.width.maximum) &&
         (!offered.height.maximum ||
@@ -120,6 +131,26 @@ Text::Measurement Text::measured(const layout::SizeConstraints &offered,
       return result;
   }
   throw std::logic_error("Font-fit iteration budget exhausted");
+}
+
+const Text::Measurement &Text::resolved(const layout::SizeConstraints &offered,
+                                        MeasureContext &context) {
+  const float scale = std::max(context.pixelScale.x, context.pixelScale.y);
+  for (const auto &entry : _layouts)
+    if (entry && entry->constraints == offered &&
+        entry->direction == context.direction && entry->scale == scale) {
+      if (context.stats)
+        ++context.stats->textLayoutHits;
+      return entry->result;
+    }
+  if (context.stats)
+    ++context.stats->textLayouts;
+  auto result = flowed(
+      measured(offered, context.direction, context.stats, scale), offered);
+  auto &entry = _layouts[_nextLayout];
+  entry = LayoutEntry{offered, context.direction, scale, std::move(result)};
+  _nextLayout = (_nextLayout + 1) % _layouts.size();
+  return entry->result;
 }
 
 Text::Measurement Text::flowed(Measurement result,
@@ -188,8 +219,7 @@ SurfaceHandle Text::rasterize(const Measurement &m) const {
         _props.method == TextMethod::Shaded ? std::optional{_props.background}
                                             : std::nullopt);
   }
-  const auto fg = sdl::toSDL(_props.foreground),
-             bg = sdl::toSDL(_props.background);
+  const auto fg = sdl::toSDL(foreground()), bg = sdl::toSDL(_props.background);
   auto *font = m.font->get();
   auto *text = m.value.data();
   const auto length = m.value.size();
@@ -227,7 +257,7 @@ SurfaceHandle Text::rasterize(const Measurement &m) const {
 layout::MeasureResult
 Text::measureContent(MeasureContext &context,
                      const layout::SizeConstraints &offered) {
-  const auto m = flowed(measured(offered, context.direction), offered);
+  const auto &m = resolved(offered, context);
   if (_props.fontFit == FontFit::ShrinkToFit && context.diagnostics &&
       ((offered.width.maximum && m.size.width > *offered.width.maximum) ||
        (offered.height.maximum && m.size.height > *offered.height.maximum)))
@@ -240,9 +270,10 @@ Text::measureContent(MeasureContext &context,
   if (_props.flow.writingMode != WritingMode::HorizontalTb)
     return {m.size};
   const float first =
-      std::clamp(static_cast<float>(TTF_GetFontAscent(m.font->get())), 0.0f,
-                 m.size.height);
-  const float descent = static_cast<float>(TTF_GetFontDescent(m.font->get()));
+      std::clamp(static_cast<float>(TTF_GetFontAscent(m.font->get())) / m.scale,
+                 0.0f, m.size.height);
+  const float descent =
+      static_cast<float>(TTF_GetFontDescent(m.font->get())) / m.scale;
   return {m.size, first,
           std::clamp(m.size.height + descent, first, m.size.height)};
 }
@@ -250,7 +281,8 @@ Text::measureContent(MeasureContext &context,
 void Text::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
   _direction = context.direction;
   const layout::SizeConstraints offered{{0, bounds.w()}, {0, bounds.h()}};
-  _arrangedText = flowed(measured(offered, _direction), offered);
+  _arrangedText = resolved(offered, context);
+  _pixelText.reset();
   _prepared = false;
 }
 
@@ -266,18 +298,56 @@ void Text::prepareContent(PrepareContext &context) {
     return;
   }
   const float scale = std::max(context.pixelScale.x, context.pixelScale.y);
-  auto m = atSize(_arrangedText->font->getSize(),
-                  {{0, bounds.w()}, {0, bounds.h()}}, _direction, scale);
-  m = flowed(std::move(m), {{0, bounds.w()}, {0, bounds.h()}});
+  if (!_pixelText || _pixelDensity != scale ||
+      _pixelTextBounds != bounds.size) {
+    if (context.stats)
+      ++context.stats->textLayouts;
+    auto candidate =
+        scale == _arrangedText->scale
+            ? *_arrangedText
+            : atSize(_arrangedText->font->getSize() / _arrangedText->scale,
+                     {{0, bounds.w()}, {0, bounds.h()}}, _direction, scale);
+    candidate =
+        flowed(std::move(candidate), {{0, bounds.w()}, {0, bounds.h()}});
+    if (scale != _arrangedText->scale && !candidate.columns) {
+      // A render-only scale must not change authored line breaks or truncation.
+      const auto lineRanges = [](const Measurement &m) {
+        using TextResource = SDLResource<TTF_Text, TTF_DestroyText>;
+        TextResource text{
+            requireSDL(TTF_CreateText(nullptr, m.font->get(), m.value.data(),
+                                      m.value.size()),
+                       "Create raster comparison")};
+        if (!TTF_SetTextWrapWidth(text.get(), m.wrap) ||
+            !TTF_UpdateText(text.get()))
+          throwSDLError("Resolve raster lines");
+        std::vector<std::pair<int, int>> ranges;
+        for (int line = 0; line < text->num_lines; ++line) {
+          TTF_SubString span;
+          if (!TTF_GetTextSubStringForLine(text.get(), line, &span))
+            throwSDLError("Read raster lines");
+          ranges.emplace_back(span.offset, span.length);
+        }
+        return ranges;
+      };
+      if (candidate.value != _arrangedText->value ||
+          lineRanges(candidate) != lineRanges(*_arrangedText))
+        candidate = *_arrangedText;
+    }
+    _pixelText = std::move(candidate);
+    _pixelDensity = scale;
+    _pixelTextBounds = bounds.size;
+  } else if (context.stats)
+    ++context.stats->textLayoutHits;
+  const auto &m = *_pixelText;
   if (m.value.empty()) {
     _raster.reset();
     _prepared = true;
     return;
   }
-  auto key = AssetRegistry::fontKey(m.font->getProps()) + ":" +
+  auto key = AssetRegistry::fontKey(m.font->props()) + ":" +
              std::to_string(m.wrap) + ":" +
              std::to_string(static_cast<int>(_props.method));
-  for (auto color : {_props.foreground, _props.background})
+  for (auto color : {foreground(), _props.background})
     for (auto value : {color.r, color.g, color.b, color.a})
       key += ":" + std::to_string(value);
   key += ":" + std::to_string(static_cast<int>(_props.flow.writingMode)) + ":" +
@@ -298,7 +368,7 @@ void Text::prepareContent(PrepareContext &context) {
         _rasterDomain != textPreparer->resourceDomain() ||
         _rasterImageDomain != imageDomain) {
       auto raster = rendering::prepareTextImage(
-          sdl::FontTextSource{m.font, m.value, m.wrap, _props.foreground},
+          sdl::FontTextSource{m.font, m.value, m.wrap, foreground()},
           *textPreparer);
       _raster = rendering::prepareImage(std::move(raster), context.images);
       _rasterKey = key;
@@ -307,7 +377,7 @@ void Text::prepareContent(PrepareContext &context) {
       _atlasRaster = true;
       _source.reset();
     }
-    _destination = layout::alignBounds(bounds, _raster->pixelSize() / scale,
+    _destination = layout::alignBounds(bounds, _arrangedText->size,
                                        _props.contentAlignment, {}, _direction);
     _prepared = true;
     return;
@@ -320,7 +390,7 @@ void Text::prepareContent(PrepareContext &context) {
     _rasterKey = std::move(key);
   }
   _raster = rendering::prepareImage(_source, context.images);
-  _destination = layout::alignBounds(bounds, _raster->pixelSize() / scale,
+  _destination = layout::alignBounds(bounds, _arrangedText->size,
                                      _props.contentAlignment, {}, _direction);
   _prepared = true;
 }
@@ -355,7 +425,9 @@ void Text::setProps(TextProps value) {
   _props = std::move(value);
   _prepared = false;
   if (geometry) {
+    _layouts = {};
     _arrangedText.reset();
+    _pixelText.reset();
     invalidateLayout();
   } else
     invalidatePaint();
@@ -392,7 +464,8 @@ void Text::applyPatch(const TextPatch &p) {
             p.minFontSize.appliedTo(_props.minFontSize, d.minFontSize),
             p.maxFontSize.appliedTo(_props.maxFontSize, d.maxFontSize),
             p.fitStep.appliedTo(_props.fitStep, d.fitStep),
-            p.flow.appliedTo(_props.flow, d.flow)});
+            p.flow.appliedTo(_props.flow, d.flow),
+            p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
 }
 
 } // namespace playground::ui
