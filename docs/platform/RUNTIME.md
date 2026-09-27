@@ -10,6 +10,40 @@ full-frame idle skipping and pending presentation acknowledgement.
 
 ## Input
 
+### Ownership policy
+
+Event handling and persistent input ownership are distinct. `InputClaims` reserves
+keyboard, gamepad, all pointers, or individual captured pointers for UI. Editors
+reserve the keyboard; modal scopes reserve all three domains. Decorative UI
+reserves none. `IApp::inputClaims()` exposes the current UI/session claims to the
+host; apps without UI return empty claims. BeforeUI contexts remain explicit
+global overrides, not ordinary gameplay shortcuts.
+Keyboard reservation includes unhandled Escape while editing: use UI navigation
+to leave the field, or explicitly design a local escape/focus policy. Do not move
+application Escape bindings to BeforeUI merely to bypass IME/modal cancellation.
+
+The host refreshes claims around input dispatch and before simulation/after model
+updates, including completion-driven changes. Newly claimed AfterUI controls are
+canceled immediately, with pending edges cleared for affected actions. Unrelated
+actions remain active. Releasing a claim never synthesizes a press: an already-held
+control must return to neutral first. Physical release bookkeeping continues even
+when input is reserved. UI still receives the event; ownership is not a substitute
+for capture/target/bubble handling or text/IME delivery.
+`onActions` receives an additional snapshot on ownership transitions outside event
+dispatch, so cached controller intent can observe cancellation without waiting for
+another event. Tick snapshots retain their independent edge latch.
+
+Stable root/geometry/focus revisions reuse the ownership summary. Pointer captures
+are read independently on each query; newly captured/released pointers cannot be
+hidden by the cache. Custom eligibility changes must invalidate the owning node.
+Actions aggregating several devices have aggregate edges; cancellation of a claimed
+binding may clear pending edges of that same action, but not unrelated actions.
+
+Sequential navigation reserves Tab only when focus exists/can be obtained or a
+modal owns navigation. Removal/background cancellation must reach both InputMap
+and retained UI. Device removal currently cancels UI interactions conservatively;
+per-device UI keyboard ownership is not yet represented.
+
 `input::InputMap` owns named button/scalar/vector actions and ordered contexts.
 Contexts choose BeforeUI (shortcuts/modal overrides) or AfterUI (gameplay). Higher
 priority runs first; equal priority follows insertion order. Consumption blocks
@@ -83,7 +117,9 @@ cancel them during onExit when stopping the underlying CPU work is desirable.
 
 Completion callbacks execute only at owner-thread boundaries. They may enqueue
 more work but cannot recursively drain. A failed callback is attempted once and
-the untouched tail remains queued. Workers capture owned inputs/results and weak
+the untouched tail remains queued. Replaced wake callbacks and discarded work
+release their captures outside the queue mutex, so capture destructors may safely
+access the queue. Workers capture owned inputs/results and weak
 tokens, never borrowed mutable app/UI pointers to access from worker threads.
 AppHost logs completion failures and retries the untouched tail on a later frame;
 it cannot undo partial changes inside the failed callback. Simulation/update

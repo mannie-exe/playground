@@ -155,6 +155,7 @@ private:
   void registerDefaultApps();
 
   bool handleHostEvent(const SDL_Event &event);
+  void synchronizeInputClaims(AppContext &);
 
   void processPendingCommand();
   void executeCommand(PendingAppCommand command);

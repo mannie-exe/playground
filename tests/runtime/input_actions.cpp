@@ -165,5 +165,65 @@ int main() {
             "priority changes apply");
     require(priorities.bindings(second).front().action == "second",
             "bindings inspectable for rebinding");
+
+    InputMap ownership;
+    ownership.addContext(
+        {.name = "game"},
+        {{.action = "walk", .code = 1},
+         {.action = "pad", .control = ControlKind::GamepadAxis, .code = 0},
+         {.action = "click", .control = ControlKind::MouseButton, .code = 1}});
+    ownership.addContext({.name = "global", .stage = InputStage::BeforeUI},
+                         {{.action = "global", .code = 9}});
+    send(ownership, 1, 1);
+    routeInputEvent(ownership, {{ControlKind::GamepadAxis, 0, 4}, .5f}, false,
+                    [] { return false; });
+    require(ownership.setUIClaims({.keyboard = true}), "claim transition");
+    snapshot = ownership.takeFrameSnapshot();
+    require(snapshot["walk"].canceled && !snapshot["walk"].held &&
+                !snapshot["walk"].pressed && snapshot["pad"].held,
+            "keyboard claim cancels keyboard only, without another key event");
+    require(!ownership.setUIClaims({.keyboard = true}), "stable claims no-op");
+    send(ownership, 9, 1);
+    require(ownership.takeFrameSnapshot()["global"].pressed,
+            "explicit global override survives editor ownership");
+    ownership.setUIClaims({});
+    send(ownership, 1, 1);
+    require(!ownership.takeFrameSnapshot()["walk"].held,
+            "claim release cannot reactivate an existing hold");
+    send(ownership, 1, 0);
+    send(ownership, 1, 1);
+    require(ownership.takeFrameSnapshot()["walk"].pressed, "fresh press works");
+    send(ownership, 1, 0);
+    ownership.setUIClaims({.keyboard = true});
+    auto tick = ownership.takeTickSnapshot();
+    require(!tick["walk"].pressed && !tick["walk"].released &&
+                tick["walk"].canceled,
+            "claim clears completed tap backlog before fixed update");
+    ownership.setUIClaims({.keyboard = true, .pointer = true, .gamepad = true});
+    require(ownership.takeFrameSnapshot()["pad"].canceled,
+            "modal cancels stationary analog hold");
+    routeInputEvent(ownership, {{ControlKind::Key, 1}, 1}, false, [&] {
+      ownership.setUIClaims({});
+      return false;
+    });
+    require(!ownership.takeFrameSnapshot()["walk"].pressed,
+            "event beginning inside modal cannot leak through its dismissal");
+    ownership.setUIClaims({.capturedPointers = {5}});
+    routeInputEvent(ownership, {{ControlKind::MouseButton, 1, 5}, 1}, false,
+                    [] { return false; });
+    require(!ownership.takeFrameSnapshot()["click"].held,
+            "captured pointer blocked");
+    routeInputEvent(ownership, {{ControlKind::MouseButton, 1, 6}, 1}, false,
+                    [] { return false; });
+    require(ownership.takeFrameSnapshot()["click"].pressed,
+            "other pointer independent");
+    routeInputEvent(ownership, {{ControlKind::MouseButton, 1, 6}, 0}, false,
+                    [] { return false; });
+    ownership.takeTickSnapshot();
+    routeInputEvent(ownership, {{ControlKind::MouseButton, 1, 6}, 1}, false,
+                    [] { return false; });
+    ownership.setUIClaims({.capturedPointers = {std::uint64_t{1} << 63}});
+    require(ownership.takeTickSnapshot()["click"].pressed,
+            "touch capture does not erase another mouse's pending action");
   });
 }

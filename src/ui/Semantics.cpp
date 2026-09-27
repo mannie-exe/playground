@@ -3,6 +3,7 @@
 #include <limits>
 #include <stdexcept>
 
+#include <ui/TextEdit.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/collections/ScrollView.hpp>
 
@@ -87,6 +88,28 @@ Node *UIRoot::navigationScope() {
     if (p->inputProps().focusScope)
       return p;
   return _content.get();
+}
+
+input::InputClaims UIRoot::inputClaims() {
+  const auto revision = std::pair{_table->revision, _table->geometryRevision};
+  if (_claimsRevision != revision || _claimsFocus != _table->focused) {
+    navigationScope();
+    const bool modal = _modal != NodeId{};
+    input::InputClaims next{
+        .keyboard = modal, .pointer = modal, .gamepad = modal};
+    if (auto *focused = resolve(_table->focused);
+        focused && focused->isFocusable() && acceptsAction(*focused))
+      next.keyboard |= dynamic_cast<TextInputClient *>(focused) != nullptr;
+    _claims = std::move(next);
+    // A callback changing the tree during navigation must force another query.
+    _claimsRevision = revision;
+    _claimsFocus = _table->focused;
+  }
+  auto result = _claims;
+  for (const auto &capture : _table->captures)
+    if (auto *node = resolve(capture.node); node && acceptsInput(*node))
+      result.capturedPointers.push_back(capture.pointer);
+  return result;
 }
 
 bool UIRoot::focusDirection(math::Vec2f direction) {

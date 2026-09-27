@@ -52,6 +52,8 @@ std::optional<ui::UIEvent> toUIEvent(const SDL_Event &event,
   switch (event.type) {
   case SDL_EVENT_GAMEPAD_REMOVED:
   case SDL_EVENT_KEYBOARD_REMOVED:
+  case SDL_EVENT_MOUSE_REMOVED:
+  case SDL_EVENT_DID_ENTER_BACKGROUND:
     result.type = ui::EventType::InputCancel;
     break;
   case SDL_EVENT_TEXT_INPUT:

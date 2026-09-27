@@ -522,7 +522,8 @@ bool TextField::commit() {
 }
 
 void TextField::onDefaultEvent(UIEvent &e) {
-  if (e.type == EventType::FocusLost || e.type == EventType::PointerCancel) {
+  if (e.type == EventType::FocusLost || e.type == EventType::PointerCancel ||
+      e.type == EventType::InputCancel) {
     onDetach();
     changed(false);
     return;

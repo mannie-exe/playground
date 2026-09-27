@@ -157,11 +157,13 @@ void Slider::onDefaultEvent(UIEvent &e) {
     t = std::clamp(t, 0., 1.);
     double value = _props.range.minimum +
                    t * (_props.range.maximum - _props.range.minimum);
-    value = std::clamp(
-        _props.range.minimum +
-            std::round((value - _props.range.minimum) / _props.range.step) *
-                _props.range.step,
-        _props.range.minimum, _props.range.maximum);
+    const double steps = (value - _props.range.minimum) / _props.range.step;
+    // An overflowing quotient means the step is below representable resolution
+    // at this position. Keep the interpolated value instead of snapping to inf.
+    if (std::isfinite(steps))
+      value = std::clamp(_props.range.minimum +
+                             std::round(steps) * _props.range.step,
+                         _props.range.minimum, _props.range.maximum);
     e.handled = true;
     _hovered = math::Rect{{}, bounds().size}.contains(e.localPosition);
     if (e.type == EventType::PointerUp) {

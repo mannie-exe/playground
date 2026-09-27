@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 
@@ -71,6 +72,24 @@ int main() {
                   "failed wake preserves accepted work for fallback poll");
     queue.drain();
     test::require(completed == 2, "fallback drain delivers accepted work");
+
+    struct PostOnDestruction {
+      runtime::CompletionSink sink;
+      int &completed;
+
+      ~PostOnDestruction() {
+        sink.post([&completed = completed] { ++completed; });
+      }
+    };
+    auto capture = std::make_shared<PostOnDestruction>(queue.sink(), completed);
+    queue.setWakeCallback([capture] {});
+    capture.reset();
+    queue.setWakeCallback({});
+    test::require(queue.pending() == 1,
+                  "replaced wake captures can reenter the completion queue");
+    queue.drain();
+    test::require(completed == 3, "retired callback posts are delivered");
+
     queue.close();
     test::require(!queue.sink().post([] {}), "closed owner rejects late work");
   });

@@ -1,3 +1,4 @@
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -49,6 +50,22 @@ auto label(float width) {
 
 int main() {
   return test::run([] {
+    {
+      ui::UIRoot root;
+      auto slider = std::make_unique<ui::Slider>(ui::SliderProps{
+          .range = {0, 0, 1, std::numeric_limits<double>::denorm_min()}});
+      auto *control = slider.get();
+      root.setContent(std::move(slider));
+      root.flushLayout({160, 24});
+      ui::UIEvent press{.type = ui::EventType::PointerDown,
+                        .position = {80, 12},
+                        .pointer = 1,
+                        .button = 1};
+      root.dispatch(press);
+      test::require(control->props().range.value == .5,
+                    "subresolution step does not snap midpoint to maximum");
+    }
+
     for (auto scheme :
          {ui::ColorSchemePreference::Light, ui::ColorSchemePreference::Dark})
       for (auto contrast :

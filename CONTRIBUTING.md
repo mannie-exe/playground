@@ -118,6 +118,12 @@ Test admission refusal, supersession, cancellation, shutdown and failed publicat
 These are constituent tests, not game-rule tests.
 
 Runtime input/timing/lifetime contracts are in `docs/platform/RUNTIME.md`.
+Ownership changes must test held actions as well as fresh events: editor/modal
+claims, neutral reacquisition, per-pointer capture, global overrides and pending
+fixed-tick edges. Run `input_actions`, `ui_navigation_routing`, `ui_sdl_input` and
+`ui_text_field`; ownership policy must not require another device event to cancel
+an active action. Camera boundaries are in `docs/render/CAMERAS.md`; networking
+direction (not an implemented transport) is in `docs/platform/NETWORKING.md`.
 
 For idle/wake changes, follow `docs/platform/ACTIVITY.md` and run `runtime_activity`,
 `event_wake`, `ui_completions`, `ui_window_services` and `performance_reports`.

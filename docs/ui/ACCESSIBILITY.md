@@ -199,6 +199,23 @@ coordinate behavior on other platforms still needs interactive acceptance.
 
 ## Verification
 
+Input ownership is separate from handled/default-prevented/propagation flags.
+`UIRoot::inputClaims()` reserves keyboard input for an eligible focused
+TextInputClient, all input domains for a modal, and captured pointer identities.
+`UISession` exposes these claims; UI-backed IApps forward them to AppHost.
+Claims suppress AfterUI actions, not UI dispatch or explicit BeforeUI shortcuts.
+The host applies changes even without another physical input event. Neutral input
+is required before a previously reserved control can activate gameplay again.
+Readonly editors still own keyboard navigation and selection. Decorative trees
+do not consume Tab when no focus target or modal exists.
+Replacing a root discards the old tree's modal restoration history; it must not
+prevent focus entering the replacement or restore detached opener identities.
+
+Background/device removal cancels retained interaction; current removal behavior
+conservatively cancels all UI captures rather than preserving other devices.
+TextField cancellation discards IME composition, never commits it. Keyboard
+per-device focus and gamepad stick-to-navigation repeat remain future policies.
+
 Focused tests cover actions, snapshots, stale owners, modal navigation, Unicode
 editing, range/selection validation, and native-adapter boundary behavior.
 Actual Narrator/NVDA, VoiceOver and Orca checks are separate platform acceptance

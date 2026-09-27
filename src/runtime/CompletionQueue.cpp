@@ -82,7 +82,8 @@ void CompletionQueue::setWakeCallback(std::function<void()> callback) {
   std::function<void()> wake;
   {
     std::lock_guard lock{_state->mutex};
-    _state->wake = std::move(callback);
+    // Retire captures outside the lock; their destructors may access the queue.
+    _state->wake.swap(callback);
     if (!_state->pending.empty())
       wake = _state->wake;
   }

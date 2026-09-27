@@ -46,6 +46,8 @@ public:
 
   runtime::ActivityDemand activityDemand();
 
+  input::InputClaims inputClaims() { return _root.inputClaims(); }
+
   void render(rendering::PaintContext &context,
               scene::SceneRenderer *scenes = nullptr);
 

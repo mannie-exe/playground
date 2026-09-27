@@ -106,6 +106,13 @@ int main() {
     pad.type = SDL_EVENT_GAMEPAD_REMOVED;
     test::require(sdl::toUIEvent(pad, {})->type == ui::EventType::InputCancel,
                   "device loss cancels held interaction");
+    for (auto type : {SDL_EVENT_MOUSE_REMOVED, SDL_EVENT_KEYBOARD_REMOVED,
+                      SDL_EVENT_DID_ENTER_BACKGROUND}) {
+      pad.type = type;
+      test::require(
+          sdl::toUIEvent(pad, {})->type == ui::EventType::InputCancel,
+          "removal and background transitions cancel UI interactions");
+    }
     unknown.type = SDL_EVENT_QUIT;
     test::require(!sdl::toUIEvent(unknown, {}),
                   "host event not reinterpreted as UI event");

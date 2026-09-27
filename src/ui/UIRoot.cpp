@@ -182,6 +182,11 @@ void UIRoot::setContent(std::unique_ptr<Node> content) {
   if (_content)
     _content->detach();
   _content = std::move(content);
+  // Modal restoration belongs to the old tree, never its replacement.
+  _modal = {};
+  _modalHistory.clear();
+  _hovered.clear();
+  _claimsRevision.reset();
   _overlays.clear();
   _dismissedPointers.clear();
   _table->layoutDirty = _table->paintDirty = true;
@@ -475,7 +480,7 @@ void UIRoot::dispatch(UIEvent &event) {
       if (event.type == EventType::KeyDown && event.logicalKey == Key::Tab &&
           !target && _interaction.sequentialNavigation) {
         focusNext(event.shift);
-        event.handled = true;
+        event.handled = _table->focused != NodeId{} || _modal != NodeId{};
         return;
       }
       if (!target)

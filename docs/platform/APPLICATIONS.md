@@ -107,11 +107,12 @@ with a small synthetic import test rather than implied by the static prop.
 ## Accessibility boundary
 
 Controls expose names, values, enabled state, keyboard operations and visible
-focus. These are groundwork, not native accessibility support. A future bridge
-needs lifetime-validated semantic identities, screen-space bounds, supported
-actions, focus/change notifications and owner-thread action dispatch. Start with
-one native platform and verify it using its accessibility tools before claiming
-cross-platform coverage. Do not expose hidden Minesweeper bomb state in semantics.
+focus through the implemented AccessKit bridge. WindowServices publishes validated
+semantic identities and routes native actions on the owner thread. Native reader,
+IME and cross-platform acceptance remain distinct from unit/build coverage; see
+[accessibility contracts](../ui/ACCESSIBILITY.md). Do not expose hidden Minesweeper
+bomb state in semantics. UI-backed apps expose session input claims through IApp;
+modal/editor ownership blocks AfterUI actions even for otherwise unhandled keys.
 
 ## Manual Minesweeper acceptance
 
@@ -126,3 +127,29 @@ scale/monitor changes when those environments are available.
 
 Focused module tests cover Stepper, Button focus painting and Content scroll
 measurement; they do not substitute for this desktop interaction review.
+
+## Future browser target: platform port, not just a renderer
+
+Web/WASM is an exploratory target, not a supported build. SDL itself supports
+Emscripten, but [SDL_GPU currently excludes the web](https://wiki.libsdl.org/SDL3/FAQDevelopment).
+A GPU browser renderer would therefore implement the existing rendering contracts
+through a separate API, potentially [Emscripten's WebGPU port](https://emscripten.org/docs/porting/multimedia_and_graphics/WebGPU-support.html).
+The native SDL command-buffer/custom-pipeline and timestamp extensions are not
+portable browser interfaces. Shader production, resource bindings, limits,
+compression support and glyph realization need backend-specific validation.
+
+The current host's blocking desktop loop needs a nonblocking frame-pump adapter
+that returns control to the browser. Asset acquisition and persistent settings
+need browser storage/fetch implementations rather than native paths; the native
+AccessKit window bridge needs a browser accessibility/input adapter, potentially
+projecting the same semantics into DOM elements. Fullscreen, pointer capture,
+clipboard and IME must follow browser policy rather than desktop assumptions.
+
+Dependency builds (including Unicode/font/asset libraries) require a WASM
+toolchain audit. [Emscripten pthreads](https://emscripten.org/docs/porting/pthreads.html)
+require cross-origin isolation for shared memory; a threadless target would need
+an explicitly cooperative execution policy, not blocking waits on the UI thread.
+[Browser networking](https://emscripten.org/docs/porting/networking.html) also needs
+transport adapters instead of assuming ordinary native sockets. Keep shared
+application models, UI semantics and renderer contracts independent of these
+adapters; no browser implementation or new platform dependency is introduced now.

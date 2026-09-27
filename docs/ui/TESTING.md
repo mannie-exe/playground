@@ -30,7 +30,8 @@ their runtime behavior.
 ## Contract inventory
 
 Idle integration adds `runtime_activity` (independent cadence, revision
-acknowledgement, timer deadlines and post-before-wake), `event_wake` (SDL event
+acknowledgement, timer deadlines, post-before-wake and reentrant destruction of
+replaced wake captures), `event_wake` (SDL event
 coalescing, filtered/reentrant delivery, stale endpoints), and `ui_runtime`
 paint-time invalidation checks. `ui_window_services` checks native publication
 reuse and geometry/mapping invalidation. `performance_reports` separates idle
@@ -39,6 +40,10 @@ fast/general pixels for fractional and mirrored rectangles, nested opacity,
 rounded borders, and rejects clipped paths without corrupting preceding draws.
 These checks do not replace interactive exposure/resize, IME, screen-reader and
 power-utilization checks on each operating system.
+
+`ui_control_paint` also checks slider snapping with a subnormal positive step:
+an unrepresentably large step quotient must retain the interpolated position,
+not overflow into an endpoint jump.
 
 | Boundary | Tests and exercised behavior | Coverage limits |
 |---|---|---|
@@ -55,7 +60,7 @@ power-utilization checks on each operating system.
 | Unicode model | `ui_text_edit`: combining/ZWJ graphemes, bidi UTF-8 offsets, composition isolation, undo/redo, invalid UTF-8, capacity, readonly/password | Not every Unicode conformance corpus |
 | Plain editor | `ui_text_field`: real font shaping, wrapped bidi runs, offscreen painting, clipboard injection, password snapshots, invalid/valid numeric drafts | Native IME candidate windows and reader text-range behavior are manual checks |
 | Actions/semantics | `ui_accessibility`: derived disabled actions, modal restriction/restoration, stale identities, explicit neighbors and numeric rejection | Native OS callback concurrency is not simulated by these owner-thread tests |
-| UI/application navigation ownership | `ui_navigation_routing`: decorative trees pass arrows to AfterUI actions; eligible focus, occupied boundaries and empty modals consume them; disabled controls release ownership | Synthetic input routing, not an interactive camera test |
+| UI/application navigation ownership | `ui_navigation_routing`: decorative trees pass arrows/Tab; editor/modal claims block gameplay keys; focus, disable/hide/replacement and pointer capture invalidate ownership; `input_actions`: selective held-action cancellation, neutral reacquisition, global overrides and modal dismissal | Synthetic input routing, not an interactive camera test |
 | Native adapter lifetime | `ui_window_services`: hidden native window attachment, mode changes, detach/replacement and destruction | No screen reader is driven; dummy/offscreen SDL drivers bypass the native adapter portion |
 | Composite controls | `ui_control_variants`: toggles, radio/list selection, Select, Disclosure, Tabs, label/help relationships, Status, Tooltip, ProgressBar | Demo2D supplies a manual gallery; it is not an automated app test |
 | Content-sized scrolling | `ui_content_scroll`: natural sizing, work-area clamps, overflow extent, resizing, offset reset and legacy Fill constraints | Actual OS work-area/window decoration behavior still needs desktop verification |

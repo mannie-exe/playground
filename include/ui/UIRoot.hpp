@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <input/InputMap.hpp>
 #include <runtime/CompletionQueue.hpp>
 #include <ui/Node.hpp>
 
@@ -69,6 +70,9 @@ class UIRoot {
   Node *presentationHit(math::Point2);
   bool routeOverlayDismissal(UIEvent &);
   std::vector<std::pair<NodeId, NodeId>> _modalHistory;
+  std::optional<std::pair<std::uint64_t, std::uint64_t>> _claimsRevision;
+  NodeId _claimsFocus;
+  input::InputClaims _claims;
   const std::uint64_t _workId{nextUIWorkId()};
   mutable UIWorkTiming _timing;
   LayoutDiagnostics _diagnostics;
@@ -287,6 +291,7 @@ public:
   void render(PaintContext &context) const;
 
   void focusNext(bool reverse = false);
+  input::InputClaims inputClaims();
   // True when navigation belongs to UI, including an occupied focus boundary.
   // False lets an AfterUI application action handle otherwise unused arrows.
   bool focusDirection(math::Vec2f direction);

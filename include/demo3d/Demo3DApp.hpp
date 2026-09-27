@@ -48,6 +48,8 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
+  input::InputClaims inputClaims() override { return _ui.inputClaims(); }
+
   void onEnter(AppContext &) override;
   void onExit(AppContext &) override;
   void onActions(AppContext &, const input::InputSnapshot &) override;

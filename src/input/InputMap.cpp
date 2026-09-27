@@ -8,6 +8,20 @@
 #include <input/InputMap.hpp>
 
 namespace playground::input {
+bool InputClaims::owns(const Control &control) const noexcept {
+  switch (control.kind) {
+  case ControlKind::Key:
+    return keyboard;
+  case ControlKind::MouseButton:
+    return pointer || std::ranges::find(capturedPointers, control.device) !=
+                          capturedPointers.end();
+  case ControlKind::GamepadButton:
+  case ControlKind::GamepadAxis:
+    return gamepad;
+  }
+  return false;
+}
+
 const ActionState &
 InputSnapshot::operator[](std::string_view name) const noexcept {
   static const ActionState empty;
@@ -31,6 +45,7 @@ struct InputMap::Impl {
   std::vector<Context> contexts;
   std::map<Control, float> physical;
   InputSnapshot frame, tick;
+  InputClaims uiClaims;
   ContextId next{1};
 
   Context &find(ContextId id) {
@@ -223,6 +238,10 @@ void InputMap::rebind(ContextId id, std::vector<Binding> bindings) {
 bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
   if (!std::isfinite(event.value) || std::abs(event.value) > 1 ||
       event.control.code < 0 ||
+      (event.control.kind != ControlKind::Key &&
+       event.control.kind != ControlKind::MouseButton &&
+       event.control.kind != ControlKind::GamepadButton &&
+       event.control.kind != ControlKind::GamepadAxis) ||
       (stage != InputStage::BeforeUI && stage != InputStage::AfterUI))
     throw std::invalid_argument("Input values must be normalized");
   if (stage == InputStage::BeforeUI) {
@@ -231,6 +250,8 @@ bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
     else
       _impl->physical[event.control] = event.value;
   }
+  if (stage == InputStage::AfterUI)
+    blocked |= _impl->uiClaims.owns(event.control);
   bool canceled{};
   for (auto &c : _impl->contexts) {
     if (c.props.stage != stage)
@@ -258,6 +279,54 @@ bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
   }
   _impl->publish(canceled);
   return blocked;
+}
+
+const InputClaims &InputMap::uiClaims() const noexcept {
+  return _impl->uiClaims;
+}
+
+bool InputMap::setUIClaims(InputClaims claims) {
+  if (claims == _impl->uiClaims)
+    return false;
+  std::set<std::string, std::less<>> affected;
+  for (auto &context : _impl->contexts) {
+    if (context.props.stage != InputStage::AfterUI)
+      continue;
+    for (auto &bound : context.bindings) {
+      for (const auto &[control, value] : _impl->physical) {
+        if (value != 0 && Impl::matches(bound.props, control) &&
+            claims.owns(control) && !_impl->uiClaims.owns(control)) {
+          bound.values.erase(control);
+          bound.suppressed.insert(control);
+          affected.insert(bound.props.action);
+        }
+      }
+      // A completed tap may still have edges waiting for a fixed tick.
+      const Control representative{bound.props.control, bound.props.code,
+                                   bound.props.device.value_or(0)};
+      if (claims.owns(representative) && !_impl->uiClaims.owns(representative))
+        affected.insert(bound.props.action);
+      if (bound.props.control == ControlKind::MouseButton &&
+          !bound.props.device)
+        for (auto pointer : claims.capturedPointers)
+          if (pointer <= std::numeric_limits<std::uint32_t>::max() &&
+              !_impl->uiClaims.pointer &&
+              std::ranges::find(_impl->uiClaims.capturedPointers, pointer) ==
+                  _impl->uiClaims.capturedPointers.end())
+            affected.insert(bound.props.action);
+    }
+  }
+  _impl->uiClaims = std::move(claims);
+  _impl->publish(true);
+  for (auto *snapshot : {&_impl->frame, &_impl->tick})
+    for (const auto &name : affected)
+      if (auto it = snapshot->actions.find(name);
+          it != snapshot->actions.end()) {
+        auto &state = it->second;
+        state.canceled |= state.pressed || state.released;
+        state.pressed = state.released = false;
+      }
+  return true;
 }
 
 void InputMap::cancelAll() {

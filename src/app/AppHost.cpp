@@ -234,16 +234,20 @@ int AppHost::run() {
 
       if (_activeApp) {
         auto &input = _activeApp->input();
+        input.setUIClaims(_activeApp->inputClaims());
         playground::sdl::cancelActionInput(input, event);
         const auto action = playground::sdl::toActionInput(event);
         if (action)
           playground::input::routeInputEvent(
               input, *action, hostHandled || !_inputFocused, [&] {
-                return _activeApp->handleEvent(ctx, event) !=
-                       EventResult::Ignored;
+                const bool handled =
+                    _activeApp->handleEvent(ctx, event) != EventResult::Ignored;
+                input.setUIClaims(_activeApp->inputClaims());
+                return handled;
               });
         else if (!hostHandled)
           _activeApp->handleEvent(ctx, event);
+        input.setUIClaims(_activeApp->inputClaims());
         _activeApp->onActions(ctx, input.takeFrameSnapshot());
       }
 
@@ -283,16 +287,21 @@ int AppHost::run() {
 
       synchronizeRendererDomain();
 
+      synchronizeInputClaims(ctx);
+
       if (_activeApp && _activeApp->_simulation) {
         auto &clock = *_activeApp->_simulation;
         clock.setPaused(_activeApp->_simulationPaused || !_inputFocused);
         clock.beginFrame(elapsed);
-        while (auto step = clock.nextStep())
+        while (auto step = clock.nextStep()) {
+          synchronizeInputClaims(ctx);
           _activeApp->fixedUpdate(ctx, *step,
                                   _activeApp->input().takeTickSnapshot());
+        }
       }
       if (_activeApp)
         _activeApp->update(ctx, deltaSeconds);
+      synchronizeInputClaims(ctx);
 
       maintenanceAt = Clock::now() + std::chrono::seconds{1};
     }
@@ -393,6 +402,11 @@ void AppHost::registerDefaultApps() {
                 [] { return std::make_unique<RockPaperScissorsApp>(); });
   _registry.add(SnakeApp::staticInfo(),
                 [] { return std::make_unique<SnakeApp>(); });
+}
+
+void AppHost::synchronizeInputClaims(AppContext &ctx) {
+  if (_activeApp && _activeApp->input().setUIClaims(_activeApp->inputClaims()))
+    _activeApp->onActions(ctx, _activeApp->input().takeFrameSnapshot());
 }
 
 bool AppHost::handleHostEvent(const SDL_Event &event) {

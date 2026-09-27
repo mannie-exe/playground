@@ -28,6 +28,8 @@ int main() {
     root.setContent(std::move(field));
     root.flushLayout({280, 48});
     root.requestFocus(raw->id());
+    test::require(root.inputClaims().keyboard,
+                  "font-backed text field claims physical typing input");
     test::require(raw->textInputState().caret.h() > 0,
                   "font-backed caret geometry");
     root.performAction(raw->id(), ui::TextSelection{7, 10},
@@ -37,6 +39,11 @@ int main() {
     test::require(raw->model().value() == "office a\xCC\x81" &&
                       notifications == 0,
                   "composition isolated from committed value");
+    ui::UIEvent cancel{.type = ui::EventType::InputCancel};
+    root.dispatch(cancel);
+    test::require(
+        !raw->textInputState().composing,
+        "input cancellation clears IME composition without committing");
     ui::UIEvent input{.type = ui::EventType::TextInput, .text = "x"};
     root.dispatch(input);
     test::require(raw->model().value() == "office x" && notifications == 1,

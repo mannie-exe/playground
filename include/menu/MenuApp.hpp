@@ -20,6 +20,10 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
+  playground::input::InputClaims inputClaims() override {
+    return _ui.inputClaims();
+  }
+
   playground::runtime::ActivityProps activityProps() const override {
     return {false, false};
   }

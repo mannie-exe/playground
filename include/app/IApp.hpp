@@ -30,6 +30,8 @@ public:
 
   virtual playground::runtime::ActivityDemand activityDemand() { return {}; }
 
+  virtual playground::input::InputClaims inputClaims() { return {}; }
+
   playground::input::InputMap &input() noexcept { return _input; }
 
   playground::runtime::ActivationToken activationToken() const noexcept {

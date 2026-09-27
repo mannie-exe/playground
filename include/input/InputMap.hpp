@@ -30,6 +30,16 @@ struct InputEvent {
   bool repeat{};
 };
 
+// Persistent UI reservation, independent of whether an event performed work.
+// BeforeUI contexts are explicit global overrides and do not obey these claims.
+struct InputClaims {
+  bool keyboard{}, pointer{}, gamepad{};
+  std::vector<std::uint64_t> capturedPointers;
+
+  bool owns(const Control &) const noexcept;
+  bool operator==(const InputClaims &) const = default;
+};
+
 struct Binding {
   std::string action;
   ActionKind kind{ActionKind::Button};
@@ -79,6 +89,8 @@ public:
   void removeContext(ContextId);
   void setEnabled(ContextId, bool);
   void rebind(ContextId, std::vector<Binding>);
+  bool setUIClaims(InputClaims);
+  const InputClaims &uiClaims() const noexcept;
   // Call BeforeUI once, then AfterUI with the accumulated consumption result.
   bool route(const InputEvent &, InputStage, bool blocked = false);
   void cancelAll();
@@ -91,9 +103,10 @@ public:
 template <class RouteUI>
 bool routeInputEvent(InputMap &map, const InputEvent &event, bool blocked,
                      RouteUI &&routeUI) {
+  const bool reserved = map.uiClaims().owns(event.control);
   blocked = map.route(event, InputStage::BeforeUI, blocked);
   if (!blocked)
     blocked = routeUI();
-  return map.route(event, InputStage::AfterUI, blocked);
+  return map.route(event, InputStage::AfterUI, blocked || reserved);
 }
 } // namespace playground::input

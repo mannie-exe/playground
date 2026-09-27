@@ -45,6 +45,8 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
+  input::InputClaims inputClaims() override { return _ui.inputClaims(); }
+
   runtime::ActivityProps activityProps() const override {
     return {false, false};
   }
