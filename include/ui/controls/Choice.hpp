@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 
+#include <ui/TextEdit.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/controls/Button.hpp>
+#include <ui/controls/Navigation.hpp>
 
 namespace playground::ui {
 struct ToggleProps {
@@ -25,6 +27,7 @@ class ToggleButton : public Button {
   ToggleProps _props;
   SemanticRole _role;
   Signal<CheckState> _changed;
+  Signal<CheckState, ActionSource> _edited;
 
 protected:
   void paint(PaintContext &) const override;
@@ -40,6 +43,11 @@ public:
   void applyPatch(const TogglePatch &);
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
+
+  Connection
+  onValueEdited(support::MoveOnlyFunction<void(CheckState, ActionSource)> f) {
+    return _edited.connect(std::move(f));
+  }
 
   Connection
   onValueChanged(support::MoveOnlyFunction<void(CheckState)> callback) {
@@ -86,10 +94,12 @@ struct SelectionPatch {
 
 // Bounded single-selection list. Item keys, not child addresses, are authored
 // IDs.
-class ListBox : public VStack {
+class ListBox : public VStack, public TextInputClient {
   class Option;
   SelectionProps _props;
   SemanticRole _role;
+  bool _composing{};
+  std::optional<std::string> _active;
 
   struct Entry {
     std::string key, label;
@@ -100,11 +110,20 @@ class ListBox : public VStack {
   std::vector<Entry> _items;
   std::vector<Connection> _connections;
   Signal<std::string> _changed;
+  Signal<std::string, ActionSource> _selected;
+  Signal<std::string, ActionSource> _invoked;
 
 protected:
+  CollectionNavigation _navigation;
+  bool handleComposition(UIEvent &);
   void onDefaultEvent(UIEvent &) override;
   std::vector<std::string> enabledKeys() const;
   void highlight(const std::optional<std::string> &);
+
+  Connection
+  onCommand(support::MoveOnlyFunction<void(std::string, ActionSource)> f) {
+    return _invoked.connect(std::move(f));
+  }
 
 public:
   ListBox(std::vector<ChoiceItem> items, SelectionProps props = {},
@@ -113,13 +132,25 @@ public:
 
   const SelectionProps &selectionProps() const noexcept { return _props; }
 
+  std::vector<NavigationItem> items() const;
   void setSelectionProps(SelectionProps);
   void applySelectionPatch(const SelectionPatch &);
   SemanticState semanticState() const override;
 
+  TextInputState textInputState() const override {
+    return {.readOnly = !_props.enabled,
+            .caret = {{}, bounds().size},
+            .composing = _composing};
+  }
+
   bool isInteractionEnabled() const noexcept override { return _props.enabled; }
 
   ActionResult performAction(const UIAction &, ActionSource) override;
+
+  Connection onSelectionEdited(
+      support::MoveOnlyFunction<void(std::string, ActionSource)> f) {
+    return _selected.connect(std::move(f));
+  }
 
   Connection
   onSelectionChanged(support::MoveOnlyFunction<void(std::string)> callback) {
@@ -135,10 +166,18 @@ public:
                 SemanticRole::RadioGroup} {}
 };
 
-class Menu final : public ListBox {
+class MenuList final : public ListBox {
+  using ListBox::onSelectionChanged;
+  using ListBox::onSelectionEdited;
+
 public:
-  Menu(std::vector<ChoiceItem> items, SelectionProps props = {},
-       ButtonProps button = {}, layout::BoxProps box = {})
+  Connection
+  onInvoked(support::MoveOnlyFunction<void(std::string, ActionSource)> f) {
+    return onCommand(std::move(f));
+  }
+
+  MenuList(std::vector<ChoiceItem> items, SelectionProps props = {},
+           ButtonProps button = {}, layout::BoxProps box = {})
       : ListBox{std::move(items), std::move(props), button, box,
                 SemanticRole::Menu} {}
 };

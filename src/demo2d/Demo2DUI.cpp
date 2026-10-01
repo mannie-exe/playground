@@ -10,9 +10,13 @@
 #include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Flow.hpp>
 #include <ui/content/Vector.hpp>
+#include <ui/controls/ChoiceStepper.hpp>
 #include <ui/controls/Composite.hpp>
+#include <ui/controls/Groups.hpp>
+#include <ui/controls/Meter.hpp>
+#include <ui/controls/NumberStepper.hpp>
 #include <ui/controls/Slider.hpp>
-#include <ui/controls/Stepper.hpp>
+#include <ui/controls/Surfaces.hpp>
 #include <ui/controls/TextField.hpp>
 
 namespace playground::demo2d {
@@ -234,15 +238,52 @@ public:
     column->append(std::move(progress));
     auto readout = label("3");
     auto *readoutPtr = readout.get();
-    auto stepper = std::make_unique<ui::Stepper>(
+    auto stepper = std::make_unique<ui::NumberStepper>(
         std::move(readout), icon(resources.removeIcon), icon(resources.addIcon),
-        ui::StepperProps{.value = 3, .maximum = 10, .name = "Stepper"});
+        ui::NumberStepperProps{
+            .value = 3, .maximum = 10, .name = "NumberStepper"});
     _connections.push_back(stepper->onValueChanged([this, readoutPtr](int v) {
       readoutPtr->applyPatch(
           {.value = Patch<std::string>::set(std::to_string(v))});
-      report(std::format("Stepper: {}", v));
+      report(std::format("NumberStepper: {}", v));
     }));
     column->append(std::move(stepper));
+
+    auto choiceLabel = label("First");
+    auto *choiceText = choiceLabel.get();
+    auto choiceStepper = std::make_unique<ui::ChoiceStepper>(
+        std::move(choiceLabel), choices(),
+        ui::SelectionProps{.selected = "first", .name = "Choice stepper"});
+    _connections.push_back(
+        choiceStepper->onSelectionChanged([this, choiceText](std::string key) {
+          choiceText->applyPatch({.value = Patch<std::string>::set(key)});
+          report("Choice: " + key);
+        }));
+    column->append(label("Choice stepper"));
+    column->append(std::move(choiceStepper));
+    column->append(label("Independent choices"));
+    column->append(std::make_unique<ui::CheckboxGroup>(
+        choices(), ui::ToggleGroupProps{.name = "Checkbox group"}));
+    column->append(label("Managed utilization (example)"));
+    column->append(std::make_unique<ui::Meter>(
+        ui::MeterProps{.value = 75,
+                       .maximum = 100,
+                       .warning = 70,
+                       .critical = 90,
+                       .name = "Example utilization",
+                       .unit = "MiB"}));
+    std::vector<ui::AccordionItem> sections;
+    sections.push_back({"first", label("Accordion: first"),
+                        label("Single-expansion content")});
+    sections.push_back({"second", label("Accordion: second"),
+                        label("Opening this closes the first section")});
+    column->append(std::make_unique<ui::Accordion>(std::move(sections)));
+    column->append(std::make_unique<ui::Popover>(
+        label("Open popover"),
+        label("Interactive anchored content; Escape dismisses")));
+    column->append(std::make_unique<ui::TooltipTrigger>(
+        std::make_unique<ui::Button>(label("Focus or hover for help")),
+        label("Shared tooltip timing"), "Shared tooltip timing"));
 
     column->append(label("Radio group"));
     auto radio = std::make_unique<ui::RadioGroup>(
@@ -287,11 +328,13 @@ public:
              "Retained when you switch tabs")});
     column->append(std::make_unique<ui::Tabs>(
         std::move(tabs), ui::SelectionProps{.name = "Showcase tabs"}));
-    auto menu = std::make_unique<ui::Menu>(
+    auto menu = std::make_unique<ui::MenuList>(
         choices(),
         ui::SelectionProps{.selected = "first", .name = "Command menu"});
-    _connections.push_back(menu->onSelectionChanged(
-        [this](std::string v) { report("Menu command: " + v); }));
+    _connections.push_back(
+        menu->onInvoked([this](std::string v, ui::ActionSource) {
+          report("Menu command: " + v);
+        }));
     column->append(label("Command menu — arrows move, Enter invokes"));
     column->append(std::move(menu));
 

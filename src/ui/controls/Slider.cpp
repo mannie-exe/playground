@@ -16,6 +16,7 @@ void Slider::setProps(SliderProps props) {
   if (props.axis != layout::Axis::Horizontal &&
       props.axis != layout::Axis::Vertical)
     throw std::invalid_argument("Invalid slider axis");
+  const bool canceled = _pointer && (!props.enabled || props.readOnly);
   _props = std::move(props);
   if (!_props.enabled || _props.readOnly) {
     _hovered = false;
@@ -23,6 +24,8 @@ void Slider::setProps(SliderProps props) {
     releaseAllPointers();
   }
   invalidate(DirtyFlags::Measure | DirtyFlags::Paint | DirtyFlags::Semantics);
+  if (canceled)
+    _finished.emit({ActionSource::Program, ChangeReason::Cancel});
 }
 
 void Slider::applyPatch(const SliderPatch &p) {
@@ -34,7 +37,8 @@ void Slider::applyPatch(const SliderPatch &p) {
             p.name.appliedTo(_props.name, d.name),
             p.track.appliedTo(_props.track, d.track),
             p.thumb.appliedTo(_props.thumb, d.thumb),
-            p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
+            p.useTheme.appliedTo(_props.useTheme, d.useTheme),
+            p.snapToStep.appliedTo(_props.snapToStep, d.snapToStep)});
 }
 
 layout::MeasureResult Slider::measureContent(MeasureContext &,
@@ -90,7 +94,8 @@ SemanticState Slider::semanticState() const {
   return s;
 }
 
-ActionResult Slider::performAction(const UIAction &action, ActionSource) {
+ActionResult Slider::performAction(const UIAction &action,
+                                   ActionSource source) {
   if (!_props.enabled || _props.readOnly)
     return ActionResult::Unavailable;
   double value;
@@ -108,7 +113,12 @@ ActionResult Slider::performAction(const UIAction &action, ActionSource) {
   auto props = _props;
   props.range.value = value;
   setProps(std::move(props));
+  _edited.emit(value, {source, _pointer || source == ActionSource::Pointer
+                                   ? ChangeReason::Drag
+                                   : ChangeReason::Step});
   _changed.emit(value);
+  if (!_pointer && source != ActionSource::Pointer)
+    _finished.emit({source, ChangeReason::Step});
   return ActionResult::Applied;
 }
 
@@ -125,10 +135,13 @@ void Slider::onDefaultEvent(UIEvent &e) {
   }
   if (e.type == EventType::FocusLost || e.type == EventType::InputCancel ||
       (e.type == EventType::PointerCancel && _pointer == e.pointer)) {
+    const bool canceled = _pointer.has_value();
     _pointer.reset();
     _hovered = false;
     releaseAllPointers();
     invalidatePaint();
+    if (canceled)
+      _finished.emit({e.source, ChangeReason::Cancel});
     return;
   }
   if (e.handled || !_props.enabled || _props.readOnly)
@@ -160,7 +173,7 @@ void Slider::onDefaultEvent(UIEvent &e) {
     const double steps = (value - _props.range.minimum) / _props.range.step;
     // An overflowing quotient means the step is below representable resolution
     // at this position. Keep the interpolated value instead of snapping to inf.
-    if (std::isfinite(steps))
+    if (_props.snapToStep && std::isfinite(steps))
       value = std::clamp(_props.range.minimum +
                              std::round(steps) * _props.range.step,
                          _props.range.minimum, _props.range.maximum);
@@ -172,6 +185,8 @@ void Slider::onDefaultEvent(UIEvent &e) {
     }
     invalidatePaint();
     performAction(SetValue{value}, ActionSource::Pointer);
+    if (e.type == EventType::PointerUp)
+      _finished.emit({ActionSource::Pointer, ChangeReason::Drag});
   }
   if (e.type == EventType::KeyDown) {
     if (e.logicalKey == Key::Left || e.logicalKey == Key::Down) {
@@ -209,7 +224,8 @@ ProgressBar::measureContent(MeasureContext &, const layout::SizeConstraints &) {
 void ProgressBar::paint(PaintContext &p) const {
   p.fill({{}, bounds().size}, _props.useTheme ? theme().border : _props.track);
   const auto &r = _props.range;
-  const float t = r.minimum == r.maximum
+  const float t = _props.indeterminate ? .35f
+                  : r.minimum == r.maximum
                       ? 0
                       : float((r.value - r.minimum) / (r.maximum - r.minimum));
   p.fill(math::rect(0, 0, bounds().w() * t, bounds().h()),
@@ -220,7 +236,10 @@ SemanticState ProgressBar::semanticState() const {
   auto s = Node::semanticState();
   s.description.role = SemanticRole::Progress;
   s.description.name = _props.name;
-  s.range = _props.range;
+  if (!_props.indeterminate)
+    s.range = _props.range;
+  else
+    s.description.value = "In progress; completion unknown";
   s.readOnly = true;
   return s;
 }

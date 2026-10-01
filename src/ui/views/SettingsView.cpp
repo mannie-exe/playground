@@ -4,7 +4,7 @@
 #include <ui/containers/Stack.hpp>
 #include <ui/controls/Choice.hpp>
 #include <ui/controls/Composite.hpp>
-#include <ui/controls/Stepper.hpp>
+#include <ui/controls/NumberStepper.hpp>
 #include <ui/views/SettingsView.hpp>
 
 namespace playground::ui {
@@ -30,6 +30,25 @@ std::unique_ptr<Text> SettingsView::text(std::string value) {
                          .wrap = TextWrap::AvailableInlineSize});
 }
 
+void SettingsView::arrangeChildren(ArrangeContext &ctx, math::Rect bounds) {
+  SettingsPanel::arrangeChildren(ctx, bounds);
+  if (_registrations.empty())
+    for (auto &entry : _editors) {
+      auto *error = entry.error;
+      _registrations.push_back(_form.registerField(
+          entry.key, entry.editor->handle(),
+          [this, group = entry.group] {
+            _tabs->applySelectionPatch(
+                {.selected = Patch<std::optional<std::string>>::set(
+                     std::to_string(group))});
+          },
+          [error](ValidationResult issue) {
+            error->applyPatch({.value = Patch<std::string>::set(
+                                   issue ? issue->message : "")});
+          }));
+    }
+}
+
 void SettingsView::edited() {
   if (_status)
     _status->applyPatch(
@@ -39,6 +58,17 @@ void SettingsView::edited() {
 
 void SettingsView::submit(bool persist) {
   try {
+    if (!_form.commit()) {
+      edited();
+      return;
+    }
+    if (_draft.automatic.enabled &&
+        _draft.automatic.minimumSceneScale > _draft.threeD.resolutionScale) {
+      _form.reject("minimum_scene_scale",
+                   {"bounds", "Minimum scene resolution must not exceed "
+                              "requested scene resolution"});
+      return;
+    }
     _draft.validate();
     // Avoid saving a lower ceiling that already cannot cover this live UI.
     // Low-level runtime policy still permits intentional over-budget operation.
@@ -112,51 +142,106 @@ void SettingsView::build() {
         });
         column->append(std::move(toggle));
       } else {
-        auto row = std::make_unique<HStack>(layout::StackProps{
-            .gap = 16, .childrenAlignment = layout::CrossAlignment::Center});
-        row->append(text(label), {.grow = 1});
-        auto readout = text("");
-        auto *value = readout.get();
-        const auto refresh = [this, value, &field] {
-          const auto v = field.get(_draft);
-          const auto display =
-              field.choices.empty()
-                  ? std::format("{:.0f} {}", v, field.unit)
-                  : std::string{field.choices[static_cast<std::size_t>(v)]};
-          value->applyPatch({.value = Patch<std::string>::set(display)});
-        };
-        auto stepper = std::make_unique<Stepper>(
-            std::move(readout), text("-"), text("+"),
-            StepperProps{.value =
-                             static_cast<int>(std::lround(field.get(_draft))),
-                         .minimum = static_cast<int>(field.minimum),
-                         .maximum = static_cast<int>(field.maximum),
-                         .step = static_cast<int>(field.step),
-                         .name = label},
-            ButtonProps{},
-            layout::BoxProps{.width = layout::SizeRule::fixed(220),
-                             .height = layout::SizeRule::fixed(40)});
-        auto *control = stepper.get();
-        _connections.push_back(
-            stepper->onValueChanged([this, &field, refresh](int v) {
-              field.set(_draft, v);
-              refresh();
-              edited();
-            }));
-        _refresh.push_back([this, control, &field, refresh] {
-          control->applyPatch({.value = Patch<int>::set(static_cast<int>(
-                                   std::lround(field.get(_draft))))});
-          refresh();
-        });
-        refresh();
-        row->append(std::move(stepper), {.shrink = 0});
-        column->append(std::move(row));
+        std::unique_ptr<Node> control;
+        auto error = text("");
+        auto *errorText = error.get();
+        if (!field.choices.empty()) {
+          std::vector<ChoiceItem> choices;
+          for (auto key : field.choices)
+            choices.push_back(
+                {std::string{key}, std::string{key}, text(std::string{key})});
+          auto display =
+              text(std::string{field.choices[std::size_t(field.get(_draft))]});
+          auto *readout = display.get();
+          auto select = std::make_unique<Select>(
+              std::move(display), std::move(choices),
+              SelectionProps{
+                  .selected =
+                      std::string{
+                          field.choices[std::size_t(field.get(_draft))]},
+                  .required = true,
+                  .name = label},
+              ButtonProps{},
+              layout::BoxProps{.width = layout::SizeRule::fixed(240)});
+          auto *raw = select.get();
+          _connections.push_back(select->onSelectionChanged(
+              [this, &field, readout](std::string key) {
+                const auto index =
+                    std::find(field.choices.begin(), field.choices.end(), key) -
+                    field.choices.begin();
+                field.set(_draft, double(index));
+                readout->applyPatch({.value = Patch<std::string>::set(key)});
+                edited();
+              }));
+          _refresh.push_back([this, raw, readout, &field] {
+            const auto key =
+                std::string{field.choices[std::size_t(field.get(_draft))]};
+            raw->applySelectionPatch(
+                {.selected = Patch<std::optional<std::string>>::set(key)});
+            readout->applyPatch({.value = Patch<std::string>::set(key)});
+          });
+          control = std::move(select);
+        } else {
+          auto editor = std::make_unique<NumberField>(
+              TextFieldProps{.font = _font, .required = true, .name = label},
+              NumberFieldProps{.range = {field.get(_draft), field.minimum,
+                                         field.maximum, field.step},
+                               .integer = field.kind == SettingKind::Integer},
+              layout::BoxProps{});
+          auto *input = editor.get();
+          _editors.push_back({std::string{field.key}, group, input, errorText});
+          auto stepper = std::make_unique<NumberStepper>(
+              std::move(editor),
+              std::make_unique<ControlIcon>(ControlGlyph::Minus),
+              std::make_unique<ControlIcon>(ControlGlyph::Plus),
+              NumberStepperProps{.value = field.get(_draft),
+                                 .minimum = field.minimum,
+                                 .maximum = field.maximum,
+                                 .step = field.step,
+                                 .name = label},
+              ButtonProps{},
+              layout::BoxProps{.width = layout::SizeRule::fixed(240),
+                               .minHeight = 40});
+          auto *raw = stepper.get();
+          _connections.push_back(
+              stepper->onValueChanged([this, &field](double value) {
+                field.set(_draft, value);
+                edited();
+              }));
+          _connections.push_back(
+              input->onValueChanged([this](std::string) { edited(); }));
+          _connections.push_back(
+              input->onValidationChanged([errorText](ValidationResult issue) {
+                errorText->applyPatch({.value = Patch<std::string>::set(
+                                           issue ? issue->message : "")});
+              }));
+          _refresh.push_back([this, raw, input, &field] {
+            raw->applyPatch({.value = Patch<double>::set(field.get(_draft))});
+            input->revertDraft();
+          });
+          control = std::move(stepper);
+        }
+        column->append(std::make_unique<Field>(
+            std::move(control),
+            text(label + (field.unit.empty()
+                              ? ""
+                              : " (" + std::string{field.unit} + ")")),
+            std::move(error), FieldProps{.label = label}, layout::BoxProps{},
+            true));
       }
     }
     if (group == 4) {
       auto meters = text("");
       _meters = meters.get();
       column->append(std::move(meters));
+      auto cpu = std::make_unique<Meter>(
+          MeterProps{.name = "Managed CPU usage", .unit = "MiB"});
+      _cpuMeter = cpu.get();
+      column->append(std::move(cpu));
+      auto gpu = std::make_unique<Meter>(
+          MeterProps{.name = "Managed GPU usage", .unit = "MiB"});
+      _gpuMeter = gpu.get();
+      column->append(std::move(gpu));
     }
     auto scroll = std::make_unique<ScrollView>(
         std::move(column), ScrollProps{},
@@ -164,10 +249,12 @@ void SettingsView::build() {
     tabs.push_back({std::to_string(group), names[group], text(names[group]),
                     std::move(scroll)});
   }
-  root->append(std::make_unique<Tabs>(
+  auto categories = std::make_unique<Tabs>(
       std::move(tabs), SelectionProps{.selected = "0",
                                       .required = true,
-                                      .name = "Settings categories"}));
+                                      .name = "Settings categories"});
+  _tabs = categories.get();
+  root->append(std::move(categories));
   auto status = text("Changes are not applied until Apply or Save.");
   _status = status.get();
   root->append(std::move(status));
@@ -213,6 +300,16 @@ void SettingsView::setResult(GraphicsSettings applied, std::string message) {
 void SettingsView::setRuntime(const ResolvedGraphicsState &graphics,
                               const RenderRuntimeSnapshot &runtime) {
   _usage = runtime.resources;
+  _cpuMeter->setProps(
+      {.value = runtime.resources.memory[0].bytes / 1048576.,
+       .maximum = std::max(1., runtime.resources.budgets.cpuBytes / 1048576.),
+       .name = "Managed CPU usage",
+       .unit = "MiB"});
+  _gpuMeter->setProps(
+      {.value = runtime.resources.memory[1].bytes / 1048576.,
+       .maximum = std::max(1., runtime.resources.budgets.gpuBytes / 1048576.),
+       .name = "Managed GPU usage",
+       .unit = "MiB"});
   const auto mib = [](std::size_t bytes) { return bytes / 1048576.0; };
   auto value = std::format(
       "Managed CPU: {:.1f} / {:.0f} MiB (peak {:.1f})\nManaged GPU: {:.1f} / "

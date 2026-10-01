@@ -125,7 +125,7 @@ of the usable display as needed, then permit overflow scrolling. Keyboard focus
 must remain visible when traversing an overflowing board. Repeat across display
 scale/monitor changes when those environments are available.
 
-Focused module tests cover Stepper, Button focus painting and Content scroll
+Focused module tests cover NumberStepper, Button focus painting and Content scroll
 measurement; they do not substitute for this desktop interaction review.
 
 ## Future browser target: platform port, not just a renderer

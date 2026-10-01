@@ -78,6 +78,12 @@ accesskit_role role(ui::SemanticRole value) {
     return ACCESSKIT_ROLE_MENU_ITEM;
   case R::Tooltip:
     return ACCESSKIT_ROLE_TOOLTIP;
+  case R::Meter:
+    return ACCESSKIT_ROLE_METER;
+  case R::Toolbar:
+    return ACCESSKIT_ROLE_TOOLBAR;
+  case R::AlertDialog:
+    return ACCESSKIT_ROLE_ALERT_DIALOG;
   case R::Progress:
     return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
   case R::Status:

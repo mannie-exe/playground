@@ -31,6 +31,8 @@ enum class EventType {
   KeyUp,
   FocusLost,
   FocusGained,
+  FocusWithinGained,
+  FocusWithinLost,
   TextInput,
   TextEditing,
   InputCancel
@@ -47,6 +49,9 @@ enum class Key {
   Up,
   Down,
   Home,
+  PageUp,
+  PageDown,
+  ContextMenu,
   End,
   Backspace,
   Delete,

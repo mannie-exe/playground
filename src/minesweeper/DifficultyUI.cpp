@@ -35,18 +35,20 @@ DifficultyUI::DifficultyUI(MinesweeperBoardProps &draft,
   column->append(std::move(presets));
 
   const auto addStepper = [&](const std::string &name, int value, int minimum,
-                              int maximum, ui::Stepper *&stepper,
+                              int maximum, ui::NumberStepper *&stepper,
                               ui::Text *&label,
                               support::MoveOnlyFunction<void(int)> changed) {
     auto text =
         minesweeper::makeLabel(resources, name + ": " + std::to_string(value),
                                style.labelColor, {312, 44});
     label = text.get();
-    auto node = std::make_unique<ui::Stepper>(
+    auto node = std::make_unique<ui::NumberStepper>(
         std::move(text),
         minesweeper::makeLabel(resources, "-", style.labelColor, {40, 44}),
         minesweeper::makeLabel(resources, "+", style.labelColor, {40, 44}),
-        ui::StepperProps{value, minimum, maximum, 1, true, name}, style.button,
+        ui::NumberStepperProps{double(value), double(minimum), double(maximum),
+                               1, true, name},
+        style.button,
         layout::BoxProps{.width = layout::SizeRule::fixed(408),
                          .height = layout::SizeRule::fixed(44)});
     stepper = node.get();
@@ -112,8 +114,8 @@ void DifficultyUI::setStatus(std::string value) {
 
 void DifficultyUI::refresh() {
   _draft.bombs = std::clamp(_draft.bombs, 1, _draft.size.x * _draft.size.y - 1);
-  const auto update = [&](ui::Stepper &stepper, ui::Text &label, int value,
-                          int maximum) {
+  const auto update = [&](ui::NumberStepper &stepper, ui::Text &label,
+                          int value, int maximum) {
     auto props = stepper.props();
     props.value = value;
     props.maximum = maximum;

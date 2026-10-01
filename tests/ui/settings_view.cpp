@@ -57,7 +57,7 @@ int main() {
     activate("3D");
     root.flushLayout({900, 720});
     test::require(root.performAction(find("Shadow quality (future; inactive)"),
-                                     ui::SetValue{4},
+                                     ui::SelectItem{"ultra"},
                                      ui::ActionSource::Assistive) ==
                       ui::ActionResult::Applied,
                   "future control accepts edit");
@@ -75,6 +75,17 @@ int main() {
     test::require(
         applied == beforeRefusal,
         "settings UI refuses a lower ceiling below current live commitment");
+    auto *invalid = dynamic_cast<ui::NumberField *>(
+        root.resolve(find("3D scene resolution")));
+    test::require(invalid != nullptr, "numeric settings use editable fields");
+    invalid->setValue("-");
+    const auto beforeInvalid = applied;
+    activate("Apply");
+    test::require(
+        applied == beforeInvalid && invalid->semanticState().invalid &&
+            invalid->hasFocus(),
+        "submission reveals and focuses invalid field on another tab");
+    invalid->revertDraft();
     activate("Close");
     activate("Return to menu");
     test::require(closed == 1 && menu == 1,

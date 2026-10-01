@@ -6,7 +6,7 @@
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/content/Rectangle.hpp>
-#include <ui/controls/Stepper.hpp>
+#include <ui/controls/NumberStepper.hpp>
 
 using namespace playground;
 
@@ -21,9 +21,9 @@ int main() {
     auto *readoutNode = readout.get();
     auto *decreaseNode = decreaseLabel.get();
     auto *increaseNode = increaseLabel.get();
-    auto stepper = std::make_unique<ui::Stepper>(
+    auto stepper = std::make_unique<ui::NumberStepper>(
         std::move(readout), std::move(decreaseLabel), std::move(increaseLabel),
-        ui::StepperProps{
+        ui::NumberStepperProps{
             .value = 1, .minimum = 0, .maximum = 2, .name = "Count"});
     auto *value = stepper.get();
     int notifications{};
@@ -39,25 +39,25 @@ int main() {
     auto &row = *value->children()[0];
     auto &decrease = dynamic_cast<ui::Button &>(*row.children()[0]);
     auto &increase = dynamic_cast<ui::Button &>(*row.children()[2]);
-    test::require(row.children()[1].get() == readoutNode &&
+    test::require(row.children()[1]->children()[0].get() == readoutNode &&
                       decrease.children()[0].get() == decreaseNode &&
                       increase.children()[0].get() == increaseNode,
                   "constructor readout/decrease/increase arguments map to "
                   "center/left/right slots");
-    test::require(decrease.hasFocus(),
-                  "stepper starts with a usable tab target");
+    test::require(value->hasFocus(), "stepper starts with a usable tab target");
     ui::UIEvent left{.type = ui::EventType::KeyDown,
                      .logicalKey = ui::Key::Left};
     root.dispatch(left);
     test::require(value->value() == 0 && notifications == 1 && left.handled,
                   "arrow decrements and notifies once");
-    test::require(!decrease.isEnabled() && increase.hasFocus(),
+    test::require(!decrease.isEnabled() && value->hasFocus(),
                   "limit preserves focus inside stepper");
     value->stepBy(-1);
     test::require(notifications == 1, "bound does not emit duplicate change");
     ui::UIEvent down{.type = ui::EventType::KeyDown,
                      .logicalKey = ui::Key::Enter};
     ui::UIEvent up{.type = ui::EventType::KeyUp, .logicalKey = ui::Key::Enter};
+    increase.requestFocus();
     root.dispatch(down);
     root.dispatch(up);
     test::require(value->value() == 1 && notifications == 2,
@@ -72,7 +72,7 @@ int main() {
     const auto before = value->props();
     bool rejected{};
     try {
-      value->applyPatch({.maximum = Patch<int>::set(0)});
+      value->applyPatch({.maximum = Patch<double>::set(0)});
     } catch (const std::invalid_argument &) {
       rejected = true;
     }
@@ -95,7 +95,7 @@ int main() {
                   "single-value range disables both buttons");
     rejected = false;
     try {
-      ui::Stepper invalid{content(), content(), content(), {.step = 0}};
+      ui::NumberStepper invalid{content(), content(), content(), {.step = 0}};
     } catch (const std::invalid_argument &) {
       rejected = true;
     }

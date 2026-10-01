@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -34,6 +33,7 @@ struct ButtonPatch {
 class Button : public Box {
   ButtonProps _props;
   Signal<> _activated;
+  Signal<ActionSource> _invoked;
 
   bool _hovered{};
   std::optional<std::uint64_t> _pointer;
@@ -76,6 +76,10 @@ public:
   void setButtonProps(ButtonProps value);
   void setEnabled(bool value);
   void applyButtonPatch(const ButtonPatch &p);
+
+  Connection onInvoke(support::MoveOnlyFunction<void(ActionSource)> callback) {
+    return _invoked.connect(std::move(callback));
+  }
 
   Connection onActivate(support::MoveOnlyFunction<void()> callback) {
     return _activated.connect(std::move(callback));

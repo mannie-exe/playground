@@ -81,9 +81,17 @@ playground_add_module(playground_ui_core
     src/ui/collections/VirtualTrackGrid.cpp
     src/ui/controls/Button.cpp
     src/ui/controls/Choice.cpp
+    src/ui/controls/ChoiceStepper.cpp
     src/ui/controls/Composite.cpp
+    src/ui/controls/Editing.cpp
+    src/ui/controls/Form.cpp
+    src/ui/controls/Groups.cpp
+    src/ui/controls/Meter.cpp
+    src/ui/controls/Navigation.cpp
+    src/ui/controls/NumberStepper.cpp
     src/ui/controls/Slider.cpp
-    src/ui/controls/Stepper.cpp)
+    src/ui/controls/Surfaces.cpp
+    src/ui/controls/ToastHost.cpp)
 target_link_libraries(playground_ui_core PUBLIC playground_layout playground_rendering playground_scene)
 find_package(Threads REQUIRED)
 target_link_libraries(playground_rendering PUBLIC Threads::Threads)

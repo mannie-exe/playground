@@ -80,7 +80,7 @@ SemanticState Disclosure::semanticState() const {
   return s;
 }
 
-ActionResult Disclosure::performAction(const UIAction &a, ActionSource) {
+ActionResult Disclosure::performAction(const UIAction &a, ActionSource source) {
   if (!_props.enabled)
     return ActionResult::Unavailable;
   auto next = _props;
@@ -93,6 +93,7 @@ ActionResult Disclosure::performAction(const UIAction &a, ActionSource) {
   if (next == _props)
     return ActionResult::Unchanged;
   setExpansionProps(std::move(next));
+  _edited.emit(_props.expanded, source);
   _changed.emit(_props.expanded);
   return ActionResult::Applied;
 }
@@ -118,6 +119,10 @@ protected:
 public:
   SemanticState semanticState() const override {
     auto s = _owner.semanticState();
+    const auto &authored = semanticProps();
+    s.description.labelledBy = authored.labelledBy;
+    s.description.describedBy = authored.describedBy;
+    s.description.description = authored.description;
     s.description.exposure = SemanticExposure::Auto;
     s.actions.push_back(SemanticAction::Focus);
     return s;
@@ -147,34 +152,26 @@ public:
 
 protected:
   void onDefaultEvent(UIEvent &e) override {
+    if (handleComposition(e))
+      return;
     if (e.type == EventType::FocusGained)
       highlight(_active);
-    if (e.handled || e.type != EventType::KeyDown)
+    if (e.handled)
       return;
-    if (e.logicalKey == Key::Enter || e.logicalKey == Key::Space) {
+    if (e.type == EventType::KeyDown &&
+        (e.logicalKey == Key::Enter || e.logicalKey == Key::Space)) {
       if (_active)
         performAction(SelectItem{*_active}, e.source);
       e.handled = true;
       return;
     }
-    const auto keys = enabledKeys();
-    if (keys.empty())
-      return;
-    auto found = std::find(keys.begin(), keys.end(), _active.value_or(""));
-    int index = found == keys.end() ? -1 : int(found - keys.begin());
-    if (e.logicalKey == Key::Down)
-      index = (index + 1) % int(keys.size());
-    else if (e.logicalKey == Key::Up)
-      index = (std::max(index, 0) - 1 + int(keys.size())) % int(keys.size());
-    else if (e.logicalKey == Key::Home)
-      index = 0;
-    else if (e.logicalKey == Key::End)
-      index = int(keys.size()) - 1;
-    else
-      return;
-    _active = keys[std::max(0, index)];
-    highlight(_active);
-    e.handled = true;
+    auto next = _navigation.navigate(
+        items(), _active, e, services() ? services()->scheduler->now() : 0);
+    if (next) {
+      _active = next;
+      highlight(_active);
+      e.handled = true;
+    }
   }
 
 public:
@@ -214,11 +211,13 @@ Select::Select(std::unique_ptr<Node> label, std::vector<ChoiceItem> items,
     invalidate(DirtyFlags::Semantics);
   }));
   append(std::move(popup));
-  _connections.push_back(_list->onSelectionChanged([this](std::string key) {
-    setExpanded(false);
-    _trigger->requestFocus();
-    _changed.emit(std::move(key));
-  }));
+  _connections.push_back(
+      _list->onSelectionEdited([this](std::string key, ActionSource source) {
+        setExpanded(false);
+        _trigger->requestFocus();
+        _edited.emit(key, source);
+        _changed.emit(std::move(key));
+      }));
   setSelectionProps(std::move(props));
   setExpanded(false);
 }
@@ -226,6 +225,10 @@ Select::Select(std::unique_ptr<Node> label, std::vector<ChoiceItem> items,
 void Select::setSelectionProps(SelectionProps p) {
   _list->setSelectionProps(std::move(p));
   _trigger->setEnabled(selectionProps().enabled);
+  auto semantics = _trigger->semanticProps();
+  semantics.role = SemanticRole::Select;
+  semantics.name = selectionProps().name;
+  _trigger->setSemanticProps(std::move(semantics));
   if (!selectionProps().enabled)
     setExpanded(false);
   invalidate(DirtyFlags::Semantics);
@@ -234,6 +237,10 @@ void Select::setSelectionProps(SelectionProps p) {
 void Select::applySelectionPatch(const SelectionPatch &p) {
   _list->applySelectionPatch(p);
   _trigger->setEnabled(selectionProps().enabled);
+  auto semantics = _trigger->semanticProps();
+  semantics.role = SemanticRole::Select;
+  semantics.name = selectionProps().name;
+  _trigger->setSemanticProps(std::move(semantics));
   if (!selectionProps().enabled)
     setExpanded(false);
   invalidate(DirtyFlags::Semantics);
@@ -337,9 +344,10 @@ Tabs::Tabs(std::vector<TabItem> items, SelectionProps props, ButtonProps button,
     auto *panel = item.panel.get();
     append(std::move(item.panel));
     _items.push_back({item.key, raw, panel, item.enabled});
-    _connections.push_back(raw->onActivate([this, key = item.key] {
-      performAction(SelectItem{key}, ActionSource::Program);
-    }));
+    _connections.push_back(
+        raw->onInvoke([this, key = item.key](ActionSource source) {
+          performAction(SelectItem{key}, source);
+        }));
   }
   if (!props.selected)
     for (auto &i : _items)
@@ -379,7 +387,7 @@ void Tabs::applySelectionPatch(const SelectionPatch &p) {
                      p.name.appliedTo(_props.name, {})});
 }
 
-ActionResult Tabs::performAction(const UIAction &a, ActionSource) {
+ActionResult Tabs::performAction(const UIAction &a, ActionSource source) {
   if (!_props.enabled)
     return ActionResult::Unavailable;
   const auto *p = std::get_if<SelectItem>(&a);
@@ -396,39 +404,30 @@ ActionResult Tabs::performAction(const UIAction &a, ActionSource) {
   next.selected = p->key;
   setSelectionProps(std::move(next));
   found->tab->requestFocus();
+  _edited.emit(p->key, source);
   _changed.emit(p->key);
   return ActionResult::Applied;
 }
 
 void Tabs::onDefaultEvent(UIEvent &e) {
-  if (e.handled || e.type != EventType::KeyDown || _items.empty())
+  if (e.handled)
     return;
-  auto at = std::find_if(_items.begin(), _items.end(),
-                         [](const auto &i) { return i.tab->hasFocus(); });
-  if (at == _items.end())
+  std::vector<NavigationItem> items;
+  items.reserve(_items.size());
+  std::optional<std::string> current;
+  for (auto &i : _items) {
+    items.push_back({i.key, i.tab->semanticProps().name, i.enabled});
+    if (i.tab->hasFocus())
+      current = i.key;
+  }
+  if (!current)
     return;
-  int direction = e.logicalKey == Key::Left    ? -1
-                  : e.logicalKey == Key::Right ? 1
-                                               : 0,
-      index = int(at - _items.begin());
-  if (e.logicalKey == Key::Home) {
-    index = -1;
-    direction = 1;
+  if (auto next = _navigation.navigate(
+          items, current, e, services() ? services()->scheduler->now() : 0,
+          {layout::Axis::Horizontal, true, layoutDirection()})) {
+    performAction(SelectItem{*next}, e.source);
+    e.handled = true;
   }
-  if (e.logicalKey == Key::End) {
-    index = 0;
-    direction = -1;
-  }
-  if (!direction)
-    return;
-  for (std::size_t i = 0; i < _items.size(); ++i) {
-    index = (index + direction + int(_items.size())) % int(_items.size());
-    if (_items[index].enabled) {
-      performAction(SelectItem{_items[index].key}, e.source);
-      break;
-    }
-  }
-  e.handled = true;
 }
 
 Dialog::Dialog(std::unique_ptr<Node> content, DialogProps props,
@@ -439,11 +438,14 @@ Dialog::Dialog(std::unique_ptr<Node> content, DialogProps props,
 }
 
 void Dialog::setProps(DialogProps p) {
+  p.modal |= requiresModal();
   _props = std::move(p);
   setInputProps({.hitTest = HitTestPolicy::SelfAndChildren,
                  .focusable = true,
                  .focusScope = true,
-                 .modal = _props.modal});
+                 .modal = _props.modal,
+                 .initialFocus = _props.initialFocus,
+                 .returnFocus = _props.returnFocus});
   setSemanticProps({.role = SemanticRole::Dialog,
                     .name = _props.name,
                     .description = _props.description});
@@ -465,7 +467,9 @@ void Dialog::applyPatch(const DialogPatch &p) {
             p.modal.appliedTo(_props.modal, true),
             p.dismissOnEscape.appliedTo(_props.dismissOnEscape, true),
             p.name.appliedTo(_props.name, {}),
-            p.description.appliedTo(_props.description, {})});
+            p.description.appliedTo(_props.description, {}),
+            p.initialFocus.appliedTo(_props.initialFocus, {}),
+            p.returnFocus.appliedTo(_props.returnFocus, {})});
 }
 
 ActionResult Dialog::performAction(const UIAction &a, ActionSource) {
@@ -501,7 +505,7 @@ void Dialog::paint(PaintContext &p) const {
 
 Field::Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
              std::unique_ptr<Node> description, FieldProps props,
-             layout::BoxProps box)
+             layout::BoxProps box, bool inlineControl)
     : VStack{{}, box}, _props{std::move(props)} {
   if (!control || !label)
     throw std::invalid_argument("Field requires control and label");
@@ -511,19 +515,28 @@ Field::Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
   _labelBaseline = _label->semanticProps();
   if (_description)
     _descriptionBaseline = _description->semanticProps();
-  append(std::move(label));
-  append(std::move(control));
+  if (inlineControl) {
+    auto row = std::make_unique<HStack>(layout::StackProps{
+        .gap = 16, .childrenAlignment = layout::CrossAlignment::Center});
+    row->append(std::move(label), {.grow = 1});
+    row->append(std::move(control), {.shrink = 0});
+    append(std::move(row));
+  } else {
+    append(std::move(label));
+    append(std::move(control));
+  }
   if (description)
     append(std::move(description));
   link();
 }
 
 void Field::link() {
-  auto p = _control->semanticProps();
+  auto &target = _control->focusTarget();
+  auto p = target.semanticProps();
   p.labelledBy = _label->id();
   if (_description)
     p.describedBy = _description->id();
-  _control->setSemanticProps(std::move(p));
+  target.setSemanticProps(std::move(p));
   {
     auto label = _label->semanticProps();
     label.name = _props.label.empty() ? _labelBaseline.name : _props.label;
@@ -556,7 +569,7 @@ void Field::applyFieldPatch(const FieldPatch &p) {
 
 void Field::onDefaultEvent(UIEvent &e) {
   if (!e.handled && e.type == EventType::PointerDown && e.button == 1) {
-    _control->requestFocus();
+    _control->focusTarget().requestFocus();
     e.handled = true;
   }
 }

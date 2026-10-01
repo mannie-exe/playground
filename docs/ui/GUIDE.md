@@ -1,5 +1,7 @@
 # Working with retained UI
 
+Control behavior and composition: [CONTROLS.md](CONTROLS.md).
+
 For app update/paint cadence, read [application activity](../platform/ACTIVITY.md).
 Retained nodes do not require continuous repaint: an app can delegate demand to
 its UISession and opt out of continuous update/paint. Keep the session's timers
@@ -1423,12 +1425,13 @@ pixel. It retains the full content extent when the real viewport is smaller.
 Do not introduce an arbitrary board-size threshold for scrolling; window bounds
 and content bounds already determine whether it is needed.
 
-Stepper composes two ordinary Buttons around readout content you provide. Its
-props own the current integer, inclusive limits, positive step, enabled state and
-semantic name. Connect onValueChanged to your app-owned draft and readout; keep
-the Connection alive. Programmatic setProps is silent, so refreshing controls
-from the draft does not create a feedback loop. Set a compatible value together
-with changed bounds; clamping a game-specific draft is the application's choice.
+NumberStepper composes two Buttons around a NumberField or caller-supplied readout.
+An editor owns the accepted number; readout mode uses the stepper's double-valued
+range. NumberField can require integers, while typed precision remains independent
+of the adjustment step. Connect onValueEdited to an app-owned draft; keep the
+Connection alive. Readout content remains caller-owned. Programmatic setProps is
+silent, so refreshing controls does not create a feedback loop. Supply a compatible
+value with changed bounds. See [control contracts](CONTROLS.md).
 
 Keep screen navigation as pending app intent. Replace the tree after routing or
 update, preserve the old model until its view is destroyed, then request content

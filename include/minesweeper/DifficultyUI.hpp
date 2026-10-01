@@ -6,13 +6,13 @@
 
 #include <minesweeper/ActionButton.hpp>
 #include <minesweeper/MinesweeperModel.hpp>
-#include <ui/controls/Stepper.hpp>
+#include <ui/controls/NumberStepper.hpp>
 
 class DifficultyUI : public playground::ui::Box {
   MinesweeperBoardProps &_draft;
   playground::minesweeper::ViewResources _resources;
 
-  playground::ui::Stepper *_columns{}, *_rows{}, *_bombs{};
+  playground::ui::NumberStepper *_columns{}, *_rows{}, *_bombs{};
   playground::ui::Text *_columnsLabel{}, *_rowsLabel{}, *_bombsLabel{},
       *_status{};
   std::vector<playground::ui::Connection> _connections;

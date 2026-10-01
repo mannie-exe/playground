@@ -1,5 +1,7 @@
 # Retained UI reference
 
+Control behavior and composition: [CONTROLS.md](CONTROLS.md).
+
 C++23 retained UI: ownership, properties, layout, input, rendering and resource
 contracts. This is a project-specific model, not CSS or SwiftUI conformance.
 
@@ -178,7 +180,7 @@ Reusable groups use `contentProps/setContentProps/applyContentPatch` (Box),
 | BoxProps | width/height=Content; minWidth/minHeight=0; maxWidth/maxHeight=nullopt; padding/borderWidths=0; aspectRatio=nullopt |
 | PaintStyle | background/borderColor=nullopt; opacity=1, within [0,1] |
 | VisualProps | transform=identity; pivot={0.5,0.5}; overflow=Visible; clipRect=nullopt |
-| InputProps | hitTest=ChildrenOnly; focusable/focusScope/modal=false; wrapNavigation=true; optional next/previous/left/right/up/down neighbors |
+| InputProps | hitTest=ChildrenOnly; focusable/focusScope/modal=false; wrapNavigation=true; optional next/previous/left/right/up/down neighbors and initialFocus/returnFocus targets |
 | SemanticProps | role=None; name/description empty; value=nullopt; enabled=true; exposure=Auto; optional labelledBy/describedBy NodeIds |
 
 Passive content leaves set hitTest=None. Button sets SelfAndChildren, focusable,
@@ -503,26 +505,37 @@ outside release cancels; unrelated release does not activate. Focused Space/Ente
 activates on matching key release, ignoring repeat. Disable/cancel/detach never
 activates. Compose icon/text with an HStack rather than hard-coded label/icon slots.
 
-### Stepper
+### NumberStepper and ChoiceStepper
 
-[controls/Stepper.hpp](../../include/ui/controls/Stepper.hpp) composes two Buttons
-and a caller-supplied readout. No font or asset acquisition is hidden in the control.
-Buttons are 40 logical units wide and at least 40 high, with centered content;
-the row gap is 8. Demo 2D supplies decorative Material add/remove SVGs, not glyphs.
-StepperProps/StepperPatch: value=0, minimum=0, maximum=100, step=1, enabled=true,
-name empty. The range is inclusive; step must be positive. Invalid setters/patches
-are rejected before changes. A caller changing limits must supply a valid value.
+[NumberStepper.hpp](../../include/ui/controls/NumberStepper.hpp) composes
+adjustment buttons with a NumericEditor or caller-supplied readout. NumericEditor
+owns the accepted value when present. Readouts use the stepper's numeric range.
+NumberStepperProps/NumberStepperPatch expose value, minimum, maximum, step,
+enabled, name and readOnly. Values are doubles; integer-only entry is a
+NumberField constraint. Setters are silent; onValueChanged and onValueEdited
+report accepted interaction changes. Shared ControlMetrics configure button
+extent and spacing; center content aligns vertically.
 
-`props/setProps/applyPatch`, `value`, `stepBy` and `onValueChanged` are public.
-stepBy uses direction's sign and saturates at bounds using widened arithmetic.
-Programmatic setters update state/semantics without emitting a user-action signal.
-User steps emit only after a changed value is committed; throwing observers do
-not roll it back. Retain the returned Connection and update readout content in
-that callback. Limits disable the corresponding button; disable makes both inert.
-Arrow keys adjust the focused stepper, while Enter/Space activate its buttons.
-Names, range and value are exposed through SemanticState; WindowServices
-translates range, increment/decrement and set-value operations to AccessKit.
-Secondary-button behavior requires a subclass/event policy, not onActivate.
+[ChoiceStepper.hpp](../../include/ui/controls/ChoiceStepper.hpp) uses stable
+selection keys. Its center is a Select by default or a readout when explicitly
+requested. Previous/next skip disabled choices and stop at the bounds unless
+wrapping is enabled. Caller-supplied display content updates through the selection
+callback. No numeric index is exposed as a user value.
+
+### Forms and additional controls
+
+| Header | Public components and contracts |
+|---|---|
+| controls/Editing.hpp | DraftEditor, NumericEditor, ValidationIssue, ChangeContext, NumberCodec; draft/commit/revert contracts |
+| controls/Form.hpp | Form coordinates attached editors, validation, first-error focus and explicit submission |
+| controls/Navigation.hpp | CollectionNavigation shares keyed traversal and Unicode typeahead |
+| controls/Groups.hpp | Toolbar, ToggleGroup, CheckboxGroup and Accordion |
+| controls/Surfaces.hpp | Popover, DropdownMenu, ContextMenu, AlertDialog and TooltipTrigger |
+| controls/Meter.hpp | Meter distinguishes utilization from progress; ControlIcon provides vector adjustment glyphs |
+| controls/ToastHost.hpp | Bounded notifications with stable IDs, caller-owned presentation and paused timeouts |
+
+Combobox and Autocomplete are **planned only**. Their behavior and the complete
+control ownership contracts are in [CONTROLS.md](CONTROLS.md).
 
 ### Accessible controls and editing
 
@@ -533,11 +546,11 @@ Programmatic setters are silent; user/native operations commit state before sign
 | Header / nodes | Properties and behavior |
 |---|---|
 | `controls/Choice.hpp`: ToggleButton, Checkbox, Switch | ToggleProps/TogglePatch: checked, allowMixed, name; inherits ButtonProps. Switch rejects Mixed. |
-| `controls/Choice.hpp`: ListBox, RadioGroup, Menu | SelectionProps/SelectionPatch: selected key, enabled, required, name; ChoiceItems have keys, labels, content and enabled flags. List/radio arrows select; menu arrows move the active item, Enter/Space invokes. |
-| `controls/Slider.hpp`: Slider | SliderProps/SliderPatch: RangeValue, enabled, readOnly, axis, name, colors. Drag, arrows, Home/End and numeric actions. |
-| `controls/Slider.hpp`: ProgressBar | ProgressProps: read-only range, name, track/fill colors. |
+| `controls/Choice.hpp`: ListBox, RadioGroup, MenuList | SelectionProps/SelectionPatch: selected key, enabled, required, name; ChoiceItems have keys, labels, content and enabled flags. List/radio arrows select; menu arrows move the active item, Enter/Space invokes. |
+| `controls/Slider.hpp`: Slider | SliderProps/SliderPatch: RangeValue, enabled, readOnly, axis, name, colors and snapToStep (default true). Drag, arrows, Home/End and numeric actions; terminal context distinguishes completion from cancellation. |
+| `controls/Slider.hpp`: ProgressBar | ProgressProps: read-only range, name, track/fill colors and indeterminate state for unknown completion. |
 | `controls/TextField.hpp`: TextField, TextArea | TextFieldProps/TextFieldPatch: FontHandle, TextEditProps, enabled/required, name/placeholder/validation message, colors. TextArea starts multiline. |
-| `controls/TextField.hpp`: NumberField | NumberFieldProps: range and integer; drafts do not change the committed number until valid commit. |
+| `controls/TextField.hpp`: NumberField | NumberFieldProps: range, integer and optional increment constraint; NumberCodec and validators customize parsing/acceptance. DraftEditor supports explicit validation, commit and revert. |
 | `controls/Composite.hpp`: Disclosure | ExpansionProps/ExpansionPatch: expanded, enabled, name. Retained header/body; closed body is collapsed. |
 | `controls/Composite.hpp`: Select | Noneditable trigger plus root-presented scrollable ListBox; SelectionProps and setExpanded. Arrows preview, Enter/click commits, Escape cancels, Tab closes. Supply/update visible trigger content. |
 | `controls/Composite.hpp`: Tabs | Keyed TabItems, SelectionProps; retained panels, roving tab stop, arrows/Home/End. Only selected panel participates in layout. |
@@ -576,11 +589,11 @@ All dimensions below are logical units. Theme affects paint, not spacing or font
 | Button | Elevated fill; hover/pressed fills; disabled surface/muted outline; 1-unit border (2 in high contrast); 2-unit keyboard focus outline over children | Centered content; no implicit padding. Demo action buttons supply padding 10. |
 | ToggleButton | Button chrome; inset accent outline when checked | Padding 10 if caller supplied none; leading/vertically centered label. |
 | Checkbox / Switch | No resting outer button border; hover/pressed row fill; checkbox square/check/mixed bar or switch track/thumb; disabled indicator muted | Padding 10, plus 30/48 leading units for indicator. Indicators vertically center even with wrapped labels. |
-| ListBox / Select options / Menu | No resting per-option border or button background; full-row selected, hover, pressed fills; one leading marker per row, active color taking precedence over selected color | Rows stretch to parent width, padding 10, leading/vertically centered content. Short labels do not shrink hit areas. Focus does not add nested Button chrome. |
+| ListBox / Select options / MenuList | No resting per-option border or button background; full-row selected, hover, pressed fills; one leading marker per row, active color taking precedence over selected color | Rows stretch to parent width, padding 10, leading/vertically centered content. Short labels do not shrink hit areas. Focus does not add nested Button chrome. |
 | RadioGroup | Borderless rows plus ring/dot indicator | Same stretching rows; leading padding 40. |
 | Select / Disclosure trigger | Bordered button with vector chevron, muted when disabled | Stretch to owning component width; padding 10, right padding 34; vertically centered chevron. |
 | Tabs | Padded buttons, selected accent underline | Padding 10; horizontal labels; retained active panel. |
-| Stepper | Two ordinary themed buttons with caller-owned content | Width 40/min-height 40 per button, row gap 8, expanding readout. SVGs avoid font coverage/baseline dependence. |
+| NumberStepper | Two ordinary themed buttons with caller-owned content | Width 40/min-height 40 per button, row gap 8, expanding readout. SVGs avoid font coverage/baseline dependence. |
 | Slider | Thin border-color track, accent thumb; hover outline, thicker drag outline, outer keyboard focus; disabled/read-only thumb muted | Natural size 160×24 (or 24×160), track thickness 4, thumb 16×20; geometry clamps in tiny bounds. Hover/drag reset on cancellation. |
 | ProgressBar | Border-color track and accent fill | Natural 160×16, read-only. |
 | TextField / TextArea / NumberField | Elevated input surface, themed text/selection/caret/focus; high-contrast selection outline preserves text readability | Text layout and caret scrolling belong to field; TextArea enables multiline; Field composes caller-supplied label/help. |
@@ -1134,7 +1147,7 @@ an implemented renderer, node or host policy.
 
 | Future family | Retained requirements |
 |---|---|
-| More controls | Tree view, editable autocomplete, calendar/date inputs, rich editing and spreadsheet interaction remain extensions; the core controls above exist. |
+| More controls | Combobox and Autocomplete are planned in CONTROLS.md; tree view, calendar/date inputs, rich editing and spreadsheet interaction remain extensions. |
 | Partial damage rendering | Whole-frame idle/wake is implemented. Old/new damage bounds, overlap-correct regional repaint and persistent-target ownership remain extensions. |
 | Native accessibility | Desktop AccessKit adapters exist; screen-reader acceptance remains platform-specific verification. Mobile bridges and virtualized offscreen item realization are extensions. |
 | GPU extensions | GPU 2D/3D, atlas text, bounded recovery, asynchronous timing, ordered batching and budgeted target/residency caches exist. General render graphs, adaptive hardware-memory budgets and further batching optimizations remain. |

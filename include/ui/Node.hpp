@@ -1,20 +1,15 @@
 #pragma once
 
-#include <rendering/GraphicsSettings.hpp>
-
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <layout/LayoutPrimitives.hpp>
+#include <rendering/GraphicsSettings.hpp>
 #include <rendering/PaintContext.hpp>
 #include <ui/UITypes.hpp>
 
@@ -232,6 +227,12 @@ public:
     return _semanticProps.enabled;
   }
 
+  virtual Node &focusTarget() noexcept { return *this; }
+
+  // Composites may present one sequential entry while retaining pointer,
+  // assistive and programmatic focus on their other controls.
+  virtual Node *sequentialFocusTarget(Node &descendant) { return &descendant; }
+
   virtual SemanticState semanticState() const {
     SemanticState state{.description = _semanticProps};
     if (isFocusable())
@@ -379,6 +380,17 @@ public:
   void capturePointer(std::uint64_t pointer);
   void releasePointer(std::uint64_t pointer) noexcept;
   void requestFocus();
+
+  void requestFocusAfterLayout() {
+    if (auto *s = services(); s && s->focusAfterLayout)
+      s->focusAfterLayout(id());
+    else
+      requestFocus();
+  }
+
+  layout::LayoutDirection layoutDirection() const noexcept {
+    return _arrangedDirection;
+  }
 };
 
 } // namespace playground::ui

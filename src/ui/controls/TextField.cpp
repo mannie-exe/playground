@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <array>
-#include <charconv>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -50,6 +48,7 @@ TextField::TextField(TextFieldProps props, std::string value,
       _model{_props.editing, std::move(value)} {
   if (!_props.font)
     throw std::invalid_argument("Text field requires a font");
+  _accepted = _model.value();
   setInputProps({HitTestPolicy::Self, true});
   setClip(true);
 }
@@ -96,8 +95,58 @@ void TextField::onThemeChanged() noexcept {
 
 void TextField::setValue(std::string value) {
   _model.setValue(std::move(value));
+  _accepted = _model.value();
   _visualCaret.reset();
   changed(false);
+}
+
+void TextField::refreshValue(std::string value) {
+  _model.validateValue(value);
+  if (!draftDirty()) {
+    setValue(std::move(value));
+    return;
+  }
+  if (value != _accepted) {
+    _accepted = std::move(value);
+    auto p = props();
+    p.validationMessage =
+        "Value changed externally; commit your edit or revert";
+    setProps(p);
+  }
+}
+
+ValidationResult TextField::validateDraft() const {
+  if (textInputState().composing)
+    return ValidationIssue{"composition",
+                           "Finish text composition before applying"};
+  if (_props.required && _model.value().empty())
+    return ValidationIssue{"required", "A value is required"};
+  return _textValidator ? _textValidator(_model.value()) : ValidationResult{};
+}
+
+bool TextField::commitDraft(ChangeContext context) {
+  if (!isInteractionEnabled() || props().editing.readOnly)
+    return !draftDirty();
+  if (auto issue = TextField::validateDraft()) {
+    if (_textValidationMode != ValidationMode::OnSubmit ||
+        context.reason == ChangeReason::Submit ||
+        !props().validationMessage.empty())
+      showValidation(issue);
+    return false;
+  }
+  auto p = props();
+  p.validationMessage.clear();
+  setProps(p);
+  _accepted = _model.value();
+  _committed.emit(_model.value());
+  return true;
+}
+
+void TextField::revertDraft(ChangeContext) {
+  setValue(_accepted);
+  auto p = props();
+  p.validationMessage.clear();
+  setProps(p);
 }
 
 void TextField::changed(bool edit) {
@@ -105,8 +154,13 @@ void TextField::changed(bool edit) {
     _visualCaret.reset();
   _layout.reset();
   invalidate(DirtyFlags::Measure | DirtyFlags::Paint | DirtyFlags::Semantics);
-  if (edit)
+  if (edit) {
+    if (_textValidationMode == ValidationMode::OnEdit) {
+      auto issue = TextField::validateDraft();
+      _props.validationMessage = issue ? issue->message : "";
+    }
     _changed.emit(_model.value());
+  }
 }
 
 void TextField::rebuild(float width) {
@@ -296,7 +350,8 @@ void TextField::prepareContent(PrepareContext &context) {
   if (_layout->scale == scale && _layout->domain == domain)
     return;
   if (_layout->domain != domain)
-    for (auto &run : _layout->runs) run.image.reset();
+    for (auto &run : _layout->runs)
+      run.image.reset();
   for (auto &run : _layout->runs) {
     if (run.bounds.w() <= 0 || run.bounds.h() <= 0)
       continue;
@@ -308,10 +363,9 @@ void TextField::prepareContent(PrepareContext &context) {
                                                  : _props.foreground};
       run.image = context.text->prepareText(source);
     } else {
-      auto surface = adoptManagedSurface(
-          TTF_RenderText_Blended(
-              font->get(), run.text.data(), run.text.size(),
-              sdl::toSDL(_props.useTheme ? theme().text : _props.foreground)));
+      auto surface = adoptManagedSurface(TTF_RenderText_Blended(
+          font->get(), run.text.data(), run.text.size(),
+          sdl::toSDL(_props.useTheme ? theme().text : _props.foreground)));
       if (!surface)
         throwSDLError("Render editor run");
       run.image = sdl::makeSurfaceImage(std::move(surface));
@@ -457,7 +511,11 @@ SemanticState TextField::semanticState() const {
                                                   : SemanticRole::TextField;
   s.description.name = _props.name;
   s.description.enabled = _props.enabled;
-  s.description.description = _props.validationMessage;
+  if (!_props.validationMessage.empty()) {
+    if (!s.description.description.empty())
+      s.description.description += "; ";
+    s.description.description += _props.validationMessage;
+  }
   s.description.value =
       _props.editing.password ? std::string{} : _model.value();
   s.readOnly = _props.editing.readOnly;
@@ -484,9 +542,18 @@ SemanticState TextField::semanticState() const {
   return s;
 }
 
-ActionResult TextField::performAction(const UIAction &action, ActionSource) {
+ActionResult TextField::performAction(const UIAction &action,
+                                      ActionSource source) {
   if (!_props.enabled)
     return ActionResult::Unavailable;
+  if (std::holds_alternative<CommitEdit>(action))
+    return commitDraft({source, ChangeReason::Submit})
+               ? ActionResult::Applied
+               : ActionResult::Unavailable;
+  if (std::holds_alternative<CancelEdit>(action)) {
+    revertDraft({source, ChangeReason::Cancel});
+    return ActionResult::Applied;
+  }
   if (const auto *selection = std::get_if<TextSelection>(&action)) {
     try {
       _model.setSelection(*selection);
@@ -516,13 +583,13 @@ ActionResult TextField::performAction(const UIAction &action, ActionSource) {
 }
 
 bool TextField::commit() {
-  if (_props.required && _model.value().empty())
-    return false;
-  _committed.emit(_model.value());
-  return true;
+  return TextField::commitDraft({ActionSource::Keyboard, ChangeReason::Enter});
 }
 
 void TextField::onDefaultEvent(UIEvent &e) {
+  if (e.type == EventType::FocusLost && !_props.editing.multiline &&
+      draftDirty() && !textInputState().composing)
+    commitDraft({e.source, ChangeReason::Blur});
   if (e.type == EventType::FocusLost || e.type == EventType::PointerCancel ||
       e.type == EventType::InputCancel) {
     onDetach();
@@ -571,8 +638,7 @@ void TextField::onDefaultEvent(UIEvent &e) {
 #if defined(__APPLE__)
     const bool shortcut = e.command;
     const bool word = e.alt;
-    const bool document =
-        e.command && key != Key::Left && key != Key::Right;
+    const bool document = e.command && key != Key::Left && key != Key::Right;
     if (e.command) {
       if (key == Key::Left || key == Key::Up)
         key = Key::Home;
@@ -596,9 +662,8 @@ void TextField::onDefaultEvent(UIEvent &e) {
         const auto current = textInputState().caret.position + _scroll;
         math::Point2 selected = current;
         for (const auto &c : _layout->carets)
-          if (c.point.y == current.y &&
-              ((start && c.point.x <= selected.x) ||
-               (!start && c.point.x >= selected.x))) {
+          if (c.point.y == current.y && ((start && c.point.x <= selected.x) ||
+                                         (!start && c.point.x >= selected.x))) {
             selected = c.point;
             p = c.offset;
           }
@@ -659,6 +724,8 @@ void TextField::onDefaultEvent(UIEvent &e) {
     case Key::Escape:
       if (!_model.composition().empty())
         _model.cancelComposition();
+      else if (draftDirty())
+        revertDraft({e.source, ChangeReason::Cancel});
       else
         handled = false;
       break;
@@ -724,59 +791,194 @@ NumberField::NumberField(TextFieldProps props, NumberFieldProps number,
                 {},
                 box} {
   setNumberProps(number);
+  _textChanges = onValueChanged([this](const std::string &) {
+    _draftChanged.emit();
+    if (_validationMode == ValidationMode::OnEdit ||
+        !this->props().validationMessage.empty())
+      report(validateDraft());
+  });
+}
+
+NumberParse NumberField::parsed() const {
+  return _codec.parse ? _codec.parse(model().value())
+                      : parseNumber(model().value());
+}
+
+std::string NumberField::formatted(double value,
+                                   const NumberCodec &codec) const {
+  auto text = codec.format ? codec.format(value) : formatNumber(value);
+  model().validateValue(text);
+  const auto parsed = codec.parse ? codec.parse(text) : parseNumber(text);
+  if (parsed.state != ParseState::Valid || parsed.value != value)
+    throw std::invalid_argument(
+        "Number codec must round-trip the accepted value");
+  return text;
+}
+
+void NumberField::report(ValidationResult issue) {
+  auto p = props();
+  auto message = issue ? issue->message : std::string{};
+  if (p.validationMessage == message)
+    return;
+  p.validationMessage = std::move(message);
+  setProps(std::move(p));
+  _validationChanged.emit(std::move(issue));
 }
 
 void NumberField::setNumberProps(NumberFieldProps props) {
   props.range.validate();
   if (props.integer)
-    for (const auto v : {props.range.value, props.range.minimum,
-                         props.range.maximum, props.range.step})
+    for (auto v : {props.range.value, props.range.minimum, props.range.maximum,
+                   props.range.step})
       if (std::trunc(v) != v)
         throw std::invalid_argument(
             "Integer field requires integral range values");
-  std::array<char, 128> buffer;
-  const auto result = std::to_chars(
-      buffer.data(), buffer.data() + buffer.size(), props.range.value);
-  if (result.ec != std::errc{})
-    throw std::runtime_error("Could not format numeric value");
-  setValue(std::string{buffer.data(), result.ptr});
+  if (auto issue = validateNumber(props.range.value, props.range, props.integer,
+                                  props.multiple))
+    throw std::invalid_argument(issue->message);
+  const bool preserve = draftDirty();
+  const bool changed = _number.range.value != props.range.value;
+  auto text = formatted(props.range.value, _codec);
+  if (!preserve)
+    setValue(text);
   _number = props;
-  if (!this->props().validationMessage.empty()) {
-    auto p = this->props();
-    p.validationMessage.clear();
-    setProps(std::move(p));
+  _acceptedText = std::move(text);
+  if (preserve) {
+    _conflict |= changed;
+    if (_conflict)
+      report(ValidationIssue{
+          "conflict", "Value changed externally; commit your edit or revert"});
+  } else {
+    report({});
   }
+  invalidate(DirtyFlags::Semantics);
+}
+
+void NumberField::setCodec(NumberCodec codec) {
+  if (bool(codec.parse) != bool(codec.format))
+    throw std::invalid_argument("Number codec requires parse and format");
+  auto text = formatted(acceptedNumber(), codec);
+  const bool preserve = draftDirty();
+  if (!preserve)
+    setValue(text);
+  _codec = std::move(codec);
+  _acceptedText = std::move(text);
+  if (!preserve)
+    report({});
+}
+
+void NumberField::setValidator(
+    std::function<ValidationResult(double)> validator, ValidationMode mode) {
+  _validator = std::move(validator);
+  _validationMode = mode;
+  setTextValidator({}, mode);
+}
+
+ValidationResult NumberField::validateDraft() const {
+  if (auto issue = TextField::validateDraft())
+    return issue;
+  if (textInputState().composing)
+    return ValidationIssue{"composition",
+                           "Finish text composition before applying"};
+  const auto p = parsed();
+  if (p.state != ParseState::Valid)
+    return ValidationIssue{p.state == ParseState::Empty ? "required" : "number",
+                           "Enter a complete number"};
+  if (auto issue = validateNumber(p.value, _number.range, _number.integer,
+                                  _number.multiple))
+    return issue;
+  return _validator ? _validator(p.value) : ValidationResult{};
+}
+
+bool NumberField::commitDraft(ChangeContext context) {
+  if (!isInteractionEnabled() || props().editing.readOnly)
+    return !draftDirty();
+  if (auto issue = validateDraft()) {
+    if (_validationMode != ValidationMode::OnSubmit ||
+        context.reason == ChangeReason::Submit ||
+        !props().validationMessage.empty())
+      report(issue);
+    return false;
+  }
+  const double value = parsed().value;
+  const bool changed = value != _number.range.value;
+  auto text = formatted(value, _codec);
+  setValue(text);
+  _number.range.value = value;
+  _acceptedText = std::move(text);
+  _conflict = false;
+  report({});
+  _draftChanged.emit();
+  if (changed) {
+    _edited.emit(value, context);
+    _changed.emit(value);
+  }
+  TextField::commitDraft(context);
+  _finished.emit(context);
+  return true;
 }
 
 bool NumberField::commit() {
-  double value{};
-  const auto &text = model().value();
-  const auto result =
-      std::from_chars(text.data(), text.data() + text.size(), value);
-  if (result.ec != std::errc{} || result.ptr != text.data() + text.size() ||
-      !std::isfinite(value) || value < _number.range.minimum ||
-      value > _number.range.maximum ||
-      (_number.integer && std::trunc(value) != value)) {
-    auto p = props();
-    p.validationMessage = "Enter a value within the allowed range";
-    setProps(std::move(p));
-    return false;
+  return commitDraft({ActionSource::Keyboard, ChangeReason::Enter});
+}
+
+void NumberField::revertDraft(ChangeContext context) {
+  setValue(_acceptedText);
+  _conflict = false;
+  report({});
+  _draftChanged.emit();
+  _finished.emit({context.source, ChangeReason::Cancel});
+}
+
+ActionResult NumberField::adjustNumber(int direction, ChangeContext context) {
+  if (!isInteractionEnabled() || props().editing.readOnly)
+    return ActionResult::Unavailable;
+  if (draftDirty() && !commitDraft(context))
+    return ActionResult::Unavailable;
+  const auto next = _number.range.adjusted(direction);
+  return performAction(SetValue{next}, context.source);
+}
+
+void NumberField::onDefaultEvent(UIEvent &e) {
+  if (!e.handled && e.type == EventType::KeyDown &&
+      !textInputState().composing) {
+    if (e.logicalKey == Key::Escape && draftDirty()) {
+      revertDraft({e.source, ChangeReason::Cancel});
+      e.handled = true;
+      return;
+    }
+    if (e.logicalKey == Key::Enter) {
+      commitDraft({e.source, ChangeReason::Enter});
+      e.handled = true;
+      return;
+    }
+    if (e.logicalKey == Key::Up || e.logicalKey == Key::Down ||
+        e.logicalKey == Key::PageUp || e.logicalKey == Key::PageDown) {
+      const bool large =
+          e.logicalKey == Key::PageUp || e.logicalKey == Key::PageDown;
+      const int direction =
+          (e.logicalKey == Key::Up || e.logicalKey == Key::PageUp) ? 1 : -1;
+      if (!large)
+        adjustNumber(direction, {e.source, ChangeReason::Step});
+      else if ((!draftDirty() || commitDraft({e.source, ChangeReason::Step})) &&
+               isInteractionEnabled() && !props().editing.readOnly) {
+        auto value = std::clamp(_number.range.value +
+                                    direction * _number.range.step * 10,
+                                _number.range.minimum, _number.range.maximum);
+        performAction(SetValue{value}, e.source);
+      }
+      e.handled = true;
+      return;
+    }
   }
-  auto p = props();
-  p.validationMessage.clear();
-  setProps(std::move(p));
-  const bool changed = value != _number.range.value;
-  _number.range.value = value;
-  if (changed)
-    _changed.emit(value);
-  return TextField::commit();
+  TextField::onDefaultEvent(e);
 }
 
 SemanticState NumberField::semanticState() const {
   auto s = TextField::semanticState();
   s.description.role = SemanticRole::SpinButton;
   s.range = _number.range;
-  if (!props().editing.readOnly)
+  if (isInteractionEnabled() && !props().editing.readOnly)
     s.actions.insert(s.actions.end(),
                      {SemanticAction::SetValue, SemanticAction::Increment,
                       SemanticAction::Decrement});
@@ -785,23 +987,44 @@ SemanticState NumberField::semanticState() const {
 
 ActionResult NumberField::performAction(const UIAction &a,
                                         ActionSource source) {
-  if (auto *set = std::get_if<SetValue>(&a)) {
-    if (!isInteractionEnabled() || props().editing.readOnly ||
-        !std::isfinite(set->value) || set->value < _number.range.minimum ||
-        set->value > _number.range.maximum ||
-        (_number.integer && std::trunc(set->value) != set->value))
-      return ActionResult::Unavailable;
-    auto p = _number;
-    p.range.value = set->value;
-    if (p.range.value == _number.range.value)
-      return ActionResult::Unchanged;
-    setNumberProps(p);
-    _changed.emit(p.range.value);
+  if (!isInteractionEnabled())
+    return ActionResult::Unavailable;
+  if (std::holds_alternative<CommitEdit>(a))
+    return commitDraft({source, ChangeReason::Submit})
+               ? ActionResult::Applied
+               : ActionResult::Unavailable;
+  if (std::holds_alternative<CancelEdit>(a)) {
+    revertDraft({source, ChangeReason::Cancel});
     return ActionResult::Applied;
   }
   if (auto *step = std::get_if<Increment>(&a))
-    return performAction(SetValue{_number.range.adjusted(step->direction)},
-                         source);
+    return adjustNumber(step->direction, {source, ChangeReason::Step});
+  if (auto *set = std::get_if<SetValue>(&a)) {
+    if (!isInteractionEnabled() || props().editing.readOnly ||
+        validateNumber(set->value, _number.range, _number.integer,
+                       _number.multiple))
+      return ActionResult::Unavailable;
+    if (_validator)
+      if (auto issue = _validator(set->value)) {
+        report(issue);
+        return ActionResult::Unavailable;
+      }
+    const auto old = _number.range.value;
+    auto text = formatted(set->value, _codec);
+    setValue(text);
+    _number.range.value = set->value;
+    _acceptedText = std::move(text);
+    _conflict = false;
+    report({});
+    _draftChanged.emit();
+    if (old == set->value)
+      return ActionResult::Unchanged;
+    ChangeContext context{source, ChangeReason::Step};
+    _edited.emit(set->value, context);
+    _changed.emit(set->value);
+    _finished.emit(context);
+    return ActionResult::Applied;
+  }
   return TextField::performAction(a, source);
 }
 } // namespace playground::ui

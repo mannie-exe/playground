@@ -51,9 +51,23 @@ Node *UIRoot::navigationScope() {
     _modalHistory.pop_back();
     _modal = _modalHistory.empty() ? NodeId{} : _modalHistory.back().first;
     requestFocus(restore);
+    if (!resolve(_table->focused)) {
+      std::vector<Node *> candidates;
+      if (auto *scope = resolve(_modal))
+        collect(*scope, candidates);
+      else if (_content)
+        collect(*_content, candidates);
+      for (auto *candidate : candidates)
+        if (candidate->isFocusable() && acceptsAction(*candidate)) {
+          requestFocus(candidate->id());
+          break;
+        }
+    }
   }
   for (; common < modals.size(); ++common) {
-    _modalHistory.push_back({modals[common]->id(), _table->focused});
+    _modalHistory.push_back(
+        {modals[common]->id(),
+         modals[common]->inputProps().returnFocus.value_or(_table->focused)});
     _modal = modals[common]->id();
   }
   Node *modal = modals.empty() ? nullptr : modals.back();
@@ -76,8 +90,14 @@ Node *UIRoot::navigationScope() {
     requestFocus({});
     std::vector<Node *> nodes;
     collect(*modal, nodes);
+    if (modal->inputProps().initialFocus)
+      if (auto *initial = resolve(*modal->inputProps().initialFocus);
+          initial && withinScope(*initial, modal) && initial->isFocusable() &&
+          acceptsAction(*initial))
+        requestFocus(initial->id());
     for (auto *node : nodes)
-      if (node->isFocusable() && acceptsAction(*node)) {
+      if (_table->focused == NodeId{} && node->isFocusable() &&
+          acceptsAction(*node)) {
         requestFocus(node->id());
         break;
       }

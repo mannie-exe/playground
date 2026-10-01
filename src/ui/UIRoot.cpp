@@ -132,6 +132,10 @@ UIRoot::UIRoot(UIServices services, runtime::CompletionQueueProps completions)
     : _services{std::move(services)}, _completions{completions} {
   if (!_services.scheduler)
     _services.scheduler = &_scheduler;
+  _services.defer = [this](support::MoveOnlyFunction<void()> work) {
+    defer([work = std::move(work)](UIRoot &) mutable { work(); });
+  };
+  _services.focusAfterLayout = [this](NodeId id) { _pendingFocus = id; };
   _context.stats = &_stats;
   _context.services = &_services;
   _context.diagnostics = &_diagnostics;
@@ -185,6 +189,7 @@ void UIRoot::setContent(std::unique_ptr<Node> content) {
   // Modal restoration belongs to the old tree, never its replacement.
   _modal = {};
   _modalHistory.clear();
+  _pendingFocus.reset();
   _hovered.clear();
   _claimsRevision.reset();
   _overlays.clear();
@@ -347,16 +352,28 @@ void UIRoot::focusNext(bool reverse) {
       }
   }
   collect(*(scope ? scope : _content.get()), candidates);
-  std::erase_if(candidates, [](Node *node) {
-    return !node->isFocusable() || !acceptsAction(*node);
+  const auto sequentialTarget = [scope](Node *node) {
+    auto *target = node;
+    for (auto *parent = node ? node->parent() : nullptr; parent && target;
+         parent = parent->parent()) {
+      if (scope && parent == scope->parent())
+        break;
+      target = parent->sequentialFocusTarget(*target);
+    }
+    return target;
+  };
+  std::erase_if(candidates, [&](Node *node) {
+    return !node->isFocusable() || !acceptsAction(*node) ||
+           sequentialTarget(node) != node;
   });
   if (candidates.empty()) {
     _table->focused = {};
     return;
   }
   const auto it =
-      std::find_if(candidates.begin(), candidates.end(),
-                   [&](Node *node) { return node->id() == _table->focused; });
+      std::find_if(candidates.begin(), candidates.end(), [&](Node *node) {
+        return node == sequentialTarget(resolve(_table->focused));
+      });
   if (scope && !scope->inputProps().wrapNavigation && it != candidates.end() &&
       ((reverse && it == candidates.begin()) ||
        (!reverse && it + 1 == candidates.end())))
@@ -379,14 +396,23 @@ void UIRoot::requestFocus(NodeId id) {
   if (_table->focused == id)
     return;
   Traversal traversal{*_table};
-  if (auto *old = resolve(_table->focused)) {
+  auto *old = resolve(_table->focused);
+  if (old) {
     UIEvent event{.type = EventType::FocusLost};
     direct(*old, event);
+    event.type = EventType::FocusWithinLost;
+    for (auto *parent = old->parent(); parent; parent = parent->parent())
+      if (!node || !withinScope(*node, parent))
+        direct(*parent, event);
   }
   _table->focused = node ? id : NodeId{};
   if (node) {
     UIEvent event{.type = EventType::FocusGained};
     direct(*node, event);
+    event.type = EventType::FocusWithinGained;
+    for (auto *parent = node->parent(); parent; parent = parent->parent())
+      if (!old || !withinScope(*old, parent))
+        direct(*parent, event);
     for (auto *p = node->parent(); p; p = p->parent())
       if (p->isPortal())
         break;
@@ -471,8 +497,14 @@ void UIRoot::dispatch(UIEvent &event) {
             direct(*node, cancel);
           }
         _table->captures.clear();
-        if (auto *focused = resolve(_table->focused))
+        if (auto *focused = resolve(_table->focused)) {
           direct(*focused, event);
+          auto within = event;
+          within.type = EventType::FocusWithinLost;
+          for (auto *parent = focused->parent(); parent;
+               parent = parent->parent())
+            direct(*parent, within);
+        }
         if (event.type == EventType::FocusLost)
           _table->focused = {};
         return;

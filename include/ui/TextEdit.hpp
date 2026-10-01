@@ -9,8 +9,8 @@
 #include <ui/Semantics.hpp>
 
 namespace playground::ui {
-using support::TextBoundary;
 using support::textBoundaries;
+using support::TextBoundary;
 
 struct BidiRun {
   std::size_t begin{}, end{};
@@ -49,7 +49,6 @@ class TextEditModel {
   std::string _composition;
   TextSelection _compositionSelection;
   std::deque<State> _undo, _redo;
-  void validate(std::string_view) const;
   void remember();
   void trimHistory();
   bool eraseSelection(TextSelection previous);
@@ -58,6 +57,8 @@ public:
   explicit TextEditModel(TextEditProps props = {}, std::string value = {});
 
   const TextEditProps &props() const noexcept { return _props; }
+
+  void validateValue(std::string_view) const;
 
   void setProps(TextEditProps);
 

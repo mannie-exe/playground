@@ -15,6 +15,10 @@ enum class CheckState { Off, On, Mixed };
 
 struct Activate {};
 
+struct CommitEdit {};
+
+struct CancelEdit {};
+
 struct CustomAction {
   std::int32_t id;
 };
@@ -53,9 +57,9 @@ struct ReplaceSelectedText {
 };
 
 using UIAction =
-    std::variant<Activate, CustomAction, Focus, Increment, SetValue, SetChecked,
-                 SetExpanded, SelectItem, ScrollIntoView, TextSelection,
-                 ReplaceSelectedText>;
+    std::variant<Activate, CommitEdit, CancelEdit, CustomAction, Focus,
+                 Increment, SetValue, SetChecked, SetExpanded, SelectItem,
+                 ScrollIntoView, TextSelection, ReplaceSelectedText>;
 enum class SemanticAction {
   Activate,
   Focus,

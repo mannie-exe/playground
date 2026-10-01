@@ -4,6 +4,7 @@
 #include <ui/TextEdit.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Popup.hpp>
+#include <ui/controls/Editing.hpp>
 
 namespace playground::ui {
 void UIRoot::layoutOverlays() {
@@ -141,6 +142,11 @@ bool UIRoot::routeOverlayDismissal(UIEvent &event) {
             dynamic_cast<TextInputClient *>(resolve(_table->focused));
         client && client->textInputState().composing)
       return false;
+    if (auto *focused = resolve(_table->focused);
+        focused && withinScope(*focused, popup))
+      if (auto *editor = dynamic_cast<DraftEditor *>(focused);
+          editor && editor->draftDirty())
+        return false;
     event.handled = event.propagationStopped = true;
     popup->dismiss(DismissReason::Escape);
   } else if (event.type == EventType::KeyDown && event.logicalKey == Key::Tab &&

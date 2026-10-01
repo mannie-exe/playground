@@ -6,6 +6,7 @@
 #include <support/Font.hpp>
 #include <ui/Node.hpp>
 #include <ui/TextEdit.hpp>
+#include <ui/controls/Editing.hpp>
 
 namespace playground::ui {
 struct TextFieldProps {
@@ -29,10 +30,15 @@ struct TextFieldPatch {
   Patch<bool> useTheme;
 };
 
-class TextField : public Node, public TextInputClient {
+class TextField : public Node,
+                  public TextInputClient,
+                  public virtual DraftEditor {
   struct Layout;
   TextFieldProps _props;
   TextEditModel _model;
+  std::string _accepted;
+  std::function<ValidationResult(std::string_view)> _textValidator;
+  ValidationMode _textValidationMode{ValidationMode::OnCommit};
   Signal<std::string> _changed, _committed;
 
   std::unique_ptr<Layout> _layout;
@@ -68,6 +74,26 @@ public:
   void setProps(TextFieldProps);
   void applyPatch(const TextFieldPatch &);
   void setValue(std::string);
+  void refreshValue(std::string);
+
+  void showValidation(ValidationResult issue) override {
+    auto p = props();
+    p.validationMessage = issue ? issue->message : "";
+    setProps(std::move(p));
+  }
+
+  ValidationResult validateDraft() const override;
+  bool commitDraft(ChangeContext = {}) override;
+  void revertDraft(ChangeContext = {ActionSource::Program,
+                                    ChangeReason::Cancel}) override;
+
+  bool draftDirty() const override { return _model.value() != _accepted; }
+
+  void setTextValidator(std::function<ValidationResult(std::string_view)> v,
+                        ValidationMode mode = ValidationMode::OnCommit) {
+    _textValidator = std::move(v);
+    _textValidationMode = mode;
+  }
 
   bool isInteractionEnabled() const noexcept override { return _props.enabled; }
 
@@ -98,14 +124,29 @@ public:
 struct NumberFieldProps {
   RangeValue range;
   bool integer{};
+  std::optional<double> multiple;
 };
 
-class NumberField final : public TextField {
+class NumberField final : public TextField, public NumericEditor {
   NumberFieldProps _number;
   Signal<double> _changed;
+  Signal<double, ChangeContext> _edited;
+  Signal<ValidationResult> _validationChanged;
+  Signal<ChangeContext> _finished;
+  NumberCodec _codec;
+  std::function<ValidationResult(double)> _validator;
+  ValidationMode _validationMode{ValidationMode::OnCommit};
+  std::string _acceptedText;
+  bool _conflict{};
+  Connection _textChanges;
+  Signal<> _draftChanged;
+  NumberParse parsed() const;
+  std::string formatted(double, const NumberCodec &) const;
+  void report(ValidationResult);
 
 protected:
   bool commit() override;
+  void onDefaultEvent(UIEvent &) override;
 
 public:
   NumberField(TextFieldProps, NumberFieldProps number = {},
@@ -114,6 +155,59 @@ public:
   const NumberFieldProps &numberProps() const noexcept { return _number; }
 
   void setNumberProps(NumberFieldProps);
+
+  double acceptedNumber() const override { return _number.range.value; }
+
+  void setNumericInteraction(bool enabled, bool readOnly) override {
+    auto p = props();
+    p.enabled = enabled;
+    p.editing.readOnly = readOnly;
+    setProps(std::move(p));
+  }
+
+  void setNumericRange(RangeValue range) override {
+    auto p = _number;
+    p.range = range;
+    setNumberProps(p);
+  }
+
+  void showValidation(ValidationResult issue) override {
+    report(std::move(issue));
+  }
+
+  ValidationResult validateDraft() const override;
+  bool commitDraft(ChangeContext = {}) override;
+  void revertDraft(ChangeContext = {ActionSource::Program,
+                                    ChangeReason::Cancel}) override;
+
+  bool draftDirty() const override { return model().value() != _acceptedText; }
+
+  bool hasConflict() const noexcept { return _conflict; }
+
+  void setCodec(NumberCodec);
+  void setValidator(std::function<ValidationResult(double)>,
+                    ValidationMode = ValidationMode::OnCommit);
+  ActionResult adjustNumber(int, ChangeContext) override;
+
+  Connection onNumberEdited(
+      support::MoveOnlyFunction<void(double, ChangeContext)> f) override {
+    return _edited.connect(std::move(f));
+  }
+
+  Connection onDraftChanged(support::MoveOnlyFunction<void()> f) override {
+    return _draftChanged.connect(std::move(f));
+  }
+
+  Connection
+  onValidationChanged(support::MoveOnlyFunction<void(ValidationResult)> f) {
+    return _validationChanged.connect(std::move(f));
+  }
+
+  Connection
+  onInteractionFinished(support::MoveOnlyFunction<void(ChangeContext)> f) {
+    return _finished.connect(std::move(f));
+  }
+
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <support/MoveOnlyFunction.hpp>
+#include <ui/NodeIdentity.hpp>
 #include <ui/Theme.hpp>
 
 namespace playground::ui {
@@ -151,6 +152,8 @@ struct UIServices {
   std::function<void(std::string_view)> writeClipboard;
   Scheduler *scheduler{};
   std::function<void(std::string)> diagnostic;
+  std::function<void(support::MoveOnlyFunction<void()>)> defer;
+  std::function<void(NodeId)> focusAfterLayout;
 
   struct CacheBudget {
     std::size_t limit{64 * 1024 * 1024};

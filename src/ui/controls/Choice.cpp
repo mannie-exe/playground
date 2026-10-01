@@ -67,6 +67,7 @@ ActionResult ToggleButton::performAction(const UIAction &action,
   if (next == _props)
     return ActionResult::Unchanged;
   setProps(std::move(next));
+  _edited.emit(_props.checked, source);
   _changed.emit(_props.checked);
   return ActionResult::Applied;
 }
@@ -180,9 +181,10 @@ ListBox::ListBox(std::vector<ChoiceItem> items, SelectionProps props,
       box.padding.left = 40;
     node->setBoxProps(box);
     node->setContentAlignment({layout::Align::Start, layout::Align::Center});
-    _connections.push_back(node->onActivate([this, key = item.key] {
-      performAction(SelectItem{key}, ActionSource::Program);
-    }));
+    _connections.push_back(
+        node->onInvoke([this, key = item.key](ActionSource source) {
+          performAction(SelectItem{key}, source);
+        }));
     _items.push_back({item.key, item.label, node.get(), item.enabled});
     append(std::move(node));
   }
@@ -197,6 +199,22 @@ void ListBox::setSelectionProps(SelectionProps props) {
       std::none_of(_items.begin(), _items.end(),
                    [&](auto &item) { return item.key == *props.selected; }))
     throw std::invalid_argument("Unknown choice key");
+  if (_role == SemanticRole::Menu) {
+    if (props.selected)
+      _active = props.selected;
+    if (std::none_of(_items.begin(), _items.end(), [&](const auto &item) {
+          return item.enabled && _active == item.key;
+        })) {
+      _active.reset();
+      for (const auto &item : _items)
+        if (item.enabled) {
+          _active = item.key;
+          break;
+        }
+    }
+    props.selected.reset();
+    props.required = false;
+  }
   _props = std::move(props);
   for (auto &item : _items) {
     item.button->selected = _props.selected == item.key;
@@ -204,6 +222,8 @@ void ListBox::setSelectionProps(SelectionProps props) {
     item.button->setFocusable(false);
     item.button->invalidate(DirtyFlags::Paint | DirtyFlags::Semantics);
   }
+  if (_role == SemanticRole::Menu)
+    highlight(_active);
   invalidate(DirtyFlags::Paint | DirtyFlags::Semantics);
 }
 
@@ -234,7 +254,8 @@ SemanticState ListBox::semanticState() const {
   return state;
 }
 
-ActionResult ListBox::performAction(const UIAction &action, ActionSource) {
+ActionResult ListBox::performAction(const UIAction &action,
+                                    ActionSource source) {
   if (!_props.enabled)
     return ActionResult::Unavailable;
   const auto *selection = std::get_if<SelectItem>(&action);
@@ -245,57 +266,78 @@ ActionResult ListBox::performAction(const UIAction &action, ActionSource) {
   });
   if (item == _items.end() || !item->enabled)
     return ActionResult::Unavailable;
-  if (_props.selected == selection->key && _role != SemanticRole::Menu)
+  if (_role == SemanticRole::Menu) {
+    _invoked.emit(selection->key, source);
+    return ActionResult::Applied;
+  }
+  if (_props.selected == selection->key)
     return ActionResult::Unchanged;
   auto props = _props;
   props.selected = selection->key;
   setSelectionProps(std::move(props));
   requestFocus();
+  _selected.emit(selection->key, source);
   _changed.emit(selection->key);
   return ActionResult::Applied;
 }
 
+std::vector<NavigationItem> ListBox::items() const {
+  std::vector<NavigationItem> result;
+  result.reserve(_items.size());
+  for (auto &item : _items)
+    result.push_back({item.key, item.label, item.enabled});
+  return result;
+}
+
+bool ListBox::handleComposition(UIEvent &event) {
+  if (event.type == EventType::TextEditing) {
+    _composing = !event.text.empty();
+    event.handled = true;
+    return true;
+  }
+  if (event.type == EventType::FocusLost ||
+      event.type == EventType::InputCancel) {
+    _composing = false;
+    _navigation.reset();
+  }
+  if (event.type == EventType::TextInput)
+    _composing = false;
+  if (_composing && event.type == EventType::KeyDown) {
+    if (event.logicalKey == Key::Escape)
+      _composing = false;
+    event.handled = true;
+    return true;
+  }
+  return false;
+}
+
 void ListBox::onDefaultEvent(UIEvent &event) {
-  if (event.handled || event.type != EventType::KeyDown || !_props.enabled ||
-      _items.empty())
+  if (handleComposition(event))
     return;
-  if ((event.logicalKey == Key::Enter || event.logicalKey == Key::Space) &&
-      _props.selected) {
-    performAction(SelectItem{*_props.selected}, event.source);
+  if (event.handled || !_props.enabled)
+    return;
+  auto current = _role == SemanticRole::Menu ? _active : _props.selected;
+  if (event.type == EventType::KeyDown &&
+      (event.logicalKey == Key::Enter || event.logicalKey == Key::Space) &&
+      current) {
+    performAction(SelectItem{*current}, event.source);
     event.handled = true;
     return;
   }
-  int direction{};
-  if (event.logicalKey == Key::Down || event.logicalKey == Key::Right)
-    direction = 1;
-  if (event.logicalKey == Key::Up || event.logicalKey == Key::Left)
-    direction = -1;
-  auto selected = std::find_if(_items.begin(), _items.end(), [&](auto &i) {
-    return _props.selected == i.key;
-  });
-  int index = selected == _items.end() ? (direction < 0 ? 0 : -1)
-                                       : int(selected - _items.begin());
-  if (event.logicalKey == Key::Home) {
-    index = -1;
-    direction = 1;
-  }
-  if (event.logicalKey == Key::End) {
-    index = 0;
-    direction = -1;
-  }
-  if (direction) {
-    for (std::size_t i = 0; i < _items.size(); ++i) {
-      index = (index + direction + int(_items.size())) % int(_items.size());
-      if (_items[index].enabled) {
-        if (_role == SemanticRole::Menu) {
-          auto next = _props;
-          next.selected = _items[index].key;
-          setSelectionProps(std::move(next));
-        } else
-          performAction(SelectItem{_items[index].key}, event.source);
-        break;
-      }
-    }
+  auto e = event;
+  if (e.logicalKey == Key::Right)
+    e.logicalKey = Key::Down;
+  if (e.logicalKey == Key::Left)
+    e.logicalKey = Key::Up;
+  auto next = _navigation.navigate(
+      items(), current, e,
+      services() && services()->scheduler ? services()->scheduler->now() : 0);
+  if (next) {
+    if (_role == SemanticRole::Menu) {
+      _active = next;
+      highlight(next);
+    } else
+      performAction(SelectItem{*next}, event.source);
     event.handled = true;
   }
 }

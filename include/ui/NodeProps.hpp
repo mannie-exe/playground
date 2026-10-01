@@ -45,6 +45,9 @@ enum class SemanticRole {
   MenuItem,
   Tooltip,
   Progress,
+  Meter,
+  Toolbar,
+  AlertDialog,
   Status
 };
 enum class SemanticExposure { Auto, Self, ChildrenOnly, HiddenSubtree };
@@ -147,6 +150,7 @@ struct InputProps {
   bool modal{};
   bool wrapNavigation{true};
   FocusNeighbors neighbors;
+  std::optional<NodeId> initialFocus, returnFocus;
   bool operator==(const InputProps &) const = default;
 };
 
@@ -155,6 +159,7 @@ struct InputPatch {
   Patch<bool> focusable;
   Patch<bool> focusScope, modal, wrapNavigation;
   Patch<FocusNeighbors> neighbors;
+  Patch<std::optional<NodeId>> initialFocus, returnFocus;
 };
 
 struct SemanticProps {
@@ -242,6 +247,10 @@ inline NodeSettings patched(const NodeSettings &p, const NodeSettingsPatch &v) {
   result.input.wrapNavigation =
       v.input.wrapNavigation.appliedTo(p.input.wrapNavigation, true);
   result.input.neighbors = v.input.neighbors.appliedTo(p.input.neighbors, {});
+  result.input.initialFocus =
+      v.input.initialFocus.appliedTo(p.input.initialFocus, {});
+  result.input.returnFocus =
+      v.input.returnFocus.appliedTo(p.input.returnFocus, {});
   result.semantics.exposure = v.semantics.exposure.appliedTo(
       p.semantics.exposure, SemanticExposure::Auto);
   result.semantics.labelledBy =
