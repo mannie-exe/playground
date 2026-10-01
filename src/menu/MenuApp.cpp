@@ -14,7 +14,6 @@ MenuApp::MenuApp() {
   for (const auto &entry : menu::entries)
     bindings.push_back(
         {.action = std::string{appKey(entry.app)}, .code = entry.key});
-  bindings.push_back({.action = "quit", .code = SDL_SCANCODE_ESCAPE});
   bindings.push_back({.action = "quit", .code = SDL_SCANCODE_Q});
   input().addContext({.name = "launcher", .stage = input::InputStage::BeforeUI},
                      std::move(bindings));

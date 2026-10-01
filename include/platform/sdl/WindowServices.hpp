@@ -22,6 +22,8 @@ public:
   ui::Connection attach(ui::UIRoot &root);
   void publish(ui::UIRoot &root, const platform::ViewportMapping &mapping);
   void pump();
+  // Cancel active UI gestures/composition while retaining logical focus.
+  void cancelInput();
   void setMode(ui::AccessibilityMode);
   void setWakeCallback(std::function<void()> callback);
 };

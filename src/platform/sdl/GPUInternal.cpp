@@ -2,57 +2,91 @@
 #include <cstring>
 #include <filesystem>
 
-#include <SDL3/SDL_filesystem.h>
-
 #include "GPUInternal.hpp"
 #include <assets/AssetCatalog.hpp>
+#include <platform/FileStore.hpp>
 #include <rendering/Shader.hpp>
 
 namespace playground::sdl::gpu_detail {
 
+void UploadStream::trim() {
+  std::erase_if(
+      _slots, [](const auto &s) { return s.transfer.use().use_count() == 1; });
+}
+
 void *UploadStream::map(std::size_t bytes) {
   _device->checkOwnerThread();
-  _device->limits().validateUpload(bytes);
-  if (bytes > _capacity) {
+  _device->limits().validateUpload(bytes, "GPU stream upload");
+  _device->pollCompletions();
+  auto it = std::find_if(_slots.begin(), _slots.end(), [&](const auto &s) {
+    return s.capacity >= bytes && s.transfer.use().use_count() == 1;
+  });
+  if (it == _slots.end()) {
+    trim();
+    if (_slots.size() >= _device->limits().maxInFlightSubmissions)
+      throw rendering::ResourcePressure(
+          "Upload backing slots", 1, _slots.size(),
+          _device->limits().maxInFlightSubmissions,
+          rendering::ResourcePressure::Unit::Slots);
     const SDL_GPUTransferBufferCreateInfo info{
         SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, static_cast<Uint32>(bytes)};
-    Transfer candidate{_device,
-                       SDL_CreateGPUTransferBuffer(_device->get(), &info)};
-    _transfer = std::move(candidate);
-    _capacity = static_cast<Uint32>(bytes);
+    _slots.push_back({createTransfer(_device, info), info.size});
+    _current = _slots.size() - 1;
+  } else {
+    _current = static_cast<std::size_t>(it - _slots.begin());
   }
-  auto *mapped =
-      SDL_MapGPUTransferBuffer(_device->get(), _transfer.get(), true);
+  auto *mapped = SDL_MapGPUTransferBuffer(_device->get(), get(), false);
   if (!mapped)
     throwSDLError("Cannot map streaming transfer buffer");
   return mapped;
 }
 
+void StreamBuffer::trim() {
+  _upload.trim();
+  std::erase_if(_slots,
+                [](const auto &s) { return s.buffer.use().use_count() == 1; });
+}
+
 SDL_GPUBuffer *StreamBuffer::write(SDL_GPUCommandBuffer *commands,
                                    std::span<const std::byte> bytes) {
   _device->checkOwnerThread();
-  _device->limits().validateUpload(bytes.size());
+  _device->limits().validateUpload(bytes.size(), "GPU stream upload");
   if (bytes.size() > _device->limits().maxStreamBytes)
     throw std::length_error("Draw stream chunk exceeds streaming budget");
-  if (bytes.size() > _capacity) {
+  _device->pollCompletions();
+  auto it = std::find_if(_slots.begin(), _slots.end(), [&](const auto &s) {
+    return s.capacity >= bytes.size() && s.buffer.use().use_count() == 1;
+  });
+  if (it == _slots.end()) {
+    trim();
+    if (_slots.size() >= _device->limits().maxInFlightSubmissions)
+      throw rendering::ResourcePressure(
+          "Draw backing slots", 1, _slots.size(),
+          _device->limits().maxInFlightSubmissions,
+          rendering::ResourcePressure::Unit::Slots);
     const SDL_GPUBufferCreateInfo info{_usage,
                                        static_cast<Uint32>(bytes.size())};
-    Buffer candidate{_device, SDL_CreateGPUBuffer(_device->get(), &info)};
-    _buffer = std::move(candidate);
-    _capacity = static_cast<Uint32>(bytes.size());
+    _slots.push_back(
+        {createBuffer(_device, info, rendering::ResourceKind::Stream),
+         info.size});
+    it = std::prev(_slots.end());
   }
+  auto &buffer = it->buffer;
+  _capacity = it->capacity;
   std::memcpy(_upload.map(bytes.size()), bytes.data(), bytes.size());
   _upload.unmap();
+  _upload.record(commands);
+  _device->recordUse(commands, buffer.use());
   auto *copy = SDL_BeginGPUCopyPass(commands);
   if (!copy)
     throwRenderError("Cannot begin streaming copy pass",
                      rendering::RenderOperation::Record);
   const SDL_GPUTransferBufferLocation source{_upload.get(), 0};
-  const SDL_GPUBufferRegion destination{_buffer.get(), 0,
+  const SDL_GPUBufferRegion destination{buffer.get(), 0,
                                         static_cast<Uint32>(bytes.size())};
-  SDL_UploadToGPUBuffer(copy, &source, &destination, true);
+  SDL_UploadToGPUBuffer(copy, &source, &destination, false);
   SDL_EndGPUCopyPass(copy);
-  return _buffer.get();
+  return buffer.get();
 }
 
 bool TargetPool::makeRoom(std::size_t bytes) {
@@ -78,23 +112,27 @@ bool TargetPool::makeRoom(std::size_t bytes) {
   return _stats.retainedBytes <= budget - bytes;
 }
 
-std::shared_ptr<void> TargetPool::reserve(std::size_t bytes) {
-  const auto cap = _device->limits().maxLivePoolBytes;
-  if (bytes <= cap && _allocations.bytes() > cap - bytes)
+void TargetPool::makeAllocationRoom(std::size_t bytes) {
+  const auto cap =
+      std::min(_device->limits().maxLivePoolBytes,
+               _device->resources()->snapshot().budgets.targetBytes);
+  const auto current = liveBytes();
+  if (current > cap || bytes > cap - current)
     trim();
-  try {
-    return _allocations.reserve(bytes);
-  } catch (const std::length_error &) {
+  const auto used = liveBytes();
+  if (used > cap || bytes > cap - used) {
     ++_stats.pressureFailures;
-    throw;
+    throw rendering::ResourcePressure("GPU targets", bytes, used, cap);
   }
 }
 
-std::shared_ptr<ColorTarget> TargetPool::color(math::Vec2i size) {
+std::shared_ptr<ColorTarget>
+TargetPool::color(math::Vec2i size, std::string_view context,
+                  rendering::ResourceLedger::Token reservation) {
   _device->checkOwnerThread();
   _device->pollCompletions();
   trimAged();
-  const auto bytes = _device->limits().validateTarget(size, 8);
+  const auto bytes = _device->limits().validateTarget(size, 8, context);
   for (auto &entry : _colors)
     if (entry.target.use_count() == 1 &&
         entry.target->pixelSize() == math::Size2{static_cast<float>(size.x),
@@ -109,9 +147,10 @@ std::shared_ptr<ColorTarget> TargetPool::color(math::Vec2i size) {
       return entry.target;
     }
   const bool retain = makeRoom(bytes);
-  auto reservation = reserve(bytes);
-  auto result = std::make_shared<ColorTarget>(_device, size);
-  result->reserve(std::move(reservation));
+  if (!reservation)
+    makeAllocationRoom(bytes);
+  auto result =
+      std::make_shared<ColorTarget>(_device, size, std::move(reservation));
   ++_stats.allocations;
   if (retain) {
     _colors.push_back({result, bytes, _device->completedSubmission()});
@@ -120,14 +159,17 @@ std::shared_ptr<ColorTarget> TargetPool::color(math::Vec2i size) {
   return result;
 }
 
-std::shared_ptr<DepthTarget> TargetPool::depth(math::Vec2i size) {
+std::shared_ptr<DepthTarget>
+TargetPool::depth(math::Vec2i size,
+                  rendering::ResourceLedger::Token reservation) {
   _device->checkOwnerThread();
   _device->pollCompletions();
   trimAged();
-  const auto bytes = _device->limits().validateTarget(size, 4);
+  const auto bytes =
+      _device->limits().validateTarget(size, 4, "GPU pooled depth target");
   for (auto &entry : _depths)
     if (entry.target.use_count() == 1 && entry.target->size == size) {
-      if (entry.target->use.use_count() > 1) {
+      if (entry.target->isLeased()) {
         ++_stats.busyMisses;
         continue;
       }
@@ -136,17 +178,75 @@ std::shared_ptr<DepthTarget> TargetPool::depth(math::Vec2i size) {
       return entry.target;
     }
   const bool retain = makeRoom(bytes);
-  auto reservation = reserve(bytes);
+  if (!reservation)
+    makeAllocationRoom(bytes);
   auto result = std::make_shared<DepthTarget>(DepthTarget{
-      size, createDepthTarget(_device, size),
-      std::make_shared<rendering::ResourceUse>(_device->resourceDomain())});
-  _device->registerTexture(result->texture.get(), result->use);
-  result->use->allocation = std::move(reservation);
+      size, createDepthTarget(_device, size, std::move(reservation))});
   ++_stats.allocations;
   if (retain) {
     _depths.push_back({result, bytes, _device->completedSubmission()});
     _stats.retainedBytes += bytes;
   }
+  return result;
+}
+
+TargetPool::SceneTargets TargetPool::sceneTargets(math::Vec2i size,
+                                                  bool postProcess) {
+  _device->checkOwnerThread();
+  _device->pollCompletions();
+  trimAged();
+  const auto colorBytes =
+      _device->limits().validateTarget(size, 8, "Scene color attachment");
+  const auto depthBytes =
+      _device->limits().validateTarget(size, 4, "Scene depth attachment");
+  // Hold reusable attachments before eviction/planning so none can be stolen
+  // by another attachment in this same operation.
+  SceneTargets result;
+  const auto reuseColor = [&]() -> std::shared_ptr<ColorTarget> {
+    for (auto &entry : _colors)
+      if (entry.target.use_count() == 1 && !entry.target->isLeased() &&
+          entry.target->pixelSize() ==
+              math::Size2{float(size.x), float(size.y)}) {
+        ++_stats.reuses;
+        entry.lastUse = _device->completedSubmission();
+        entry.target->beginWrite();
+        return entry.target;
+      }
+    return {};
+  };
+  result.color = reuseColor();
+  if (postProcess)
+    result.output = reuseColor();
+  for (auto &entry : _depths)
+    if (entry.target.use_count() == 1 && !entry.target->isLeased() &&
+        entry.target->size == size) {
+      ++_stats.reuses;
+      entry.lastUse = _device->completedSubmission();
+      result.depth = entry.target;
+      break;
+    }
+  auto bytes = rendering::checkedSum(result.color ? 0 : colorBytes,
+                                     result.depth ? 0 : depthBytes);
+  if (postProcess && !result.output)
+    bytes = rendering::checkedSum(bytes, colorBytes);
+  rendering::ResourceLedger::Token plan;
+  if (bytes) {
+    makeAllocationRoom(bytes);
+    plan = _device->resources()->reserve(rendering::MemoryClass::GPU,
+                                         rendering::ResourceKind::Target, bytes,
+                                         "Scene attachment plan");
+  }
+  if (!result.color)
+    result.color =
+        color(size, "Scene color",
+              _device->resources()->splitReservation(plan, colorBytes));
+  if (!result.depth)
+    result.depth =
+        depth(size, _device->resources()->splitReservation(plan, depthBytes));
+  if (postProcess && !result.output)
+    result.output =
+        color(size, "Scene output",
+              _device->resources()->splitReservation(plan, colorBytes));
   return result;
 }
 
@@ -185,11 +285,12 @@ void TargetPool::trim() {
   removeUnused(_depths);
 }
 
-Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size) {
+Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size,
+                          rendering::ResourceLedger::Token reservation) {
   if (!device)
     throw std::invalid_argument("Depth target requires a device");
   device->checkOwnerThread();
-  device->limits().validateTarget(size, 4);
+  device->limits().validateTarget(size, 4, "GPU depth target");
   SDL_GPUTextureCreateInfo info{};
   info.type = SDL_GPU_TEXTURETYPE_2D;
   info.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
@@ -201,7 +302,8 @@ Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size) {
   if (!SDL_GPUTextureSupportsFormat(device->get(), info.format, info.type,
                                     info.usage))
     throw std::runtime_error("GPU does not support D32 depth attachments");
-  return {device, SDL_CreateGPUTexture(device->get(), &info)};
+  return createTexture(device, info, rendering::ResourceKind::Target,
+                       std::move(reservation));
 }
 
 Shader loadShader(GPUDeviceHandle device, const char *name,
@@ -220,12 +322,11 @@ Shader loadShader(GPUDeviceHandle device, const char *name,
 #endif
   if (!format)
     throw std::runtime_error("No packaged shader format for this GPU");
-  const auto *base = SDL_GetBasePath();
-  auto path = std::filesystem::path(base ? base : "") / "assets" / "shaders" /
+  auto path = platform::executableDirectory() / "assets" / "shaders" /
               (std::string{name} + extension);
 #ifdef PLAYGROUND_SHADER_DIRECTORY
   if (!std::filesystem::exists(path))
-    path = std::filesystem::path(PLAYGROUND_SHADER_DIRECTORY) /
+    path = std::filesystem::path(u8"" PLAYGROUND_SHADER_DIRECTORY) /
            (std::string{name} + extension);
 #endif
   const auto expectedStage = stage == SDL_GPU_SHADERSTAGE_VERTEX

@@ -183,11 +183,17 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
     if (draw.material.pbr)
       throw std::invalid_argument(
           "Software scene requires explicit unlitPreview, not PBR");
-  _limits.validateTarget(view.pixelSize, 4);
+  _limits.validateTarget(view.pixelSize, 4, "Software scene");
   if (std::uint64_t(view.pixelSize.x) * view.pixelSize.y >
       _limits.maxSoftwareTargetPixels)
     throw std::length_error("Software scene exceeds pixel budget");
   const auto count = rendering::RGBA8Image::byteSize(view.pixelSize) / 4;
+  auto workingSet = _resources->reserve(
+      rendering::MemoryClass::CPU, rendering::ResourceKind::Surface,
+      rendering::AllocationLimits::textureBytes(
+          view.pixelSize, sizeof(float) + sizeof(math::PremultipliedRGBA)),
+      "Software scene scratch");
+  workingSet->setState(rendering::AllocationState::Owned);
   std::vector<float> depth(count, 1);
   std::vector<math::PremultipliedRGBA> pixels(
       count, math::premultiply(math::toLinear(view.clearColor)));
@@ -332,9 +338,7 @@ SoftwareSceneRenderer::render(const scene::SceneRenderProps &view,
       }
     }
   }
-  SurfaceHandle surface{
-      SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32),
-      SurfaceHandleDeleter{}};
+  auto surface = createManagedSurface(width, height, _resources);
   if (!surface)
     throwSDLError("Cannot allocate scene output");
   for (int y = 0; y < height; ++y)

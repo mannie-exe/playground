@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "playground",
+  "version": "@PROJECT_VERSION@",
+  "configuration": "$<CONFIG>",
+  "platform": "@PLAYGROUND_PLATFORM@",
+  "architecture": "@PLAYGROUND_ARCHITECTURE@",
+  "system_version": "@CMAKE_SYSTEM_VERSION@",
+  "macos_deployment_target": "@CMAKE_OSX_DEPLOYMENT_TARGET@",
+  "compiler": "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@",
+  "renderers": [@playground_packaged_renderer@],
+  "moltenvk": "@playground_moltenvk_version@"
+}

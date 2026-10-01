@@ -36,12 +36,13 @@ struct Bounds3 {
 
 // Mutable authoring data becomes a validated, immutable published resource.
 class Mesh final {
+  rendering::ResourceLedger::Token _allocation;
   MeshData _data;
   Bounds3 _bounds;
 
 public:
   explicit Mesh(MeshData data);
-  Mesh(const Mesh &) = default;
+  Mesh(const Mesh &other) : Mesh{other._data} {}
   Mesh &operator=(const Mesh &) = delete;
   Mesh &operator=(Mesh &&) = delete;
 
@@ -109,6 +110,7 @@ struct SceneRenderProps {
   float exposure{1};
   // Optional GPU-only compression, after exposure and before UI composition.
   bool toneMap{};
+  std::uint64_t workloadId{}, qualityRevision{};
 };
 
 void generateNormals(MeshData &mesh);

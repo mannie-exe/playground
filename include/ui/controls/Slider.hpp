@@ -58,7 +58,7 @@ public:
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onValueChanged(std::move_only_function<void(double)> callback) {
+  Connection onValueChanged(support::MoveOnlyFunction<void(double)> callback) {
     return _changed.connect(std::move(callback));
   }
 };

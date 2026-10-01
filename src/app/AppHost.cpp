@@ -26,14 +26,17 @@
 #include <support/Transaction.hpp>
 
 AppHost::AppHost(WindowConfig initialWindow,
-                 playground::rendering::RenderBackendProps backendProps)
+                 playground::rendering::RenderBackendProps backendProps,
+                 playground::ui::SettingsViewFactory settingsView)
     : _sdl{SDL_INIT_VIDEO | SDL_INIT_GAMEPAD}, _ttf{},
       _projectFiles{playground::platform::executableDirectory(), false},
       _userFiles{
           playground::platform::preferenceDirectory("Playground", "Playground"),
           true},
       _settings{_projectFiles, _userFiles},
-      _session{initialWindow, backendProps} {
+      _renderRuntime{backendProps.resources},
+      _session{initialWindow, backendProps},
+      _settingsViewFactory{std::move(settingsView)} {
   auto catalog = std::make_shared<playground::assets::AssetCatalog>(
       playground::platform::executableDirectory() / "assets");
   playground::app::registerAssets(*catalog);
@@ -46,6 +49,9 @@ AppHost::AppHost(WindowConfig initialWindow,
       std::make_unique<playground::sdl::AssetResources>(_catalog, _assets);
   registerDefaultApps();
   _settings.reload();
+  _quality.configure(_settings.graphics());
+  _renderRuntime.applyPatch({.budgets = _quality.state().requested.budgets,
+                             .pacing = _quality.state().requested.pacing});
   switchTo(AppId::Menu);
 }
 
@@ -60,6 +66,8 @@ void AppHost::request(PendingAppCommand command) {
 }
 
 void AppHost::switchTo(AppId appId) {
+  if (_settingsView)
+    showSettings(false);
   AppContext ctx{*this};
 
   // Check the next app's requirements before exiting the current app.
@@ -73,6 +81,7 @@ void AppHost::switchTo(AppId appId) {
   auto nextPresentation = nextInfo.presentation;
   auto nextPolicy = nextInfo.view;
   _settings.resolve(appKey(appId), nextPresentation, nextPolicy);
+  nextPresentation.render = _quality.state().requested.presentation;
   const auto previous = checkpoint();
   saveWindowSession();
   playground::app::activateApp(
@@ -95,6 +104,8 @@ void AppHost::switchTo(AppId appId) {
       },
       [&] { restore(previous); }, [&](IApp &app) noexcept { cleanupApp(app); });
 
+  _quality.reset(_session.renderer()->resourceDomain(),
+                 _session.renderer()->supportsGPUTiming());
   _notifiedRendererDomain = {};
   _paintRequest.request();
   _updateRequested = true;
@@ -105,6 +116,7 @@ void AppHost::switchTo(AppId appId) {
                playground::config::maxCachedVectors);
   _assets.trimSurfaceBytes(playground::config::maxCachedSurfaceBytes);
   _resources->trimUnused();
+  _session.renderer()->trimUnused();
 }
 
 void AppHost::cleanupApp(IApp &app) noexcept {
@@ -150,6 +162,9 @@ void AppHost::synchronizeRendererDomain() {
   if (current == _notifiedRendererDomain)
     return;
   AppContext ctx{*this};
+  _renderRuntime.attachDomain(current);
+  _quality.reset(current, _session.renderer()->supportsGPUTiming());
+  _lastCompletedWork = 0;
   _performance.setGPUTimingAvailable(false);
   _performance.setGPUTimingAvailable(_session.renderer()->supportsGPUTiming());
   _activeApp->onRendererChanged(ctx, _notifiedRendererDomain, current);
@@ -167,44 +182,93 @@ void AppHost::applyViewSizing() {
   });
 }
 
+void AppHost::advanceWindowTransition(
+    playground::platform::WindowTransition::TimePoint now) {
+  if (_session.advanceWindowTransition(now)) {
+    requestUpdate();
+    requestRepaint();
+  }
+  const auto &status = _session.windowRequestStatus();
+  using playground::platform::WindowTransitionOutcome;
+  if (status.generation != _reportedWindowRequest &&
+      status.outcome != WindowTransitionOutcome::Pending &&
+      status.outcome != WindowTransitionOutcome::Idle) {
+    _reportedWindowRequest = status.generation;
+    if (!status.diagnostic.empty())
+      SDL_Log("Window request %llu: %s",
+              static_cast<unsigned long long>(status.generation),
+              status.diagnostic.c_str());
+  }
+}
+
 int AppHost::run() {
   SDL_Event event;
   const std::uint64_t counterFrequency = SDL_GetPerformanceFrequency();
-  std::uint64_t profilingRevision{};
   using Clock = playground::runtime::ActivityClock;
   auto retryAt = Clock::time_point::min();
   auto maintenanceAt = Clock::now();
+  auto updateAt = Clock::now();
 
   while (_running) {
     AppContext ctx{*this};
     const auto now = Clock::now();
-    const auto activity = _activeApp->activityProps();
-    const auto demand = _activeApp->activityDemand();
-    const bool simulation = _activeApp->_simulation &&
+    try {
+      processSettings();
+      if (_pendingRuntimePatch) {
+        bool trim{};
+        if (const auto &next = _pendingRuntimePatch->budgets) {
+          const auto old = _renderRuntime.resources()->snapshot().budgets;
+          trim = next->cpuBytes < old.cpuBytes ||
+                 next->gpuBytes < old.gpuBytes ||
+                 next->targetBytes < old.targetBytes;
+        }
+        _renderRuntime.applyPatch(*_pendingRuntimePatch);
+        _pendingRuntimePatch.reset();
+        _paintRequest.request();
+        if (trim)
+          _session.renderer()->trimUnused();
+      }
+      collectRendererTelemetry();
+    } catch (const playground::rendering::RenderFailure &error) {
+      recoverRenderer(error.what());
+      continue;
+    }
+    advanceWindowTransition(now);
+    const auto activity = _settingsView
+                              ? playground::runtime::ActivityProps{false, false}
+                              : _activeApp->activityProps();
+    const auto demand = _settingsView ? _settingsUI.activityDemand()
+                                      : _activeApp->activityDemand();
+    const bool simulation = !_settingsView && _activeApp->_simulation &&
                             !_activeApp->_simulationPaused && _inputFocused;
-    const bool updateDue = activity.continuousUpdate || simulation ||
-                           _updateRequested ||
-                           _activeApp->_completions.pending() ||
-                           demand.updateDue(now) || now >= maintenanceAt;
+    const auto admission =
+        _renderRuntime.admission(now, _paintRequest.capture());
     const bool paintDue =
+        admission.status ==
+            playground::rendering::FrameAdmissionStatus::Ready &&
         now >= retryAt &&
         (activity.continuousPaint || _paintRequest.pending() || demand.paint);
+    const bool updateDue =
+        (activity.continuousUpdate && paintDue) ||
+        ((activity.continuousUpdate || simulation) && now >= updateAt) ||
+        _updateRequested || _activeApp->_completions.pending() ||
+        demand.updateDue(now) || now >= maintenanceAt;
     if (!updateDue && !paintDue && !_pendingCommand &&
         !SDL_PollEvent(nullptr)) {
-      try {
-        const auto samples = _session.renderer()->takeGPUTimings();
-        _performance.recordGPUCollection(
-            _session.renderer()->gpuTimingCollection());
-        for (const auto &sample : samples)
-          _performance.recordGPU(sample);
-      } catch (const playground::rendering::RenderFailure &error) {
-        recoverRenderer(error.what());
-        continue;
-      }
       auto deadline =
           std::min(maintenanceAt, now + std::chrono::milliseconds{100});
+      if (_settingsView)
+        deadline = std::min(deadline, _settingsMetersAt);
+      if ((activity.continuousUpdate || simulation) && updateAt > now)
+        deadline = std::min(deadline, updateAt);
+      if (admission.wakeAt)
+        deadline = std::min(deadline, *admission.wakeAt);
+      if (_session.renderer()->pendingWork())
+        deadline = std::min(deadline, now + std::chrono::milliseconds{2});
       if (demand.wakeAt)
         deadline = std::min(deadline, *demand.wakeAt);
+      if (const auto wakeAt = _session.windowTransitionWakeAt())
+        deadline = std::min(deadline, *wakeAt);
       if (retryAt > now)
         deadline = std::min(deadline, retryAt);
       const auto waitStarted = Clock::now();
@@ -215,15 +279,18 @@ int AppHost::run() {
         continue;
       SDL_WaitEventTimeout(
           nullptr, std::max(1, static_cast<int>(std::ceil(milliseconds))));
-      _performance.recordIdleWait(
+      const auto idle =
           std::chrono::duration<double, std::milli>(Clock::now() - waitStarted)
-              .count());
+              .count();
+      _renderRuntime.recordIdle(idle);
+      _performance.recordIdleWait(idle);
       continue;
     }
     bool receivedEvent{};
 
-    _performance.beginFrame();
-    _performance.begin(FramePhase::Poll);
+    _performance.beginFrame(); // optional report/UI capture
+    _renderRuntime.beginIteration();
+    _renderRuntime.begin(FramePhase::Poll);
 
     while (SDL_PollEvent(&event)) {
       receivedEvent = true;
@@ -232,6 +299,16 @@ int AppHost::run() {
       if (!_running)
         break;
 
+      if (_settingsView) {
+        auto &input = _activeApp->input();
+        playground::sdl::cancelActionInput(input, event);
+        if (const auto action = playground::sdl::toActionInput(event))
+          playground::input::routeInputEvent(input, *action, true,
+                                             [] { return false; });
+        if (!hostHandled)
+          _settingsUI.handleEvent(event);
+        continue;
+      }
       if (_activeApp) {
         auto &input = _activeApp->input();
         input.setUIClaims(_activeApp->inputClaims());
@@ -257,12 +334,16 @@ int AppHost::run() {
         break;
     }
 
-    _performance.end(FramePhase::Poll);
+    _renderRuntime.end(FramePhase::Poll);
 
     if (!_running)
       break;
 
-    _performance.begin(FramePhase::Update);
+    if (receivedEvent)
+      _renderRuntime.retryPressure();
+    advanceWindowTransition(Clock::now());
+
+    _renderRuntime.begin(FramePhase::Update);
     const bool shouldUpdate = updateDue || receivedEvent || _updateRequested;
     double frameSeconds{};
     _updateRequested = false;
@@ -289,7 +370,7 @@ int AppHost::run() {
 
       synchronizeInputClaims(ctx);
 
-      if (_activeApp && _activeApp->_simulation) {
+      if (!_settingsView && _activeApp && _activeApp->_simulation) {
         auto &clock = *_activeApp->_simulation;
         clock.setPaused(_activeApp->_simulationPaused || !_inputFocused);
         clock.beginFrame(elapsed);
@@ -299,87 +380,154 @@ int AppHost::run() {
                                   _activeApp->input().takeTickSnapshot());
         }
       }
-      if (_activeApp)
+      if (_settingsView) {
+        _settingsUI.update(deltaSeconds);
+        _settingsUI.synchronize(ctx);
+      } else if (_activeApp)
         _activeApp->update(ctx, deltaSeconds);
       synchronizeInputClaims(ctx);
 
+      // Update deadlines remain independent of the rendering cap. Fixed-step
+      // simulation determines its own cadence; continuous variable updates use
+      // the existing default simulation interval when no clock is installed.
+      const double updateSeconds =
+          _activeApp->_simulation
+              ? _activeApp->_simulation->props().stepSeconds
+              : playground::runtime::SimulationTimingProps{}.stepSeconds;
+      updateAt =
+          Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                             std::chrono::duration<double>{updateSeconds});
       maintenanceAt = Clock::now() + std::chrono::seconds{1};
     }
 
     processPendingCommand();
 
-    _performance.end(FramePhase::Update);
+    _renderRuntime.end(FramePhase::Update);
 
     if (!_running)
       break;
 
     synchronizeRendererDomain();
-    const auto afterUpdate = _activeApp->activityDemand();
-    const bool shouldPaint = Clock::now() >= retryAt &&
-                             (_activeApp->activityProps().continuousPaint ||
-                              _paintRequest.pending() || afterUpdate.paint);
+    const auto afterUpdate = _settingsView ? _settingsUI.activityDemand()
+                                           : _activeApp->activityDemand();
+    const bool shouldPaint =
+        _renderRuntime.admission(Clock::now(), _paintRequest.capture())
+                .status == playground::rendering::FrameAdmissionStatus::Ready &&
+        Clock::now() >= retryAt &&
+        ((!_settingsView && _activeApp->activityProps().continuousPaint) ||
+         _paintRequest.pending() || afterUpdate.paint);
     if (!shouldPaint) {
-      try {
-        const auto gpuTimings = _session.renderer()->takeGPUTimings();
-        _performance.recordGPUCollection(
-            _session.renderer()->gpuTimingCollection());
-        for (const auto &sample : gpuTimings)
-          _performance.recordGPU(sample);
-      } catch (const playground::rendering::RenderFailure &error) {
-        recoverRenderer(error.what());
-      }
-      _performance.endFrame();
+      const auto &sample = _renderRuntime.endIteration();
+      if (!_settingsView)
+        _quality.observeCPU(sample);
+      _performance.recordFrame(sample);
       processPendingCommand();
       continue;
     }
     // Latch UI paint demand before root rendering can clear its dirty flag.
-    _paintRequest.request();
+    if (!_paintRequest.pending())
+      _paintRequest.request();
     const auto paintRevision = _paintRequest.capture();
-    _performance.begin(FramePhase::Render);
+    _renderRuntime.begin(FramePhase::Render);
     auto timedPhase = FramePhase::Render;
-    try {
-      if (profilingRevision != _performance.statisticsRevision()) {
-        _session.renderer()->setProfilingEnabled(false);
-        profilingRevision = _performance.statisticsRevision();
+    bool terminalOutcome{};
+    const auto blockRendering = [&](const std::string &reason,
+                                    bool memoryPressure = true) {
+      _renderRuntime.end(timedPhase);
+      _renderRuntime.abandoned();
+      const bool firstReclaim = _pressureRetriedRevision != paintRevision;
+      if (firstReclaim)
+        _renderRuntime.block(reason, paintRevision);
+      try {
+        _session.renderer()->trimUnused();
+      } catch (const playground::rendering::RenderFailure &failure) {
+        recoverRenderer(failure.what());
+        return;
       }
-      _session.renderer()->setProfilingEnabled(_performance.isEnabled());
-      _performance.setGPUTimingAvailable(
-          _session.renderer()->supportsGPUTiming());
+      if (!firstReclaim)
+        _renderRuntime.block(reason, paintRevision);
+      if (memoryPressure && !_settingsView &&
+          _activeApp->info().rendererRequirements.scene3D &&
+          _quality.pressure()) {
+        _renderRuntime.retryPressure();
+        requestRepaint();
+      }
+      _pressureRetriedRevision = paintRevision;
+      if (_reportedResourcePressure != reason) {
+        _reportedResourcePressure = reason;
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Rendering blocked: %s",
+                    reason.c_str());
+      }
+    };
+    try {
+      auto admitted = _renderRuntime.beginFrame(
+          Clock::now(), _session.renderer()->resourceDomain(), paintRevision);
+      if (!admitted)
+        throw std::logic_error("Frame admission changed on owner thread");
       const auto outcome = playground::app::renderFrame(
           *_session.renderer(),
           {.clearColor = _session.windowProps().clearColor,
-           .settings = _session.presentation().render},
+           .settings =
+               _settingsView
+                   ? playground::rendering::
+                         RenderSettings{.glyphAtlases =
+                                            _quality.state()
+                                                .requested.presentation
+                                                .glyphAtlases,
+                                        .vsync =
+                                            _quality.state()
+                                                .requested.presentation.vsync}
+                   : _session.presentation().render,
+           .admission = std::move(admitted)},
           [&](playground::rendering::RenderFrame &frame) {
-            if (_activeApp)
+            if (_settingsView) {
+              _settingsUI.synchronize(ctx);
+              _settingsUI.render(frame);
+            } else if (_activeApp)
               _activeApp->render(ctx, frame);
           },
           [&] {
-            _performance.end(FramePhase::Render);
-            _performance.begin(FramePhase::Present);
+            _renderRuntime.end(FramePhase::Render);
+            _renderRuntime.begin(FramePhase::Present);
             timedPhase = FramePhase::Present;
           });
-      _session.observeFrame(outcome, frameSeconds);
-      if (outcome == playground::rendering::PresentationOutcome::Submitted)
+      if (outcome == playground::rendering::PresentationOutcome::Submitted) {
         _paintRequest.submitted(paintRevision);
-      else
-        retryAt = Clock::now() + std::chrono::milliseconds{100};
-      const auto gpuTimings = _session.renderer()->takeGPUTimings();
-      _performance.recordGPUCollection(
-          _session.renderer()->gpuTimingCollection());
-      for (const auto &sample : gpuTimings)
-        _performance.recordGPU(sample);
+        _renderRuntime.submitted();
+        _reportedResourcePressure.clear();
+        _pressureRetriedRevision.reset();
+      } else {
+        _renderRuntime.skipped();
+        retryAt = Clock::now() + std::chrono::milliseconds{16};
+      }
+      terminalOutcome = true;
+      _session.observeFrame(outcome, frameSeconds);
+      collectRendererTelemetry();
       if (auto work = _session.renderer()->takePaintWork())
         _performance.recordPaintWork(*work);
-      _performance.end(FramePhase::Present);
+      _renderRuntime.end(FramePhase::Present);
+    } catch (const playground::rendering::ResourcePressure &error) {
+      blockRendering(error.what(),
+                     error.unit ==
+                         playground::rendering::ResourcePressure::Unit::Bytes);
+    } catch (const playground::rendering::ResourceAllocationFailure &error) {
+      blockRendering(error.what());
     } catch (const playground::rendering::RenderFailure &error) {
-      _performance.end(timedPhase);
+      if (!terminalOutcome)
+        _renderRuntime.abandoned();
+      _renderRuntime.end(timedPhase);
       recoverRenderer(error.what());
     }
-    _performance.endFrame();
+    const auto &sample = _renderRuntime.endIteration();
+    if (!_settingsView)
+      _quality.observeCPU(sample);
+    _performance.recordFrame(sample);
     processPendingCommand();
   }
 
   AppContext ctx{*this};
+  if (_settingsView)
+    showSettings(false);
   saveWindowSession();
   if (_activeApp)
     cleanupApp(*_activeApp);
@@ -405,11 +553,24 @@ void AppHost::registerDefaultApps() {
 }
 
 void AppHost::synchronizeInputClaims(AppContext &ctx) {
-  if (_activeApp && _activeApp->input().setUIClaims(_activeApp->inputClaims()))
+  if (!_settingsView && _activeApp &&
+      _activeApp->input().setUIClaims(_activeApp->inputClaims()))
     _activeApp->onActions(ctx, _activeApp->input().takeFrameSnapshot());
 }
 
 bool AppHost::handleHostEvent(const SDL_Event &event) {
+  if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+    if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+      requestSettings(!_pendingSettingsVisible.value_or(settingsVisible()));
+      return true;
+    }
+    if (event.key.scancode == SDL_SCANCODE_M &&
+        (event.key.mod & SDL_KMOD_SHIFT) &&
+        (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
+      request(PendingAppCommand{.type = AppCommandType::ReturnToMenu});
+      return true;
+    }
+  }
   if (_wake.consume(event)) {
     _updateRequested = true;
     return true;
@@ -429,7 +590,7 @@ bool AppHost::handleHostEvent(const SDL_Event &event) {
   }
   if (_activeApp && _activeApp->_simulation)
     _activeApp->_simulation->setPaused(_activeApp->_simulationPaused ||
-                                       !_inputFocused);
+                                       !_inputFocused || _settingsView);
   if (event.type == SDL_EVENT_KEY_DOWN &&
       _performance.handleHotkey(event.key)) {
     _paintRequest.request();
@@ -450,7 +611,7 @@ void AppHost::setSimulationPaused(bool paused) {
   if (_activeApp->_simulationPaused == paused)
     return;
   _activeApp->_simulationPaused = paused;
-  _activeApp->_simulation->setPaused(paused || !_inputFocused);
+  _activeApp->_simulation->setPaused(paused || !_inputFocused || _settingsView);
   _activeApp->input().cancelAll();
   _updateClock.rebase();
 }
@@ -551,6 +712,10 @@ void AppHost::executeCommand(PendingAppCommand command) {
           _settings.publish(std::move(loaded));
           resolveSettings();
           _session.applyPresentation();
+          _quality.configure(_settings.graphics());
+          _renderRuntime.applyPatch(
+              {.budgets = _quality.state().requested.budgets,
+               .pacing = _quality.state().requested.pacing});
         },
         [&] {
           _settings.publish(std::move(oldSettings));
@@ -572,7 +737,11 @@ void AppHost::executeCommand(PendingAppCommand command) {
             _session.setPresentation(std::move(candidate));
             _session.setViewPolicy(policy);
             _session.applyPresentation();
+            const auto graphics = _settings.graphics(*command.settings);
             _settings.setUser(std::move(*command.settings), command.persist);
+            _quality.configure(graphics);
+            _renderRuntime.applyPatch(
+                {.budgets = graphics.budgets, .pacing = graphics.pacing});
           },
           [&] { restore(previous); });
     }
@@ -589,6 +758,7 @@ void AppHost::resolveSettings() {
   auto presentation = info.presentation;
   auto policy = info.view;
   _settings.resolve(appKey(_activeAppId), presentation, policy);
+  presentation.render = _settings.graphics().presentation;
   configureRenderer(presentation.renderer, info.rendererRequirements);
   _session.setPresentation(std::move(presentation));
   _session.setViewPolicy(policy);
@@ -611,5 +781,146 @@ void AppHost::saveWindowSession() {
     _settings.saveSession(std::move(session));
   } catch (const std::exception &error) {
     SDL_Log("Cannot save window session: %s", error.what());
+  }
+}
+
+void AppHost::collectRendererTelemetry() {
+  auto &backend = *_session.renderer();
+  const auto samples = backend.takeGPUTimings();
+  const auto collection = backend.gpuTimingCollection();
+  _renderRuntime.recordGPUCollection(collection);
+  _performance.recordGPUCollection(collection);
+  for (const auto &sample : samples) {
+    _renderRuntime.recordGPU(sample);
+    _performance.recordGPU(sample);
+    if (!_settingsView && _quality.observe(sample, &_renderRuntime.pacing()))
+      requestRepaint();
+  }
+  const auto completed = backend.completedWork();
+  if (completed != _lastCompletedWork) {
+    if (!_reportedResourcePressure.empty())
+      backend.trimUnused();
+    _lastCompletedWork = completed;
+  }
+}
+
+void AppHost::applyGraphics(playground::rendering::GraphicsSettings value,
+                            bool persist) {
+  value.validate();
+  auto document = _settings.user();
+  document.graphics = value;
+  const auto previous = checkpoint();
+  playground::withRestoration(
+      [&] {
+        configureRenderer(value.renderer,
+                          _activeApp->info().rendererRequirements);
+        auto presentation = _session.presentation();
+        presentation.render = value.presentation;
+        presentation.renderer = value.renderer;
+        _session.setPresentation(presentation);
+        _session.applyPresentation();
+        _settings.setUser(std::move(document), persist);
+      },
+      [&] { restore(previous); });
+  _quality.configure(value);
+  _renderRuntime.applyPatch({.budgets = value.budgets, .pacing = value.pacing});
+  _session.renderer()->trimUnused();
+  requestRepaint();
+  if (_settingsView)
+    _settingsView->setResult(
+        value, persist
+                   ? "Saved. Settings apply to every app and future launches."
+                   : "Applied to every app for this run. Use Save to persist.");
+}
+
+void AppHost::showSettings(bool visible) {
+  using namespace playground;
+  if (visible == bool(_settingsView) || (visible && !_settingsViewFactory))
+    return;
+  AppContext ctx{*this};
+  _session.windowServices().cancelInput();
+  _activeApp->input().cancelAll();
+  if (_activeApp->_simulation)
+    _activeApp->_simulation->setPaused(
+        visible || _activeApp->_simulationPaused || !_inputFocused);
+  _updateClock.rebase();
+  if (!visible) {
+    _settingsUI.clear();
+    _settingsView = nullptr;
+    auto saved = std::move(*_settingsWindow);
+    _settingsWindow.reset();
+    saved.presentation.render = _quality.state().requested.presentation;
+    saved.presentation.renderer = _quality.state().requested.renderer;
+    _session.restoreWindow(saved);
+  } else {
+    auto view = _settingsViewFactory(
+        _assets, _resources->font(app::fontAsset, {.style = {.size = 18}}),
+        _quality.state().requested,
+        {.apply =
+             [this](auto value, bool persist) {
+               requestGraphics(std::move(value), persist);
+             },
+         .close = [this] { requestSettings(false); },
+         .returnToMenu =
+             [this] {
+               request(PendingAppCommand{.type = AppCommandType::ReturnToMenu});
+             }});
+    if (!view)
+      throw std::invalid_argument("Settings view factory returned no view");
+    auto previous =
+        _session.checkpoint(_activeApp->info().rendererRequirements);
+    _settingsView = view.get();
+    _settingsUI.root().setContent(std::move(view));
+    try {
+      auto props = _session.presentation();
+      props.viewport = {};
+      _session.setPresentation(props);
+      auto policy = _session.viewPolicy();
+      policy.resizable = true;
+      policy.minimumSize = {640, 480};
+      _session.setViewPolicy(policy);
+      auto window = _session.windowProps();
+      window.mouseGrabbed = false;
+      _session.setWindowProps(window);
+      _session.applyWindowProps();
+      _settingsUI.synchronize(ctx);
+      _session.fitContent(
+          [&](auto maximum, auto density) -> std::optional<math::Size2> {
+            const auto measured =
+                _settingsUI.root().preferredSize(maximum, density);
+            return math::Size2{
+                std::min(maximum.width, std::max(820.f, measured.width)),
+                std::min(maximum.height, std::max(680.f, measured.height))};
+          });
+      _settingsWindow = std::move(previous);
+    } catch (...) {
+      _settingsUI.clear();
+      _settingsView = nullptr;
+      _session.restoreWindow(previous);
+      throw;
+    }
+  }
+  requestRepaint();
+  requestUpdate();
+}
+
+void AppHost::processSettings() {
+  try {
+    if (auto pending = std::exchange(_pendingGraphics, {}))
+      applyGraphics(std::move(pending->first), pending->second);
+    if (auto visible = std::exchange(_pendingSettingsVisible, {}))
+      showSettings(*visible);
+  } catch (const playground::RestorationFailure &) {
+    throw;
+  } catch (const std::exception &error) {
+    _lastCommandError = error.what();
+    if (_settingsView)
+      _settingsView->setResult(_quality.state().requested, error.what());
+    SDL_Log("Settings request rejected: %s", error.what());
+  }
+  const auto now = playground::runtime::ActivityClock::now();
+  if (_settingsView && now >= _settingsMetersAt) {
+    _settingsView->setRuntime(_quality.state(), _renderRuntime.snapshot());
+    _settingsMetersAt = now + std::chrono::milliseconds{500};
   }
 }

@@ -4,9 +4,7 @@
 #include <stdexcept>
 
 #include <unicode/ubidi.h>
-#include <unicode/ubrk.h>
 #include <unicode/ustring.h>
-#include <unicode/utext.h>
 #include <unicode/utf8.h>
 
 #include <ui/TextEdit.hpp>
@@ -18,47 +16,10 @@ void check(UErrorCode status) {
     throw std::invalid_argument(u_errorName(status));
 }
 
-void validUTF8(std::string_view text) {
-  if (text.size() > std::size_t(INT32_MAX))
-    throw std::length_error("Text too large for Unicode services");
-  for (int32_t i = 0; i < int32_t(text.size());) {
-    UChar32 cp;
-    U8_NEXT(text.data(), i, int32_t(text.size()), cp);
-    if (cp < 0 || cp == 0)
-      throw std::invalid_argument("Text must be valid UTF-8 without NUL");
-  }
-}
 } // namespace
 
-std::vector<std::size_t> textBoundaries(std::string_view text,
-                                        TextBoundary kind) {
-  if (kind != TextBoundary::Grapheme && kind != TextBoundary::Word &&
-      kind != TextBoundary::Line)
-    throw std::invalid_argument("Unknown text boundary kind");
-  validUTF8(text);
-  UErrorCode error = U_ZERO_ERROR;
-  std::unique_ptr<UText, decltype(&utext_close)> source{
-      utext_openUTF8(nullptr, text.data(), int64_t(text.size()), &error),
-      utext_close};
-  check(error);
-  std::unique_ptr<UBreakIterator, decltype(&ubrk_close)> breaks{
-      ubrk_open(kind == TextBoundary::Grapheme ? UBRK_CHARACTER
-                : kind == TextBoundary::Word   ? UBRK_WORD
-                                               : UBRK_LINE,
-                "", nullptr, 0, &error),
-      ubrk_close};
-  check(error);
-  ubrk_setUText(breaks.get(), source.get(), &error);
-  check(error);
-  std::vector<std::size_t> result;
-  for (int32_t p = ubrk_first(breaks.get()); p != UBRK_DONE;
-       p = ubrk_next(breaks.get()))
-    result.push_back(std::size_t(p));
-  return result;
-}
-
 std::vector<BidiRun> visualTextRuns(std::string_view text) {
-  validUTF8(text);
+  support::validateTextUTF8(text);
   if (text.empty())
     return {};
   std::vector<UChar> utf16;
@@ -103,7 +64,7 @@ TextEditModel::TextEditModel(TextEditProps props, std::string value)
 }
 
 void TextEditModel::validate(std::string_view text) const {
-  validUTF8(text);
+  support::validateTextUTF8(text);
   if (text.size() > _props.maximumBytes)
     throw std::length_error("Text capacity exceeded");
   if (!_props.multiline && text.find_first_of("\r\n") != text.npos)
@@ -235,6 +196,18 @@ bool TextEditModel::erase(bool backward, bool word) {
   auto old = _state.selection;
   if (old.anchor == old.caret)
     move(backward ? -1 : 1, true, word);
+  return eraseSelection(old);
+}
+
+bool TextEditModel::eraseTo(std::size_t offset) {
+  if (_props.readOnly)
+    return false;
+  const auto old = _state.selection;
+  setSelection({old.caret, offset});
+  return eraseSelection(old);
+}
+
+bool TextEditModel::eraseSelection(TextSelection old) {
   try {
     const bool changed = replace({});
     if (changed && !_undo.empty())

@@ -80,7 +80,7 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
       throw std::length_error("Material upload byte count overflow");
     transferBytes += level.texels.data().size();
   }
-  limits.validateUpload(transferBytes);
+  limits.validateUpload(transferBytes, "GPU material texture upload");
   if (source.role() == rendering::TextureRole::Color &&
       _bytes > (std::numeric_limits<std::size_t>::max() - transferBytes) / 2)
     throw std::length_error("Material preparation estimate overflow");
@@ -95,13 +95,10 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
                    : rendering::packTexture(source, first.format(),
                                             first.encoding(), true, _bytes);
   const auto &upload = prepared ? *prepared : source;
-  _use = std::make_shared<rendering::ResourceUse>(_device->resourceDomain());
-  GPUTextureResource texture{_device,
-                             SDL_CreateGPUTexture(_device->get(), &info)};
+  auto texture = createTexture(_device, info, rendering::ResourceKind::Texture);
   SDL_GPUTransferBufferCreateInfo transferInfo{
       SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, Uint32(transferBytes)};
-  gpu_detail::Transfer transfer{
-      _device, SDL_CreateGPUTransferBuffer(_device->get(), &transferInfo)};
+  auto transfer = createTransfer(_device, transferInfo);
   auto *mapped = static_cast<std::byte *>(
       SDL_MapGPUTransferBuffer(_device->get(), transfer.get(), false));
   if (!mapped)
@@ -117,7 +114,8 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
   }
   mapping.reset();
   gpu_detail::Commands commands{_device, "material texture upload"};
-  _device->recordUse(commands.value, _use);
+  _device->recordUse(commands.value, texture.use());
+  _device->recordUse(commands.value, transfer.use());
   auto *pass = SDL_BeginGPUCopyPass(commands.value);
   if (!pass)
     throwRenderError("Cannot begin material upload",
@@ -137,7 +135,6 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
   SDL_EndGPUCopyPass(pass);
   commands.submit();
   _texture = std::move(texture);
-  _device->registerTexture(_texture.get(), _use);
 }
 
 rendering::RGBA8Image packSurfaceRGBA8(const SurfacePaintImage &source) {
@@ -162,16 +159,17 @@ rendering::RGBA8Image packSurfaceRGBA8(const SurfacePaintImage &source) {
   return result;
 }
 
-GPUImage::GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels)
+GPUImage::GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels,
+                   rendering::ResourceLedger::Token uploadReservation)
     : _device{std::move(device)}, _size{pixels.size}, _alpha{pixels.alpha},
       _encoding{pixels.encoding} {
   if (!_device)
     throw std::invalid_argument("GPU image requires a device");
   _device->checkOwnerThread();
-  _use = std::make_shared<rendering::ResourceUse>(_device->resourceDomain());
   pixels.validate();
-  _device->limits().validateTarget(_size, 4);
-  _device->limits().validateUpload(pixels.pixels.size());
+  _device->limits().validateTarget(_size, 4, "GPU sampled image");
+  _device->limits().validateUpload(pixels.pixels.size(),
+                                   "GPU sampled image upload");
   auto *rawDevice = _device->get();
   SDL_GPUTextureCreateInfo info{};
   info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -184,20 +182,21 @@ GPUImage::GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels)
   if (!SDL_GPUTextureSupportsFormat(rawDevice, info.format, info.type,
                                     info.usage))
     throw std::runtime_error("GPU does not support RGBA8 sampled images");
-  GPUTextureResource texture{_device, SDL_CreateGPUTexture(rawDevice, &info)};
+  auto texture = createTexture(_device, info, rendering::ResourceKind::Texture);
 
   const SDL_GPUTransferBufferCreateInfo transferInfo{
       .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
       .size = static_cast<Uint32>(pixels.pixels.size())};
-  gpu_detail::Transfer transfer{
-      _device, SDL_CreateGPUTransferBuffer(rawDevice, &transferInfo)};
+  auto transfer =
+      createTransfer(_device, transferInfo, std::move(uploadReservation));
   void *mapped = SDL_MapGPUTransferBuffer(rawDevice, transfer.get(), false);
   if (!mapped)
     throwSDLError("Failed to map image transfer buffer");
   std::memcpy(mapped, pixels.pixels.data(), pixels.pixels.size());
   SDL_UnmapGPUTransferBuffer(rawDevice, transfer.get());
   gpu_detail::Commands commands{_device, "image upload"};
-  _device->recordUse(commands.value, _use);
+  _device->recordUse(commands.value, texture.use());
+  _device->recordUse(commands.value, transfer.use());
   auto *copy = SDL_BeginGPUCopyPass(commands.value);
   if (!copy)
     throwRenderError("Failed to begin image upload pass",
@@ -212,18 +211,17 @@ GPUImage::GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels)
   SDL_EndGPUCopyPass(copy);
   commands.submit();
   _texture = std::move(texture);
-  _device->registerTexture(_texture.get(), _use);
 }
 
-GPUImage::GPUImage(GPUDeviceHandle device, math::Vec2i size)
+GPUImage::GPUImage(GPUDeviceHandle device, math::Vec2i size,
+                   rendering::ResourceLedger::Token reservation)
     : _device{std::move(device)}, _size{size},
       _alpha{rendering::AlphaMode::Premultiplied},
       _encoding{rendering::ColorEncoding::Linear}, _bytesPerPixel{8} {
   if (!_device)
     throw std::invalid_argument("GPU color target requires a device");
   _device->checkOwnerThread();
-  _use = std::make_shared<rendering::ResourceUse>(_device->resourceDomain());
-  _device->limits().validateTarget(size, _bytesPerPixel);
+  _device->limits().validateTarget(size, _bytesPerPixel, "GPU color target");
   SDL_GPUTextureCreateInfo info{};
   info.type = SDL_GPU_TEXTURETYPE_2D;
   info.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
@@ -236,14 +234,20 @@ GPUImage::GPUImage(GPUDeviceHandle device, math::Vec2i size)
                                     info.usage))
     throw std::runtime_error(
         "GPU does not support linear sampled color targets");
-  _texture = {_device, SDL_CreateGPUTexture(_device->get(), &info)};
-  _device->registerTexture(_texture.get(), _use);
+  _texture = createTexture(_device, info, rendering::ResourceKind::Target,
+                           std::move(reservation));
 }
 
 GPUImagePreparer::GPUImagePreparer(GPUDeviceHandle device)
     : _device{std::move(device)} {
   if (!_device)
     throw std::invalid_argument("GPU image preparer requires a device");
+}
+
+void GPUImagePreparer::trimUnused() {
+  _device->checkOwnerThread();
+  _cache.clear();
+  _residentBytes = 0;
 }
 
 void GPUImagePreparer::prune() {
@@ -306,9 +310,17 @@ GPUImagePreparer::prepare(rendering::PaintImageHandle source) {
   if (slot.image)
     return slot.image;
   const auto bytes = _device->limits().validateTarget(
-      {surface->surface()->w, surface->surface()->h}, 4);
-  _device->limits().validateUpload(bytes);
-  auto result = std::make_shared<GPUImage>(_device, packSurfaceRGBA8(*surface));
+      {surface->surface()->w, surface->surface()->h}, 4,
+      "GPU surface conversion");
+  _device->limits().validateUpload(bytes, "GPU surface conversion upload");
+  auto conversion = _device->resources()->reserve(
+      rendering::MemoryClass::CPU, rendering::ResourceKind::Preparation,
+      bytes * 2, "Image conversion scratch");
+  auto pixels = packSurfaceRGBA8(*surface);
+  // Conversion surface is gone; transfer that allowance to upload staging.
+  auto upload = _device->resources()->splitReservation(
+      conversion, bytes, rendering::ResourceKind::Upload);
+  auto result = std::make_shared<GPUImage>(_device, pixels, std::move(upload));
   if (bytes <= _device->limits().maxResidentBytes) {
     // Trim before addition to keep accounting overflow-free even with huge
     // caps.

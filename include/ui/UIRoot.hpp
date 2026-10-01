@@ -52,7 +52,7 @@ class UIRoot {
       std::make_shared<detail::NodeTable>()};
   std::unique_ptr<Node> _content;
 
-  std::deque<std::move_only_function<void(UIRoot &)>> _deferred;
+  std::deque<support::MoveOnlyFunction<void(UIRoot &)>> _deferred;
   bool _flushingMutations{};
   bool _updating{};
   runtime::CompletionQueue _completions;
@@ -200,7 +200,7 @@ public:
 
   void setContent(std::unique_ptr<Node> content);
 
-  void defer(std::move_only_function<void(UIRoot &)> command) {
+  void defer(support::MoveOnlyFunction<void(UIRoot &)> command) {
     if (command)
       _deferred.push_back(std::move(command));
   }

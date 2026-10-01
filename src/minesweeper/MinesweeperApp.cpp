@@ -61,20 +61,7 @@ AppInfo MinesweeperApp::staticInfo() {
           .presentation = {.window = {.mode = mineConfig::windowMode}}};
 }
 
-MinesweeperApp::MinesweeperApp() {
-  input().addContext(
-      {.name = "navigation", .stage = input::InputStage::BeforeUI},
-      {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
-}
-
-void MinesweeperApp::onActions(AppContext &ctx,
-                               const input::InputSnapshot &actions) {
-  if (actions["back"].pressed) {
-    _pending =
-        _screen == Screen::Game ? Command::Difficulty : Command::Launcher;
-    processActions(ctx);
-  }
-}
+MinesweeperApp::MinesweeperApp() = default;
 
 std::optional<math::Size2>
 MinesweeperApp::preferredContentSize(math::Size2 maximum, math::Vec2f density) {

@@ -92,6 +92,12 @@ public:
 
   const PaintStats &stats() const noexcept { return _stats; }
 
+  void trimUnused() {
+    _drawStream.trim();
+    images.trimUnused();
+    targets.trim();
+  }
+
   PaintStats takeStats() noexcept { return std::exchange(_stats, {}); }
 
   void considered() noexcept { ++_stats.considered; }

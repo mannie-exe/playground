@@ -268,6 +268,8 @@ void PerformanceMonitor::recordGPU(
     throw std::invalid_argument("Invalid GPU performance sample");
   GPUGroupKey key{sample.domain, sample.collectionGeneration, sample.label,
                   sample.context};
+  key.context.workloadId = key.context.qualityRevision = 0;
+  key.context.frameId = 0; // grouping is by workload, correlation stays in raw samples
   auto it = std::ranges::find(_gpuGroups, key, &GPUGroupReport::key);
   const bool omitted =
       it == _gpuGroups.end() && _gpuGroups.size() == maximumGPUGroups;
@@ -327,13 +329,13 @@ bool PerformanceMonitor::handleHotkey(const SDL_KeyboardEvent &key) {
     if (isEnabled())
       report();
     else
-      SDL_Log("Performance monitoring is disabled");
+      SDL_Log("Performance reporting is disabled; runtime telemetry remains active");
     return true;
   }
 
   if (key.key == SDLK_F10) {
     toggleEnabled();
-    SDL_Log("Performance monitoring %s", isEnabled() ? "enabled" : "disabled");
+    SDL_Log("Performance reporting %s", isEnabled() ? "enabled" : "disabled");
     return true;
   }
 

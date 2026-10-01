@@ -39,6 +39,9 @@ public:
   AppContext(AppHost &host, IApp &owner) : _host{host}, _owner{&owner} {}
 
   const WindowState &windowState() const;
+  const WindowRequestStatus &windowRequestStatus() const;
+  playground::platform::WindowPlacementCapabilities
+  windowPlacementCapabilities() const;
   playground::sdl::WindowServices &windowServices();
   const AppWindowProps &windowProps() const;
   playground::platform::WindowMetrics windowMetrics() const;
@@ -53,6 +56,13 @@ public:
   playground::sdl::AssetResources &resources();
   playground::runtime::Executor &workers();
   PerformanceMonitor &performance();
+  const playground::rendering::ResolvedGraphicsState &graphicsState() const;
+  void requestGraphics(playground::rendering::GraphicsSettings,
+                       bool persist = false);
+  void requestSettings(bool visible = true);
+  playground::rendering::RenderRuntimeSnapshot renderRuntimeState() const;
+  playground::rendering::RenderTelemetrySnapshot renderTelemetry() const;
+  void requestRenderRuntime(playground::rendering::RenderRuntimePatch patch);
   playground::runtime::ActivationSink completions();
   playground::runtime::ActivationToken activationToken() const;
   std::optional<playground::runtime::SimulationState> simulationState() const;

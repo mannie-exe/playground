@@ -8,6 +8,19 @@
 
 int main() {
   return playground::test::run([] {
+    playground::rendering::RenderRuntime runtime;
+    runtime.beginIteration();
+    runtime.endIteration();
+    PerformanceMonitor optionalReport;
+    SDL_KeyboardEvent toggle{};
+    toggle.type = SDL_EVENT_KEY_DOWN;
+    toggle.key = SDLK_F10;
+    optionalReport.handleHotkey(toggle);
+    optionalReport.resetStatistics();
+    optionalReport.handleHotkey(toggle);
+    playground::test::require(
+        runtime.snapshot().cpuSamples == 1 && runtime.cpuHistory().size() == 1,
+        "report toggles/resets do not reset baseline runtime telemetry");
     PerformanceMonitor monitor{{.enabled = true,
                                 .reportEveryFrames = 60,
                                 .historySize = 2,

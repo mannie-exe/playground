@@ -84,8 +84,10 @@ cache keys. The numeric kind and catalog identity are process-local details.
 
 AssetResourceProps bounds encoded/decoded images and SVG inputs. Image decoded
 bytes are checked after decoding and on cache hits, not through a capped allocator.
-ModelAsset owns its ModelImportProps; import variants use distinct IDs. Model,
-mesh and shader caches do not claim complete resident-byte accounting. Font
+ModelAsset owns its ModelImportProps; import variants use distinct IDs. Published mesh and packed texture payloads carry shared CPU ledger charges.
+Decoded registry surfaces are charged on adoption by pitch times height; decoder
+private allocations are outside that coverage. General model graphs, shader
+code, strings and font-engine internals are not complete process-heap accounting. Font
 variant keys include catalog identity; clones preserve it unless changing path.
 
 AssetRegistry retains its existing name and low-level Text/Vector cache APIs.
@@ -106,7 +108,7 @@ SDL_image's bundled stb path disables HDR; stb also inspects PNG/JPEG dimensions
 before SDL_image decoding. KTX2/Basis uses pinned libktx, including glTF
 KHR_texture_basisu sources. Packed format/encoding and mip bytes survive CPU
 preparation; GPU upload remains a separate owner-thread phase. Decoders and mesh
-preparation share bounded admission estimates; retained payloads and temporary
+preparation share the rendering ledger through `PreparationBudget`; retained payloads and temporary
 estimates are different measurements. No font or GPU work runs in the importer.
 
 assets::ModelAsset is a preparation definition; scene::ModelAsset is its immutable
@@ -135,6 +137,12 @@ asset ID, definition key and either model or exception_ptr; it is consumed once.
 The app can publishModel into its resource cache and explicitly instantiate at a
 safe scene boundary. This path uses a future slot, not captured app callbacks or
 a second completion queue. Existing UI CompletionQueue still routes UI callbacks.
+
+The future becoming ready does not itself wake AppHost. An on-demand app must
+declare update demand or a polling deadline while a request is pending; otherwise
+publication can wait until an unrelated event or the host's maintenance update.
+Worker paths with a wake endpoint must publish the result before notifying it.
+See [host activity](ACTIVITY.md) for demand and fallback behavior.
 
 cancel discards the slot and requests cooperative stop. Checks surround reads,
 decoding and parsing; a blocking parser/decoder/read is not forcibly interrupted.
@@ -196,3 +204,9 @@ pipelines. These do not establish arbitrary codec security or global memory budg
 Disk watching, dependency-triggered reload, UI serialization, plugins, packing and
 general task graphs remain future choices. Build/source/runtime dependency graphs
 must stay distinct if those are added.
+Preparation reservations are conservative scratch/admission estimates and can
+overlap the lifetime of newly published payload charges. They are not another
+measurement of physical RAM. Packed texture copies acquire their own charge;
+shared handles retain one charge. Externally supplied vectors/surfaces have
+already allocated before adoption; ownership accounting does not retroactively
+bound that caller's allocation. See [RESOURCES.md](../render/RESOURCES.md).

@@ -107,6 +107,8 @@ struct LayerProps {
   LayerCachePolicy cachePolicy{LayerCachePolicy::None};
   float rasterScale{1};
   std::size_t byteLimit{16 * 1024 * 1024};
+  bool
+      useGraphicsScale{}; // content-only layers opt in; protect text by default
 
   void validate() const {
     if (!std::isfinite(rasterScale) || rasterScale <= 0)
@@ -120,10 +122,12 @@ struct LayerPatch {
   Patch<LayerCachePolicy> cachePolicy;
   Patch<float> rasterScale;
   Patch<std::size_t> byteLimit;
+  Patch<bool> useGraphicsScale;
 };
 
 class Layer : public Box {
   LayerProps _props;
+  float _graphicsScale{1};
 
   std::weak_ptr<UIServices::CacheBudget> _budget;
   mutable Connection _reservation;
@@ -145,7 +149,14 @@ protected:
   }
 
   void prepareContent(PrepareContext &context) override {
-    context.pixelScale *= _props.rasterScale;
+    const float scale = _props.useGraphicsScale && context.graphics
+                            ? context.graphics->requested.twoD.rasterScale
+                            : 1;
+    if (scale != _graphicsScale) {
+      _graphicsScale = scale;
+      invalidatePaint();
+    }
+    context.pixelScale *= _props.rasterScale * _graphicsScale;
   }
 
   void paintSubtree(PaintContext &context) const override;

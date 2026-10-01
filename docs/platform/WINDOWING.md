@@ -23,7 +23,7 @@ to supply the shared activation/recovery sequencing tested with fake resources.
 | `AppInfo::window` / `AppWindowProps` | App title, backend-neutral clear color, focusability, visibility, mouse grab, always-on-top; no sizing side effects |
 | `AppInfo::view` / `AppViewPolicy` | Initial size policy, optional preferred window-coordinate size, minimum logical UI size, and app-controlled resizability |
 | `AppInfo::presentation` / `PresentationProps` | App baseline for window mode/display, viewport mapping, and rendering resolution; settings can override it |
-| `WindowState` | Queried native flags, actual position/size, pixel dimensions, display scale and last normal-window bounds |
+| `WindowState` | Queried native flags, actual size, optional desktop position, pixel dimensions, display scale and last normal-window bounds |
 | `WindowMetrics` | Current window-coordinate size, physical drawable size, and OS display scale |
 | `ViewportMapping` | Derived logical viewport, offsets, forward painting scale and inverse input mapping |
 
@@ -44,31 +44,36 @@ Titles are app properties, not flags. Requested modes are not observed state:
 an OS can delay or deny native requests. Geometry/events are re-queried rather
 than treating every requested rectangle as an accomplished result. Normal bounds
 are kept separate from maximized, minimized, fullscreen and fake-fullscreen bounds.
+`actualPosition` and `windowedPosition` are optional: an unavailable global
+position is not the origin and must not be persisted as one. Session schema 2
+stores normal size even when placement cannot be observed; schema 1 coordinates
+remain readable. See [session compatibility](SETTINGS.md#files-and-precedence).
 
 ## Entry and sizing
 
 ```text
 app baseline + project settings + user settings
     -> resolved policy/presentation
-    -> return window to normal mode; apply app window props
+    -> stage preferred/bootstrap size; apply app window props
     -> onEnter: construct/attach UI and load required resources
     -> preferred size, content measurement, or saved normal bounds
-    -> apply requested presentation mode and minimum-size/resizing policy
-    -> normal event/update/render loop
+    -> submit geometry, mode, and minimum-size/resizing policy
+    -> event/update/render loop advances native transition from observations
 ```
 
 | InitialWindowSizing | Behavior |
 |---|---|
 | `Preferred` | Use `AppViewPolicy::preferredWindowSize`, or the host's shared bootstrap size when absent |
 | `FitContent` | Ask `IApp::preferredContentSize(maximum, density)` after onEnter; keep preferred size if it returns nullopt |
-| `RestorePrevious` | Restore that app's saved normal bounds, clamped onto an available work area; use preferred size if none exist |
+| `RestorePrevious` | Restore saved normal size, clamped onto an available work area; restore saved placement only when present and supported; use preferred size if no saved state exists |
 
 The bootstrap comes from the host's initial WindowConfig, not from each app's
 layout arithmetic. Demo and Minesweeper declare FitContent with no preferred
-window size; their trees are the sizing authority. Before onEnter the host applies
-the shared bootstrap (or an explicit preferred override), then replaces it with
-measurement/restoration. Native windows must have a positive size before UI exists;
-this preliminary size is not a second content-size specification.
+window size; their trees are the sizing authority. Before onEnter the host stages
+the bootstrap/preferred size, then replaces it with measurement/restoration when
+available. Measurement is synchronous; only owned numeric values enter the native
+transition. onEnter does not imply that the previous native mode or size has
+already changed. The initial native window has a positive bootstrap size.
 
 An app with a retained UI forwards the query to `UIRoot::preferredSize`. This is
 a bounded loose measurement including box padding/borders; it does not arrange
@@ -102,22 +107,28 @@ Successful saved-position restoration takes precedence over initial centering.
 
 Borderless modes are not SDL fullscreen. Work-area sizing does **not** force a
 taskbar, Dock, Start menu, panel or desktop shell to remain visible: the OS owns
-those policies. Wayland and mobile platforms may restrict placement or modes.
-No portable interface can guarantee exact desktop coordinates everywhere.
+those policies. No portable interface can guarantee exact desktop coordinates
+everywhere. The active SDL video driver determines placement capability; Wayland
+does not advertise global-position queries or placement requests. This concerns
+native window management, not the Vulkan rendering backend: Wayland sessions
+remain usable without pretending a submitted request has moved the window.
 
 `DisplayPreference` chooses `Primary`, `Current`, or `Named`. An unavailable
 named/current display falls back to primary when preferences are applied. Names
 are best-effort hints, not unique stable hardware identities; matching uses the
 first display of that name. Never persist SDL_DisplayID: it is a runtime token.
-Explicit display selection positions the window on that display even when
-`center` is false; `Current` plus `center=false` preserves placement. Changing
+On placement-capable backends, explicit display selection requests placement on
+that display even when `center` is false; `Current` plus `center=false` preserves
+placement. Changing
 apps or explicitly reapplying presentation may center again. Ordinary rendering
 and OS resize events do not issue centering requests.
 
 Queries refresh on window/display events. Reapply presentation after a topology
 change if the OS fallback placement is insufficient; automatic display-mode
-negotiation across hotplug is not a guaranteed contract. Native requests can throw
-on unsupported operations; the host does not silently substitute a different mode.
+negotiation across hotplug is not a guaranteed contract. Invalid preferences or
+unavailable mandatory native modes can be rejected before submission. Unsupported
+placement is distinct from a failed native call; the host does not silently
+substitute a different mode.
 
 ## Layout scale, viewport fit, and raster scale
 
@@ -158,7 +169,7 @@ is not a scene-only resolution slider or a GPU implementation.
 ## Runtime requests and failure boundaries
 
 `AppContext` exposes `windowProps()`, `windowState()`, `windowMetrics()`, `presentation()`,
-`viewPolicy()`, and:
+`viewPolicy()`, `windowRequestStatus()`, `windowPlacementCapabilities()`, and:
 
 - `requestWindowProps(AppWindowProps)` replaces current app window properties without resizing, recentering or changing presentation. Copy windowProps(), modify, then request the replacement.
 - `requestViewPolicy(AppViewPolicy)` replaces the runtime sizing/resizability policy and reapplies its selected sizing behavior to the existing content. This is the explicit route for resizing; it does not reconstruct the app.
@@ -174,16 +185,61 @@ requests expecting all of them to run. Prefer one complete presentation/settings
 value. Runtime presentation/view-policy overrides are not automatically persisted and end at
 the next app switch/settings resolution.
 
-Native transitions are not transactions: a late SDL error may follow an earlier
-successful native change. Such errors currently propagate to the application's
-top-level exception handler. RenderFrame/PaintContext lifetimes and resource RAII
-still apply; a settings screen with recoverable error presentation is not provided.
+SDL window setters submit requests: leaving fullscreen, restoring, resizing,
+and placement can complete later or be denied. Resizing while still fullscreen
+or maximized has no effect. `WindowTransition` therefore waits for normal state
+before geometry, then requests the final mode. Desktop-fullscreen display routing
+runs only if the observed display differs from the target. See SDL's
+[fullscreen](https://wiki.libsdl.org/SDL3/SDL_SetWindowFullscreen),
+[resize](https://wiki.libsdl.org/SDL3/SDL_SetWindowSize), and
+[restore](https://wiki.libsdl.org/SDL3/SDL_RestoreWindow) contracts.
+
+`Window::requestPreferences(WindowRequest)` validates before replacing pending
+work and returns a generation. Omitted normal geometry retains the pending
+request's values, or the last observed normal bounds when no request is pending.
+`requestStatus()` reports the generation, outcome, diagnostic, and optional
+placement result. AppContext exposes the same status. The host logs terminal
+diagnostics; asynchronous failure does not roll back accepted native changes.
+
+| Outcome | Meaning |
+|---|---|
+| `Idle` / `Pending` | No request / transition still being advanced |
+| `Observed` | SDL reported the required geometry, mode and fullscreen display; unsupported optional placement is excluded |
+| `Unconfirmed` | Required observations did not arrive by the deadline, or optional placement failed; not proof of OS denial |
+| `Failed` | A required native operation failed; remaining stages stop |
+| `Cancelled` | Remaining stages were cancelled; already submitted native requests may still take effect |
+
+`advanceTransition()` runs at host-safe boundaries; `transitionWakeAt()` keeps
+pending work progressing during idle periods. Each stage submits at most once.
+The geometry grace period is 250 ms, pending work schedules another poll after
+16 ms, and the observation deadline is five seconds. These bound application
+waiting, not native call duration. The adapter does not call
+[SDL_SyncWindow](https://wiki.libsdl.org/SDL3/SDL_SyncWindow); SDL can still
+synchronize internally during Cocoa Spaces changes. Cancellation and supersession
+do not undo requests already submitted to SDL. Checkpoints preserve a pending
+request; observed normal bounds remain valid even if a later mode request fails.
+
+`placementCapabilities()` distinguishes global placement support from acceptance.
+Wayland exposes no global placement for ordinary toplevel windows; size restoration
+still works without saved coordinates. Borderless display/work-area modes require
+placement and are rejected there before native changes. Desktop-fullscreen output
+selection remains a separate operation. See SDL's
+[Wayland limitations](https://wiki.libsdl.org/SDL3/README-wayland).
+`requestWindowedPosition()` returns `Submitted`, `Unsupported`, or `Failed`.
+Optional placement failure is nonfatal but cannot yield `Observed`.
+`setWindowedPosition()` and `applyPreferences()` are convenience request APIs;
+returning is not a completion guarantee. `applyPreferences()` requires subsequent
+transition advancement, which AppHost supplies.
 
 ## Verification boundary
 
-`ui_viewport`, `ui_presentation_settings`, and `ui_render_backend` cover math,
-measurement, input mapping, parsing/persistence failures, and offscreen software
-resolution scaling. They are UI constituent tests, not game/AppHost smoke tests.
+`window_transitions` covers placement capability, observation-gated ordering,
+supersession/cancellation, bounded waiting and ignored geometry using a synthetic
+clock, with no native window. `ui_viewport`, `ui_presentation_settings`, and
+`ui_render_backend` cover math, measurement, input mapping, session migration,
+and offscreen rendering. The latter also checks adapter supersession, preflight
+failure, cancellation, and preservation of normal geometry after a mode failure.
+They are UI constituent tests, not game/AppHost smoke tests.
 Real multi-monitor, fullscreen, mixed-DPI, taskbar and non-Windows behavior requires
 interactive platform verification; SDL's dummy driver cannot establish it.
 
@@ -211,7 +267,8 @@ and [settings precedence](SETTINGS.md).
 | WindowConfig::clearColor and AppHost's separate color copy | AppWindowProps::clearColor, passed directly into each frame |
 | DisplayState and AppContext's separate windowSize/drawableSize queries | WindowMetrics, including display scale |
 | UISession two-size overload | Explicit WindowMetrics + ViewportProps |
-| Window::setSize / setPosition aliases | setWindowedSize / setWindowedPosition |
+| Window::setSize / setPosition aliases | setWindowedSize for size submission; requestWindowedPosition for explicit placement result |
+| Synchronous Window::applyPreferences completion assumption | requestPreferences(WindowRequest) plus requestStatus/observed WindowState; applyPreferences remains a submission wrapper |
 
 Changing metadata does not reapply presentation, and content sizing does not need
 SDL surface dimensions or application-level color conversions. App configs use

@@ -612,7 +612,13 @@ so it never obscures controls or consumes their entire viewport. The status
 precedes the longer help text. Modal/popup portal ordering is unchanged.
 
 TextEditModel (`ui/TextEdit.hpp`) is SDL-independent. Selections are UTF-8 byte
-offsets at ICU grapheme boundaries. Controls and native adapters exchange UIAction
+offsets at ICU grapheme boundaries. `eraseTo(offset)` deletes from the caret to
+one such boundary, preserving the original selection for a single undo step.
+On macOS, Option selects word navigation/deletion; Command selects clipboard
+shortcuts, Left/Right line edges, Up/Down document edges, and Backspace deletion
+to the visual line start. Shift extends navigation selections. These follow
+[macOS editing shortcuts](https://support.apple.com/en-us/102650).
+Controls and native adapters exchange UIAction
 values through UIRoot::performAction. Native queries never traverse live nodes.
 
 <a id="boundaries"></a>
@@ -843,7 +849,25 @@ Sources: [TextFlow.hpp](../../include/support/TextFlow.hpp),
 
 TextFlowProps is a TextProps/TextPatch group: truncation=None (EllipsisStart,
 EllipsisMiddle, EllipsisEnd), maximumLines=nullopt, ellipsis="…",
-writingMode=HorizontalTb, orientation=Mixed. Invalid UTF-8 is rejected.
+writingMode=HorizontalTb, orientation=Mixed. Invalid UTF-8 and embedded NUL are
+rejected, including in ellipsis strings and when truncation is unnecessary.
+
+Labels, truncation, vertical columns, editor selection and accessibility use one
+extended-grapheme policy: ICU's root-locale character boundaries from the linked
+ICU Unicode data. The shared
+[Unicode.hpp](../../include/support/Unicode.hpp) helpers return UTF-8 byte offsets,
+including both endpoints (`{0}` for empty text), and reject text larger than
+INT32_MAX bytes. Word/line boundaries use the same ICU backend. A dependency
+upgrade may update Unicode rules for all consumers together. Text bytes are
+preserved; boundary analysis does not normalize them. utf8proc supplies scalar
+properties for vertical text, not a second grapheme policy.
+
+SDL delivers UTF-8 input; the application owns editing boundaries. A Unicode
+version change can alter those boundaries (for example, utf8proc 2.12 changed
+Indic segmentation). A single provider keeps labels and editor/accessibility
+offsets consistent. See [Unicode text segmentation](https://www.unicode.org/reports/tr29/),
+[ICU boundary analysis](https://unicode-org.github.io/icu/userguide/boundaryanalysis/),
+and [SDL text input](https://wiki.libsdl.org/SDL3/SDL_TextInputEvent).
 
 Font-size selection precedes truncation. Descending candidate selection uses
 extended grapheme boundaries and actual font-provider shaping; it does not
@@ -1142,11 +1166,15 @@ Dependency pins and linking rules are defined in [CMakeLists.txt](../../CMakeLis
 
 | Dependency | Responsibility |
 |---|---|
-| [utf8proc](https://juliastrings.github.io/utf8proc/) | UTF-8 validation, Unicode properties and extended grapheme boundaries; not glyph shaping |
+| [ICU](https://icu.unicode.org/) | Shared UTF-8 validation and grapheme/word/line boundaries; editor bidi analysis |
+| [utf8proc](https://juliastrings.github.io/utf8proc/) | Scalar decoding and character properties for vertical-text capability checks; not grapheme boundaries or glyph shaping |
 | [pugixml](https://pugixml.org/docs/manual.html) | Parse/copy/edit SVG XML before SDL_image rasterizes it |
 | [Kiwi](https://kiwisolver.readthedocs.io/en/latest/basis/basic_systems.html) | Header-only linear constraints with required/soft strengths in ConstraintLayout |
 
-utf8proc and pugixml are linked statically through playground_ui_resources;
+playground_text provides SDL-independent Unicode and text-flow helpers, with ICU
+linked privately. Both playground_ui_core and playground_ui_resources consume
+this common module. utf8proc is linked privately through playground_sdl;
+pugixml is linked statically through playground_ui_resources;
 playground_constraints compiles the Kiwi-backed solver privately, without its
 Python bindings. Non-template implementations live under `src/`; public APIs
 remain under `include/`. Link playground_ui_core for retained layout/runtime,
@@ -1177,3 +1205,10 @@ Inspiration, not standards-conformance claims or replacements for this contract.
 - [Unicode vertical orientation](https://www.unicode.org/reports/tr50/),
   [pinned Unicode 17 data](https://www.unicode.org/Public/17.0.0/ucd/VerticalOrientation.txt)
 - [SDL_ttf font direction](https://wiki.libsdl.org/SDL3_ttf/TTF_SetFontDirection)
+
+## Shared settings view
+
+`ui::SettingsView` provides theme-aware, grouped graphics/runtime preferences
+with explicit Apply/Save callbacks and live accounting readouts. It can be
+embedded or replaced through `AppHost`'s settings-view factory. See
+[GRAPHICS.md](../platform/GRAPHICS.md) for draft, persistence and input contracts.

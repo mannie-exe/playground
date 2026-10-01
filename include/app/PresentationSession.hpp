@@ -31,6 +31,11 @@ class PresentationSession {
   AppWindowProps _windowProps;
   platform::AppViewPolicy _viewPolicy;
   platform::PresentationProps _presentation;
+  std::optional<math::Vec2i> _stagedSize;
+  std::optional<math::Vec2i> _stagedPosition;
+  std::optional<platform::DisplayPreference> _stagedDisplay;
+  bool _restoreMinimized{};
+  std::optional<platform::WindowMode> _restoreMode;
 
 public:
   using Measure =
@@ -44,6 +49,7 @@ public:
     rendering::RendererRequirements requirements;
     bool hasRenderer;
     WindowState window;
+    std::optional<WindowRequest> pendingWindowRequest;
   };
 
   explicit PresentationSession(WindowConfig window,
@@ -87,8 +93,23 @@ public:
 
   void handleEvent(const SDL_Event &event) { _window.handleEvent(event); }
 
+  bool advanceWindowTransition(platform::WindowTransition::TimePoint now) {
+    return _window.advanceTransition(now);
+  }
+
+  auto windowTransitionWakeAt() const { return _window.transitionWakeAt(); }
+
+  const WindowRequestStatus &windowRequestStatus() const {
+    return _window.requestStatus();
+  }
+
+  auto windowPlacementCapabilities() const {
+    return _window.placementCapabilities();
+  }
+
   Checkpoint checkpoint(rendering::RendererRequirements requirements);
   void restore(const Checkpoint &checkpoint);
+  void restoreWindow(const Checkpoint &checkpoint);
   bool configureRenderer(rendering::RendererPreferences preferences,
                          rendering::RendererRequirements requirements);
   void recover(std::string reason, rendering::RendererRequirements requirements,
@@ -105,6 +126,9 @@ public:
   void fitContent(const Measure &measure);
   void applyPresentation(bool preservePosition = false);
   platform::SavedWindow savedWindow();
+
+private:
+  std::optional<math::Vec2i> measureContent(const Measure &measure) const;
 };
 
 } // namespace playground::app

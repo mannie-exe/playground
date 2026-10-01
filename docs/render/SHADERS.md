@@ -6,17 +6,34 @@ require a shader compiler. Runtime reflection is linked independently of tools.
 
 ## Offline compilation
 
-Choose one host tool, or the optional vendored shadercross build:
+Normal Debug and Release builds automatically compile the pinned shadercross
+CLI and its vendored DXC/LLVM dependencies, then produce SPIR-V and reflection JSON.
+The application uses the compiled shaders; it does not ship or invoke the compiler.
 
-```powershell
-cmake --preset debug -DPLAYGROUND_DXC_EXECUTABLE=C:/tools/dxc.exe -DPLAYGROUND_SHADER_FORMATS=SPIRV
-cmake --build --preset debug --target playground_shaders
+```sh
+cmake --preset debug
+cmake --build --preset debug --target playground_shaders --parallel 4
 ```
 
-Alternatively set `PLAYGROUND_SHADERCROSS_EXECUTABLE` to a host shadercross CLI, or
-`PLAYGROUND_BUILD_SHADERCROSS=ON` to compile its vendored dependencies. Do not choose
-multiple tools. Cross builds require a host executable. Source shadercross includes
-DXC/LLVM and has upstream build prerequisites; it is not fetched by default.
+The first compiler build is substantial. An advanced override can reuse an
+existing shadercross CLI, including its runtime dependencies:
+
+```sh
+cmake --preset release -DPLAYGROUND_SHADERCROSS_EXECUTABLE=/absolute/path/to/shadercross
+```
+
+Leave that setting empty to use the pinned source build. `PLAYGROUND_GPU=OFF`
+is a software-only development escape hatch: it skips the compiler, shader assets,
+MoltenVK, and hardware tests. Both presets default to `ON`; cached overrides
+persist until changed. Runtime renderer selection still prefers GPU and falls back
+to software when the application's requirements allow it. Hardware tests are
+included with GPU support; `ctest --preset debug -LE hardware` excludes them from
+execution. Cross-compilation is not supported.
+
+Shader commands include the source directory for HLSL `#include` resolution.
+On macOS, the pinned shadercross build is patched to honor the parent's deployment
+target. Runtime Vulkan/MoltenVK setup is described in
+[Contributing](../../CONTRIBUTING.md#macos).
 
 `playground_add_shader(name source stage [dependencies...] [NO_INSTALL])` declares
 vertex, fragment, or compute output. Include files must be named dependencies.
@@ -189,7 +206,7 @@ recorded/submitted on the acquiring thread; callbacks cannot move it to workers.
 ## Verification
 
 `shader_contracts` checks malformed input, descriptor sets/counts, stage linking and
-uniform contract failures without a device. Opt-in `gpu_shaders` creates a custom
+uniform contract failures without a device. `gpu_shaders` creates a custom
 pipeline, renders/readbacks pixels, verifies unchanged/rejected/successful reload,
 draws through retained old generations, composes the result into a real frame and
 checks callback/frame-lifetime failures. Missing Vulkan support is a skip, not a

@@ -23,6 +23,9 @@ inline void validateGPUTimingLabel(std::string_view label) {
 struct GPUWorkContext {
   std::optional<math::Vec2i> targetPixels;
   std::optional<math::Vec2i> sourcePixels;
+  std::uint64_t frameId{}; // zero denotes preparation outside an admitted frame
+
+  std::uint64_t workloadId{}, qualityRevision{};
 
   bool operator==(const GPUWorkContext &) const = default;
 };

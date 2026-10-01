@@ -18,6 +18,7 @@ struct SceneViewProps {
   scene::SceneRenderProps::Lighting lighting;
   float exposure{1};
   bool toneMap{};
+  bool adaptiveResolution{true};
 };
 
 struct SceneViewPatch {
@@ -30,7 +31,7 @@ struct SceneViewPatch {
   Patch<scene::TransparentOrder> transparentOrder;
   Patch<scene::SceneRenderProps::Lighting> lighting;
   Patch<float> exposure;
-  Patch<bool> toneMap;
+  Patch<bool> toneMap, adaptiveResolution;
 };
 
 class SceneView final : public Node {
@@ -42,6 +43,8 @@ class SceneView final : public Node {
   std::optional<scene::SceneViewport> _viewport;
   float _renderedAspect{};
   bool _prepared{};
+  rendering::Sampling _sampling{rendering::Sampling::Linear};
+  const std::uint64_t _workload{nextUIWorkId()};
 
 protected:
   layout::MeasureResult

@@ -37,7 +37,7 @@ DifficultyUI::DifficultyUI(MinesweeperBoardProps &draft,
   const auto addStepper = [&](const std::string &name, int value, int minimum,
                               int maximum, ui::Stepper *&stepper,
                               ui::Text *&label,
-                              std::move_only_function<void(int)> changed) {
+                              support::MoveOnlyFunction<void(int)> changed) {
     auto text =
         minesweeper::makeLabel(resources, name + ": " + std::to_string(value),
                                style.labelColor, {312, 44});

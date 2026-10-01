@@ -1,6 +1,8 @@
 #pragma once
 
 #include <format>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -8,6 +10,15 @@
 
 #include <math/GeometryFormatters.hpp>
 #include <platform/Presentation.hpp>
+#include <platform/WindowTransition.hpp>
+
+struct WindowRequestStatus {
+  std::uint64_t generation{};
+  playground::platform::WindowTransitionOutcome outcome{
+      playground::platform::WindowTransitionOutcome::Idle};
+  std::string diagnostic;
+  std::optional<playground::platform::WindowRequestResult> placement;
+};
 
 struct WindowConfig {
   std::string title{"Window"};
@@ -30,7 +41,7 @@ struct WindowConfig {
 struct WindowState {
   std::string title;
   playground::math::Vec2i windowedSize;
-  playground::math::Vec2i windowedPosition;
+  std::optional<playground::math::Vec2i> windowedPosition;
   bool resizable;
   bool fullscreen;
   bool borderless;
@@ -44,7 +55,7 @@ struct WindowState {
   bool mouseGrabbed;
   SDL_DisplayID display;
   playground::math::Vec2i actualSize;
-  playground::math::Vec2i actualPosition;
+  std::optional<playground::math::Vec2i> actualPosition;
   playground::math::Vec2i drawableSize;
   float displayScale;
 };
@@ -79,11 +90,16 @@ struct std::formatter<WindowState> : std::formatter<std::string_view> {
         ".minimized = {}, .transparent = {}, .mouseGrabbed = {}, "
         ".display = {}, .actualSize = {}, .actualPosition = {}, "
         ".drawableSize = {}, .displayScale = {}}}",
-        state.title, state.windowedSize, state.windowedPosition,
+        state.title, state.windowedSize,
+        state.windowedPosition ? std::format("{}", *state.windowedPosition)
+                               : "unavailable",
         state.resizable, state.fullscreen, state.borderless, state.alwaysOnTop,
         state.focusable, state.highPixelDensity, state.hidden, state.maximized,
         state.minimized, state.transparent, state.mouseGrabbed, state.display,
-        state.actualSize, state.actualPosition, state.drawableSize,
+        state.actualSize,
+        state.actualPosition ? std::format("{}", *state.actualPosition)
+                             : "unavailable",
+        state.drawableSize,
         state.displayScale);
   }
 };

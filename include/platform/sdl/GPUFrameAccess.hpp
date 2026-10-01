@@ -21,7 +21,7 @@ struct GPURecordingContext {
   // Declare every sampled project image before issuing native draw calls.
   // This keeps pooled textures leased through recording and GPU completion.
   void use(const GPUImage &image) const {
-    device.recordUse(commands, image._use);
+    device.recordUse(commands, image._texture.use());
   }
 };
 

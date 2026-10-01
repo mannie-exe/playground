@@ -37,8 +37,6 @@ class MinesweeperApp : public IApp {
 
 public:
   MinesweeperApp();
-  void onActions(AppContext &,
-                 const playground::input::InputSnapshot &) override;
   static AppInfo staticInfo();
 
   AppInfo info() const override { return staticInfo(); }

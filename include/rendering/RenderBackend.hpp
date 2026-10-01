@@ -11,6 +11,7 @@
 #include <rendering/GPUTiming.hpp>
 #include <rendering/PaintContext.hpp>
 #include <rendering/PaintWork.hpp>
+#include <rendering/RenderRuntime.hpp>
 #include <rendering/RenderSettings.hpp>
 #include <rendering/RendererTypes.hpp>
 #include <rendering/ResourceDomain.hpp>
@@ -28,6 +29,7 @@ enum class PresentationOutcome { Submitted, Skipped };
 struct RenderFrameProps {
   math::ColorRGBA8 clearColor;
   RenderSettings settings;
+  FrameLease admission;
 };
 
 // A frame borrows its backend. Destroy it before the backend/window, and before
@@ -37,9 +39,13 @@ struct RenderFrameProps {
 class RenderFrame {
 protected:
   RenderFrame() = default;
+  FrameLease _admission;
 
 public:
   virtual ~RenderFrame() = default;
+
+  FrameId frameId() const noexcept { return _admission ? _admission->id : 0; }
+
   virtual rendering::PaintContext &paint2D() = 0;
 
   // Optional capability, not a no-op renderer. Check requirements before entry.
@@ -67,8 +73,12 @@ public:
   // backend instance; never infer completion from a successful submission.
   virtual std::uint64_t completedWork() { return 0; }
 
+  virtual std::size_t pendingWork() const { return 0; }
+
   // Failed native domains reject new work even while retained handles survive.
   virtual void invalidate() noexcept {}
+
+  virtual void trimUnused() {}
 
   virtual bool supportsGPUTiming() const noexcept { return false; }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rendering/AllocationLimits.hpp>
+#include <rendering/ResourceLedger.hpp>
 
 namespace playground::rendering {
 
@@ -9,8 +10,13 @@ namespace playground::rendering {
 struct RenderBackendProps {
   AllocationLimits allocations;
   bool gpuDebug{};
+  std::shared_ptr<ResourceLedger> resources{defaultResourceLedger()};
 
-  void validate() const { allocations.validate(); }
+  void validate() const {
+    allocations.validate();
+    if (!resources)
+      throw std::invalid_argument("Backend requires a resource ledger");
+  }
 
   bool operator==(const RenderBackendProps &) const = default;
 };

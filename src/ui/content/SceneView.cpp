@@ -43,10 +43,23 @@ void SceneView::prepareContent(PrepareContext &context) {
   if (!context.scenes)
     throw std::logic_error(
         "SceneView requires a frame with scene3D capability");
+  const float scale =
+      context.graphics
+          ? (_props.adaptiveResolution
+                 ? context.graphics->sceneScale
+                 : context.graphics->requested.threeD.resolutionScale)
+          : 1;
+  const auto sampling = context.graphics
+                            ? context.graphics->requested.threeD.reconstruction
+                            : rendering::Sampling::Linear;
+  if (sampling != _sampling) {
+    _sampling = sampling;
+    invalidatePaint();
+  }
   const auto viewport = scene::resolveViewport(
       _props.camera,
       {content_detail::contentBounds(bounds(), contentInsets()),
-       context.pixelScale, _props.resolutionScale, _props.aspectRatio});
+       context.pixelScale, _props.resolutionScale * scale, _props.aspectRatio});
   if (!viewport) {
     _image.reset();
     _viewport.reset();
@@ -57,9 +70,14 @@ void SceneView::prepareContent(PrepareContext &context) {
   const auto pixels = viewport->pixelSize;
   const auto imageDomain = context.images ? context.images->resourceDomain()
                                           : rendering::ResourceDomainId::cpu();
-  const scene::SceneRenderProps view{viewport->camera,  pixels,
-                                     _props.clearColor, _props.lighting,
-                                     _props.exposure,   _props.toneMap};
+  if (_rendererDomain != context.scenes->resourceDomain() ||
+      _imageDomain != imageDomain)
+    _image.reset(); // Old-domain output cannot be reused during replacement.
+  scene::SceneRenderProps view{viewport->camera,  pixels,
+                               _props.clearColor, _props.lighting,
+                               _props.exposure,   _props.toneMap};
+  view.workloadId = _props.adaptiveResolution ? _workload : 0;
+  view.qualityRevision = context.graphics ? context.graphics->revision : 0;
   if (_image && _renderedRevision == _props.scene->revision() &&
       _rendererDomain == context.scenes->resourceDomain() &&
       _imageDomain == imageDomain &&
@@ -88,7 +106,7 @@ void SceneView::paint(PaintContext &context) const {
     throw std::logic_error("SceneView must be prepared before painting");
   if (_image && _viewport)
     context.drawImage(_image, {{}, _image->pixelSize()},
-                      _viewport->contentBounds, {});
+                      _viewport->contentBounds, {.sampling = _sampling});
 }
 
 void SceneView::setProps(SceneViewProps props) {
@@ -115,7 +133,9 @@ void SceneView::applyPatch(const SceneViewPatch &patch) {
                                         defaults.transparentOrder),
        patch.lighting.appliedTo(_props.lighting, defaults.lighting),
        patch.exposure.appliedTo(_props.exposure, defaults.exposure),
-       patch.toneMap.appliedTo(_props.toneMap, defaults.toneMap)});
+       patch.toneMap.appliedTo(_props.toneMap, defaults.toneMap),
+       patch.adaptiveResolution.appliedTo(_props.adaptiveResolution,
+                                          defaults.adaptiveResolution)});
 }
 
 } // namespace playground::ui

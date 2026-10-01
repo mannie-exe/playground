@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include <support/Unicode.hpp>
+
 namespace playground::ui {
 
 enum class TextTruncation { None, EllipsisStart, EllipsisMiddle, EllipsisEnd };
@@ -22,16 +24,17 @@ struct TextFlowProps {
   bool operator==(const TextFlowProps &) const = default;
 };
 
-// Byte offsets are returned only at extended grapheme cluster boundaries.
+// Shared ICU extended grapheme policy; UTF-8 byte offsets, no embedded NUL.
 std::vector<std::size_t> graphemeBoundaries(std::string_view value);
 
 template <typename Fits>
 std::string truncateText(std::string_view value, const TextFlowProps &props,
                          Fits fits) {
+  support::validateTextUTF8(value);
+  support::validateTextUTF8(props.ellipsis);
   if (props.truncation == TextTruncation::None || fits(value))
     return std::string{value};
   const auto boundaries = graphemeBoundaries(value);
-  (void)graphemeBoundaries(props.ellipsis);
   if (!fits(props.ellipsis))
     return {};
   // Shaping can change at a join: do not assume monotonic character widths.

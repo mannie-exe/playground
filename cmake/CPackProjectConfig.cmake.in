@@ -1,0 +1,11 @@
+# Debug runtimes are not redistributable. Development installs remain supported.
+if(NOT CPACK_BUILD_CONFIG)
+    set(CPACK_BUILD_CONFIG "@CMAKE_BUILD_TYPE@")
+endif()
+if(NOT CPACK_BUILD_CONFIG MATCHES "^(Release|RelWithDebInfo|MinSizeRel)$")
+    message(FATAL_ERROR "Packages require a release configuration; use cpack --preset release")
+endif()
+if(NOT CPACK_BUILD_CONFIG STREQUAL "@CMAKE_BUILD_TYPE@")
+    message(FATAL_ERROR "Package configuration must match this single-configuration build (@CMAKE_BUILD_TYPE@)")
+endif()
+set(CPACK_PACKAGE_FILE_NAME "playground-@PROJECT_VERSION@-@PLAYGROUND_TARGET@-${CPACK_BUILD_CONFIG}")

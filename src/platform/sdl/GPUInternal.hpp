@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -33,13 +34,10 @@ class ColorTarget {
 
   void beginWrite() noexcept { _writeStart = lastSubmission(); }
 
-  void reserve(std::shared_ptr<void> allocation) {
-    _image->_use->allocation = std::move(allocation);
-  }
-
 public:
-  ColorTarget(GPUDeviceHandle device, math::Vec2i size)
-      : _image{new GPUImage{std::move(device), size}} {}
+  ColorTarget(GPUDeviceHandle device, math::Vec2i size,
+              rendering::ResourceLedger::Token reservation = {})
+      : _image{new GPUImage{std::move(device), size, std::move(reservation)}} {}
 
   ColorTarget(const ColorTarget &) = delete;
   ColorTarget &operator=(const ColorTarget &) = delete;
@@ -66,33 +64,52 @@ public:
 
 // Native attachment only: depth has no RGB encoding/alpha and is not
 // PaintImage.
-Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size);
+Texture createDepthTarget(GPUDeviceHandle device, math::Vec2i size,
+                          rendering::ResourceLedger::Token reservation = {});
 
-// Reuses a transfer allocation. SDL cycling protects previously encoded
-// uploads.
+// Explicit backing slots: never ask SDL to create hidden cycling allocations.
+// A slot is reusable only after all recorded/submitted leases retire.
 class UploadStream {
+  struct Slot {
+    Transfer transfer;
+    Uint32 capacity;
+  };
+
   GPUDeviceHandle _device;
-  Transfer _transfer;
-  Uint32 _capacity{};
+  std::vector<Slot> _slots;
+  std::size_t _current{};
 
 public:
   explicit UploadStream(GPUDeviceHandle device) : _device{std::move(device)} {}
 
   void *map(std::size_t bytes);
 
-  void unmap() noexcept {
-    SDL_UnmapGPUTransferBuffer(_device->get(), _transfer.get());
+  void unmap() noexcept { SDL_UnmapGPUTransferBuffer(_device->get(), get()); }
+
+  SDL_GPUTransferBuffer *get() const noexcept {
+    return _slots[_current].transfer.get();
   }
 
-  SDL_GPUTransferBuffer *get() const noexcept { return _transfer.get(); }
+  Uint32 capacity() const noexcept {
+    return _slots.empty() ? 0 : _slots[_current].capacity;
+  }
 
-  Uint32 capacity() const noexcept { return _capacity; }
+  void record(SDL_GPUCommandBuffer *commands) {
+    _device->recordUse(commands, _slots[_current].transfer.use());
+  }
+
+  void trim();
 };
 
 class StreamBuffer {
+  struct Slot {
+    Buffer buffer;
+    Uint32 capacity;
+  };
+
   GPUDeviceHandle _device;
   UploadStream _upload;
-  Buffer _buffer;
+  std::vector<Slot> _slots;
   SDL_GPUBufferUsageFlags _usage;
   Uint32 _capacity{};
 
@@ -104,17 +121,18 @@ public:
                        std::span<const std::byte> bytes);
 
   Uint32 capacity() const noexcept { return _capacity; }
+
+  void trim();
 };
 
 struct DepthTarget {
   math::Vec2i size;
   Texture texture;
-  rendering::ResourceLease use;
 
-  bool isLeased() const noexcept { return use.use_count() > 1; }
+  bool isLeased() const noexcept { return texture.use().use_count() > 1; }
 
   rendering::SubmissionId lastSubmission() const noexcept {
-    return use->lastSubmission;
+    return texture.use()->lastSubmission;
   }
 };
 
@@ -146,22 +164,34 @@ class TargetPool {
   std::vector<ColorEntry> _colors;
   std::vector<DepthEntry> _depths;
   TargetPoolStats _stats;
-  rendering::AllocationBudget _allocations;
 
   bool makeRoom(std::size_t bytes);
-  std::shared_ptr<void> reserve(std::size_t bytes);
+  void makeAllocationRoom(std::size_t bytes);
 
 public:
-  explicit TargetPool(GPUDeviceHandle device)
-      : _device{std::move(device)},
-        _allocations{_device->limits().maxLivePoolBytes} {}
+  explicit TargetPool(GPUDeviceHandle device) : _device{std::move(device)} {}
 
-  std::shared_ptr<ColorTarget> color(math::Vec2i size);
-  std::shared_ptr<DepthTarget> depth(math::Vec2i size);
+  std::shared_ptr<ColorTarget>
+  color(math::Vec2i size, std::string_view context = "GPU pooled color target",
+        rendering::ResourceLedger::Token reservation = {});
+  std::shared_ptr<DepthTarget>
+  depth(math::Vec2i size, rendering::ResourceLedger::Token reservation = {});
+
+  struct SceneTargets {
+    std::shared_ptr<ColorTarget> color, output;
+    std::shared_ptr<DepthTarget> depth;
+  };
+
+  SceneTargets sceneTargets(math::Vec2i size, bool postProcess);
 
   const TargetPoolStats &stats() const noexcept { return _stats; }
 
-  std::size_t liveBytes() const noexcept { return _allocations.bytes(); }
+  std::size_t liveBytes() const {
+    return _device->resources()
+        ->snapshot()
+        .kinds[static_cast<std::size_t>(rendering::ResourceKind::Target)]
+        .bytes;
+  }
 
   void trimAged();
   void trim();

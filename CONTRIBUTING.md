@@ -11,15 +11,139 @@ environment so MSVC and the Windows SDK can be discovered.
 
 ```powershell
 cmake --preset debug
-cmake --build --preset debug
+cmake --build --preset debug --parallel 4
+ctest --preset debug
 cmake --install build/debug
 ```
 
+Both presets include GPU shaders, software fallback, and all module tests. CMake
+fetches pinned dependencies, including ICU; no system ICU installation is needed.
+The first build compiles shadercross's substantial DXC/LLVM toolchain. Unix hosts
+also need GNU Make for ICU; the shader toolchain needs Python 3.
+
+A preset selects a saved configuration and its build directory. A **target** is a
+named build product or task; omitting `--target` builds the application and tests.
+`--parallel 4` allows four build jobs. CTest runs already-built tests; it does not
+compile them. `-DNAME=value` changes a cached setting until you change it again.
+
 Install assembles `dist/debug` with runtime dependencies and assets. It does not
 install development tests. `release` is a separate configure/build preset.
+Configuration detects a native `windows`, `macos`, or `linux` target with an
+`amd64` or `arm64` CPU. The compiler must match the host; cross-compilation,
+universal binaries, 32-bit targets, and multi-configuration generators are not
+supported. Use the native developer shell/toolchain and the Ninja presets.
 Do not check in build products, compile_commands.json, downloaded dependencies,
 or editor-specific absolute paths. Do not change clangd/editor settings just to
 silence a source error.
+
+### Focused build commands
+
+```sh
+# Build only the application, or only the test executables.
+cmake --build --preset debug --target playground --parallel 4
+cmake --build --preset debug --target playground_tests --parallel 4
+# Compile the UI documentation examples.
+cmake --build --preset debug --target playground_docs_check
+# Run tests without hardware, or just one module.
+ctest --preset debug -LE hardware
+ctest --preset debug -L ui
+# List available presets, build tasks, and tests.
+cmake --list-presets=all
+cmake --build --preset debug --target help
+ctest --preset debug -N
+# Remove compiled outputs (keeps configuration and dependency downloads).
+cmake --build --preset debug --target clean
+```
+
+For constrained development only, `cmake --preset debug -DPLAYGROUND_GPU=OFF`
+skips the shader compiler, shaders, MoltenVK, and hardware tests. Restore the
+normal build with `cmake --preset debug -DPLAYGROUND_GPU=ON`. Software-only builds
+cannot run GPU-required apps such as Demo 3D. `-DPLAYGROUND_BUILD_TESTS=OFF`
+omits all test executables; its default is `ON`. To reuse an existing shadercross
+compiler across build directories, see [shader tools](docs/render/SHADERS.md#offline-compilation).
+These are developer overrides; neither is needed for the normal workflows.
+
+### Portable release archives
+
+Configure, build, and test Release before packaging:
+
+```sh
+cmake --preset release
+cmake --build --preset release --parallel 4
+ctest --preset release
+cpack --preset release
+```
+
+Set `PLAYGROUND_VERSION=major.minor.patch` when configuring a release; `0.0.0`
+is the development default. CPack reuses the install rules and creates an OS/CPU
+and configuration-labelled ZIP (Windows) or tar.gz (macOS/Linux), plus a SHA-256
+checksum, under `dist/packages`. Packaging does not build, test, sign for public
+distribution, or publish. Debug configurations cannot be packaged; debug installs
+remain available for local development.
+
+`share/playground/build-info.json` records the version, configuration, target,
+compiler, available renderer implementations, and bundled MoltenVK version.
+It describes the build, not runtime GPU availability or an update feed.
+Renderer preferences remain independent of OS/CPU selection. Demo 3D requires
+a build with compiled shaders.
+
+Windows archives include dependency DLLs and, with MSVC, the toolchain's release
+CRT redistributables beside the executable. Linux archives include project-built
+libraries but rely on the host distribution's system libraries and Vulkan driver;
+they are not guaranteed to work across distributions or older glibc/libstdc++
+versions. Validate on each intended Linux distribution. Windows/Linux GPU drivers
+remain system-managed. Extract into a new directory when updating, keeping the
+complete directory tree; user preferences are stored separately by SDL.
+
+### macOS
+
+The project targets macOS 26.0 or later. Use Xcode's C++23 compiler/SDK,
+CMake >=4.4, Ninja, Python 3, GNU Make, and Git LFS. Fetch LFS assets before asset
+tests. The first configure needs network access; later runs reuse the
+checksum-verified CPM bootstrap and cached dependency sources. SDL must be the
+pinned, patched build. ICU is built locally by CMake.
+
+GPU-enabled macOS builds download the checksum-pinned public-API MoltenVK 1.4.2
+runtime, select the native CPU slice, and place it in `Frameworks` beside `bin`.
+SDL finds this path automatically in both build and install trees; users do not
+need Homebrew, a Vulkan SDK, or `SDL_VULKAN_LIBRARY`. An explicitly set loader hint
+still overrides SDL's search for development. The application defaults MoltenVK
+logging to errors and warnings (`MVK_CONFIG_LOG_LEVEL=2`); an explicitly set
+environment value takes precedence:
+
+```sh
+git lfs pull
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+cmake --install build/debug
+./dist/debug/bin/playground
+```
+
+Demo 3D requires packaged SPIR-V shaders, a working Vulkan GPU device, and linear
+floating-point composition with metallic-roughness materials. The software
+renderer cannot satisfy those requirements. SDL also supports a native Metal
+backend, but this project does not package Metal shaders or expose that backend.
+See [SDL's Vulkan loading rules](https://wiki.libsdl.org/SDL3/SDL_Vulkan_LoadLibrary)
+and [MoltenVK](https://github.com/KhronosGroup/MoltenVK#readme).
+
+Install assembles a relocatable `bin`/`lib` directory, rewrites copied dylib
+references, and applies ad-hoc signatures. PNG support is linked statically into
+SDL_image; the locally built ICU libraries and full notices are copied.
+MoltenVK and its third-party notices are included in GPU-enabled installs.
+The portable install uses ad-hoc signatures for local use; these do not establish
+a public Developer ID identity or notarization.
+
+Run hardware and native-window tests in a logged-in graphical session; skipped
+hardware tests establish no device coverage. Repeat release validation with the
+Release build. Fullscreen/Spaces, mixed-DPI displays, VoiceOver, IME, clipboard,
+and appearance/focus changes require interactive checks. See
+[window contracts](docs/platform/WINDOWING.md) and SDL's
+[macOS guidance](https://wiki.libsdl.org/SDL3/README-macos).
+
+`support::MoveOnlyFunction` aliases `std::move_only_function` where available and
+provides the project's unqualified/`noexcept` callback signatures on older libc++.
+Use it consistently for move-only callbacks; do not add declarations to `std`.
 
 ### Headers, implementations, and editor commands
 
@@ -48,7 +172,8 @@ private `src` headers. Keep default arguments on declarations, not definitions.
 
 Register implementation files in `cmake/Modules.cmake` (or the application target
 for app-specific code). Link the module providing an API, not just its external
-dependencies: `playground_math`, `playground_runtime`, `playground_assets`,
+dependencies: `playground_math`, `playground_runtime`, `playground_text`,
+`playground_assets`,
 `playground_rendering`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
 `playground_ui_resources`, or `playground_sdl`. Use PUBLIC requirements for public
 headers, PRIVATE for implementation-only dependencies. Template and constexpr
@@ -112,8 +237,8 @@ model/resources explicitly; rebuilding nodes must not reset application state.
 Do not add document apps, disk watchers or executable discovery implicitly.
 
 The `assets` and `runtime` test groups cover catalog/decoder/reconstruction and
-bounded execution. Their aggregates are `playground_assets_tests` and
-`playground_runtime_tests`. Use deterministic barriers/stop-aware gates, not sleeps.
+bounded execution. Select them with CTest labels `assets` and `runtime`. Use
+deterministic barriers/stop-aware gates, not sleeps.
 Test admission refusal, supersession, cancellation, shutdown and failed publication.
 These are constituent tests, not game-rule tests.
 
@@ -161,12 +286,12 @@ Host transition ordering may be tested through the narrow operations in
 `app/HostTransitions.hpp`, which AppHost also calls. Use fake apps/backends to
 verify ownership, rollback, command suppression and recovery without constructing
 AppHost or touching user settings. Native submit failures use GPUCommandAPI's
-consuming submit boundary in opt-in GPU tests, never a forced driver reset.
+consuming submit boundary in GPU tests, never a forced driver reset.
 
 ### Commands
 
 ```powershell
-cmake --preset debug -DPLAYGROUND_BUILD_TESTS=ON
+cmake --preset debug
 cmake --build --preset debug --target playground_tests
 
 # Fast development pass: omit explicitly labeled stress tests.
@@ -181,14 +306,15 @@ ctest --test-dir build/debug -N
 ctest --test-dir build/debug --output-on-failure
 ```
 
-Build-only aggregate targets also exist: `playground_rendering_tests`, `playground_math_tests`,
-`playground_layout_tests` and `playground_ui_tests`.
+`playground_tests` is the single test-build aggregate. Separate executables keep
+failures isolated and allow CTest to filter by name or module label.
 Use `cmake --build --preset debug --target playground_docs_check` after changing
 the UI guide or its APIs. This extracts its additive C++ blocks into the build
 tree and compiles them together; it does not add/install an example program or
 establish runtime correctness. Keep fragments additive and compile-valid.
 Individual test executables use `playground_<test-name>_tests`.
-The UI aggregate includes its stress executable; `-LE stress` controls execution.
+The aggregate includes stress and hardware tests; `-LE stress` or `-LE hardware`
+filters execution without changing the build.
 
 Release checks should use `cmake --preset release`, build the desired target with
 `--preset release`, and run `ctest --test-dir build/release ...`. Do not use plain
@@ -208,16 +334,15 @@ Label by module (`math`, `layout`, `ui`) and useful feature (`input`,
 `cache`, `collections`, etc.). A label may belong to more than one test; it is not
 a dependency declaration. Timeouts catch hangs, not performance regressions.
 Renderer tests use the `rendering` module label and link playground_rendering;
-hardware tests must be explicitly opt-in, not silently run as ordinary UI tests.
-Use `-DPLAYGROUND_GPU_TESTS=ON` with compiled SPIR-V shaders to enable `gpu_device`
-and `gpu_shaders`/`gpu_materials` (Vulkan only). These are renderer-module readback/lifetime
-checks, not program smoke tests. Unsupported drivers return skip code 77; a
+hardware tests carry the `hardware` label and are included by default: `gpu_device`,
+`gpu_shaders`, `gpu_materials`, and `gpu_timestamp_native` (Vulkan only). These are
+renderer-module readback/lifetime checks, not program smoke tests. Unsupported drivers return skip code 77; a
 supported device failing an assertion is a failure, not a skip. Report shader
 compilation and each tested driver separately. Software-only builds remain valid.
 Do not assert wall-clock speed in ordinary unit tests.
 
 Texture/material changes should run texture_materials, software_materials, animation, material_assets,
-model_import and (opt-in Vulkan) gpu_materials. The latter reads back PBR output;
+model_import and (Vulkan) gpu_materials. The latter reads back PBR output;
 it is a renderer constituent test, not a Demo 3D application smoke test.
 Use synthetic clips to test interpolation, identity and stale targets independently
 of downloaded assets. Keep asset authors, source URLs, license files and hashes in
@@ -347,9 +472,10 @@ the current scope; building the application still verifies that its consumers co
 `cmake/Accessibility.cmake` imports the official checksum-pinned AccessKit C
 0.23.1 desktop binaries. Native adapters are private to playground_sdl; core UI
 headers must not expose AccessKit types. ICU uc/i18n/data are implementation-only
-dependencies of playground_ui_core. MSVC x64/ARM64 use pinned ICU 78.3 archives;
-other desktop toolchains require an installed ICU >=78 development package.
-Windows installation copies the ICU DLLs and both dependencies' licenses.
+dependencies of playground_text and playground_ui_core. `cmake/ICU.cmake` pins
+ICU 78.3: Windows uses official MSVC x64/ARM64 binaries; macOS/Linux build shared
+libraries from the official source archive inside the build directory. Install
+includes the runtime libraries and full license notices on every platform.
 The prebuilt AccessKit package does not require a local Rust build.
 
 Appearance observation adds AppKit on macOS and `dbus-1` development headers via
@@ -375,7 +501,7 @@ SDL and SDL_ttf are pinned and receive checked-in configure-time patches under
 `cmake/patches`; `cmake/SDLTimestamps.cmake` integrates the Vulkan timestamp
 extension. Never fix only the downloaded `_deps` copy. Dependency upgrades must
 review patch guards, repeat configuration to check idempotence, and run the
-focused `gpu_timing`/`text_pixels` tests plus opt-in native GPU tests. Run
+focused `gpu_timing`/`text_pixels` tests plus native GPU tests. Run
 `gpu_timestamp_native` for profiling changes: command-buffer reuse and runtime
 profiling toggles must work with GPU debugging both disabled and enabled. The timestamp
 table is a versioned project extension, not an upstream SDL API. CPU timing and

@@ -34,6 +34,15 @@ const WindowState &AppContext::windowState() const {
   return _host.windowState();
 }
 
+const WindowRequestStatus &AppContext::windowRequestStatus() const {
+  return _host.windowRequestStatus();
+}
+
+playground::platform::WindowPlacementCapabilities
+AppContext::windowPlacementCapabilities() const {
+  return _host.windowPlacementCapabilities();
+}
+
 const AppWindowProps &AppContext::windowProps() const {
   return _host.windowProps();
 }
@@ -127,4 +136,33 @@ void AppContext::requestUserSettings(
   _host.request({.type = AppCommandType::SetUserSettings,
                  .settings = std::move(settings),
                  .persist = persist});
+}
+
+playground::rendering::RenderRuntimeSnapshot
+AppContext::renderRuntimeState() const {
+  return _host.renderRuntimeState();
+}
+
+void AppContext::requestRenderRuntime(
+    playground::rendering::RenderRuntimePatch patch) {
+  _host.requestRenderRuntime(std::move(patch));
+}
+
+playground::rendering::RenderTelemetrySnapshot
+AppContext::renderTelemetry() const {
+  return _host.renderTelemetry();
+}
+
+const playground::rendering::ResolvedGraphicsState &
+AppContext::graphicsState() const {
+  return _host.graphicsState();
+}
+
+void AppContext::requestGraphics(
+    playground::rendering::GraphicsSettings settings, bool persist) {
+  _host.requestGraphics(std::move(settings), persist);
+}
+
+void AppContext::requestSettings(bool visible) {
+  _host.requestSettings(visible);
 }

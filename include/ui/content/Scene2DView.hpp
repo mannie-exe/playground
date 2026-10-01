@@ -11,12 +11,14 @@ struct Scene2DViewProps {
   // Maps scene coordinates into this node's logical content box.
   math::Transform2D camera;
   math::Size2 preferredSize{320, 240};
+  bool useGraphicsSampling{true};
 };
 
 struct Scene2DViewPatch {
   Patch<std::shared_ptr<const scene::Scene2D>> scene;
   Patch<math::Transform2D> camera;
   Patch<math::Size2> preferredSize;
+  Patch<bool> useGraphicsSampling;
 };
 
 class Scene2DView final : public Node {
@@ -25,6 +27,7 @@ class Scene2DView final : public Node {
   std::optional<std::uint64_t> _preparedRevision;
   rendering::ResourceDomainId _imageDomain;
   bool _prepared{};
+  rendering::Sampling _sampling{rendering::Sampling::Linear};
 
 protected:
   layout::MeasureResult

@@ -6,7 +6,7 @@
 namespace playground::ui {
 
 TimerHandle Scheduler::schedule(double delay,
-                                std::move_only_function<void()> callback,
+                                support::MoveOnlyFunction<void()> callback,
                                 double interval) {
   if (!std::isfinite(delay) || delay < 0 || !std::isfinite(interval) ||
       interval < 0 || !callback || !std::isfinite(_now + delay))

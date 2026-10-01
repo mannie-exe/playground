@@ -25,7 +25,6 @@ struct GPURecordingContext;
 class GPUTextureData final {
   GPUDeviceHandle _device;
   GPUTextureResource _texture;
-  rendering::ResourceLease _use;
   std::size_t _bytes{};
 
 public:
@@ -46,12 +45,13 @@ class GPUImage final : public rendering::PaintImage {
   rendering::AlphaMode _alpha;
   rendering::ColorEncoding _encoding;
   std::size_t _bytesPerPixel{4};
-  rendering::ResourceLease _use;
 
-  GPUImage(GPUDeviceHandle device, math::Vec2i size);
+  GPUImage(GPUDeviceHandle device, math::Vec2i size,
+           rendering::ResourceLedger::Token reservation = {});
 
 public:
-  GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels);
+  GPUImage(GPUDeviceHandle device, const rendering::RGBA8Image &pixels,
+           rendering::ResourceLedger::Token uploadReservation = {});
   ~GPUImage() override = default;
   GPUImage(const GPUImage &) = delete;
   GPUImage &operator=(const GPUImage &) = delete;
@@ -66,10 +66,10 @@ public:
 
   const GPUDeviceHandle &device() const noexcept { return _device; }
 
-  bool isLeased() const noexcept { return _use.use_count() > 1; }
+  bool isLeased() const noexcept { return _texture.use().use_count() > 1; }
 
   rendering::SubmissionId lastSubmission() const noexcept {
-    return _use->lastSubmission;
+    return _texture.use()->lastSubmission;
   }
 
   rendering::AlphaMode alphaMode() const noexcept override { return _alpha; }
@@ -112,6 +112,7 @@ public:
   rendering::PaintImageHandle
   prepare(rendering::PaintImageHandle source) override;
   void prune();
+  void trimUnused();
 
   std::size_t residentBytes() const noexcept { return _residentBytes; }
 };

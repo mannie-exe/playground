@@ -1,5 +1,6 @@
 #include <stdexcept>
 
+#include <rendering/ResourceLedger.hpp>
 #include <ui/containers/Boundaries.hpp>
 
 namespace playground::ui {
@@ -65,7 +66,8 @@ void Layer::paintSubtree(PaintContext &context) const {
     Box::paintSubtree(context);
     return;
   }
-  const auto scale = context.pixelScale() * _props.rasterScale;
+  const auto scale =
+      context.pixelScale() * (_props.rasterScale * _graphicsScale);
   const double bytes = std::ceil(static_cast<double>(bounds.w()) * scale.x) *
                        std::ceil(static_cast<double>(bounds.h()) * scale.y) *
                        context.captureBytesPerPixel();
@@ -88,8 +90,26 @@ void Layer::paintSubtree(PaintContext &context) const {
       reservation =
           Connection{[budget, count]() noexcept { budget->used -= count; }};
     }
-    auto cache = context.capture(
-        bounds, scale, [this](PaintContext &p) { Box::paintSubtree(p); });
+    rendering::PaintImageHandle cache;
+    bool recordingStarted{};
+    const auto uncached = [&] {
+      if (recordingStarted)
+        throw; // Never replay partially recorded content.
+      reservation.disconnect();
+      Box::paintSubtree(context);
+    };
+    try {
+      cache = context.capture(bounds, scale, [&](PaintContext &p) {
+        recordingStarted = true;
+        Box::paintSubtree(p);
+      });
+    } catch (const rendering::ResourcePressure &) {
+      uncached();
+      return;
+    } catch (const rendering::ResourceAllocationFailure &) {
+      uncached();
+      return;
+    }
     if (!cache || !math::isFinite(cache->pixelSize()) ||
         !math::hasArea(cache->pixelSize()))
       throw std::runtime_error("Paint backend returned an invalid layer image");
@@ -124,7 +144,9 @@ void Layer::applyPatch(const LayerPatch &p) {
   const LayerProps d;
   setProps({p.cachePolicy.appliedTo(_props.cachePolicy, d.cachePolicy),
             p.rasterScale.appliedTo(_props.rasterScale, d.rasterScale),
-            p.byteLimit.appliedTo(_props.byteLimit, d.byteLimit)});
+            p.byteLimit.appliedTo(_props.byteLimit, d.byteLimit),
+            p.useGraphicsScale.appliedTo(_props.useGraphicsScale,
+                                         d.useGraphicsScale)});
 }
 
 std::size_t Layer::estimatedCacheBytes() const noexcept {

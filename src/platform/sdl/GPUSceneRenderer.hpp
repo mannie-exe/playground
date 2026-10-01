@@ -71,6 +71,14 @@ class GPUSceneRenderer final : public scene::SceneRenderer {
 public:
   explicit GPUSceneRenderer(PaintDevice &device);
 
+  void trimUnused() {
+    _meshes.clear();
+    _residentBytes = 0;
+    _textures.clear();
+    _textureBytes = 0;
+    _uploads.trim();
+  }
+
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return _device.device->resourceDomain();
   }

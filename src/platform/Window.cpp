@@ -1,4 +1,6 @@
 #include <format>
+#include <algorithm>
+#include <stdexcept>
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_properties.h>
@@ -10,7 +12,7 @@ Window::Window(const WindowConfig &config)
     : _window{createWindow(this, config)},
       _state{.title = config.title,
              .windowedSize = config.windowedSize,
-             .windowedPosition = config.windowedPosition,
+             .windowedPosition = std::nullopt,
              .resizable = config.resizable,
              .fullscreen = config.fullscreen,
              .borderless = config.borderless,
@@ -32,10 +34,9 @@ Window::Window(const WindowConfig &config)
   if (!config.fullscreen && !config.maximized && !config.minimized) {
     int x{};
     int y{};
-    if (!SDL_GetWindowPosition(_window.get(), &x, &y))
-      throwSDLError(std::format("Window@{} Failed to query window position",
-                                (void *)this));
-    _state.windowedPosition = playground::math::Vec2i{x, y};
+    if (placementCapabilities().globalPositionAvailable &&
+        SDL_GetWindowPosition(_window.get(), &x, &y))
+      _state.windowedPosition = playground::math::Vec2i{x, y};
 
     int width{};
     int height{};
@@ -66,11 +67,27 @@ void Window::setTitle(const std::string &title) {
 }
 
 void Window::setWindowedPosition(playground::math::Vec2i position) {
-  if (!SDL_SetWindowPosition(_window.get(), position.x, position.y))
+  if (requestWindowedPosition(position) ==
+      playground::platform::WindowRequestResult::Failed)
     throwSDLError(
         std::format("Window@{} Failed to set window position", (void *)this));
+}
 
+playground::platform::WindowPlacementCapabilities
+Window::placementCapabilities() const {
+  const auto *driver = SDL_GetCurrentVideoDriver();
+  return playground::platform::windowPlacementCapabilities(driver ? driver : "");
+}
+
+playground::platform::WindowRequestResult
+Window::requestWindowedPosition(playground::math::Vec2i position) {
+  using playground::platform::WindowRequestResult;
+  if (!placementCapabilities().requestsSupported)
+    return WindowRequestResult::Unsupported;
+  if (!SDL_SetWindowPosition(_window.get(), position.x, position.y))
+    return WindowRequestResult::Failed;
   refreshState();
+  return WindowRequestResult::Submitted;
 }
 
 void Window::setWindowedSize(playground::math::Vec2i size) {
@@ -176,8 +193,9 @@ void Window::setFullscreen(bool fullscreen) {
 void Window::handleEvent(const SDL_Event &event) {
   if (event.type >= SDL_EVENT_WINDOW_FIRST &&
       event.type <= SDL_EVENT_WINDOW_LAST &&
-      event.window.windowID == SDL_GetWindowID(_window.get()))
+      event.window.windowID == SDL_GetWindowID(_window.get())) {
     refreshState();
+  }
   if (event.type == SDL_EVENT_DISPLAY_ADDED ||
       event.type == SDL_EVENT_DISPLAY_REMOVED ||
       event.type == SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED)
@@ -201,16 +219,20 @@ void Window::refreshState() {
   if (!SDL_GetWindowSize(_window.get(), &_state.actualSize.x,
                          &_state.actualSize.y) ||
       !SDL_GetWindowSizeInPixels(_window.get(), &_state.drawableSize.x,
-                                 &_state.drawableSize.y) ||
-      !SDL_GetWindowPosition(_window.get(), &_state.actualPosition.x,
-                             &_state.actualPosition.y))
+                                 &_state.drawableSize.y))
     throwSDLError("Failed to query window geometry");
+  playground::math::Vec2i position{};
+  _state.actualPosition.reset();
+  if (placementCapabilities().globalPositionAvailable &&
+      SDL_GetWindowPosition(_window.get(), &position.x, &position.y))
+    _state.actualPosition = position;
   _state.display = SDL_GetDisplayForWindow(_window.get());
   _state.displayScale = SDL_GetWindowDisplayScale(_window.get());
   if (_state.displayScale <= 0)
     throwSDLError("Failed to query window display scale");
   if (!_applyingPreferences &&
-      _requestedMode == playground::platform::WindowMode::Windowed &&
+      _requestedMode != playground::platform::WindowMode::BorderlessDisplay &&
+      _requestedMode != playground::platform::WindowMode::BorderlessWorkArea &&
       !_state.fullscreen && !_state.maximized && !_state.minimized) {
     _state.windowedSize = _state.actualSize;
     _state.windowedPosition = _state.actualPosition;
@@ -275,77 +297,252 @@ void Window::setMinimumSize(playground::math::Vec2i size) {
 
 void Window::applyPreferences(
     const playground::platform::WindowPreferences &preferences) {
-  using playground::platform::WindowMode;
-  preferences.validate();
+  requestPreferences({.preferences = preferences,
+                      .resizable = _state.resizable});
+}
+
+std::uint64_t Window::requestPreferences(const WindowRequest &request) {
+  using namespace playground::platform;
+  request.preferences.validate();
+  const auto &preferences = request.preferences;
+  const bool fakeFullscreen = preferences.mode == WindowMode::BorderlessDisplay ||
+                              preferences.mode == WindowMode::BorderlessWorkArea;
+  if (fakeFullscreen && !placementCapabilities().requestsSupported)
+    throw std::invalid_argument(
+        "Borderless display/work-area mode requires global window placement");
+  if (preferences.mode == WindowMode::Maximized && !request.resizable)
+    throw std::invalid_argument("Maximized presentation requires a resizable window");
+  if ((request.windowedSize && !hasArea(*request.windowedSize)) ||
+      !hasArea(request.minimumSize))
+    throw std::invalid_argument("Window request sizes must be positive");
+
+  // Complete preflight before superseding the previous request or mutating SDL.
   const auto display = resolveDisplay(preferences.display);
-  refreshState();
-  const auto previousMode = _requestedMode;
-  const auto normalSize = _state.windowedSize;
-  const auto normalPosition = _state.windowedPosition;
-  _applyingPreferences = true;
-
-  struct TransitionGuard {
-    bool &active;
-
-    ~TransitionGuard() { active = false; }
-  } transition{_applyingPreferences};
-
-  _requestedMode = preferences.mode;
-  if (_state.fullscreen || previousMode == WindowMode::DesktopFullscreen ||
-      previousMode == WindowMode::ExclusiveFullscreen)
-    setFullscreen(false);
-  if ((_state.maximized || _state.minimized ||
-       previousMode == WindowMode::Maximized) &&
-      !SDL_RestoreWindow(_window.get()))
-    throwSDLError("Failed to restore window before presentation transition");
-  if (!SDL_SetWindowFullscreenMode(_window.get(), nullptr))
-    throwSDLError("Failed to clear exclusive fullscreen mode");
-  setBorderless(!preferences.decorated);
-  if (previousMode != WindowMode::Windowed) {
-    setWindowedSize(normalSize);
-    setWindowedPosition(normalPosition);
-  }
-  if (preferences.center || preferences.display.selection !=
-                                playground::platform::DisplaySelection::Current)
-    setWindowedPosition(
-        {static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display)),
-         static_cast<int>(SDL_WINDOWPOS_CENTERED_DISPLAY(display))});
-  switch (preferences.mode) {
-  case WindowMode::Windowed:
-    break;
-  case WindowMode::Maximized:
-    setMaximized(true);
-    break;
-  case WindowMode::DesktopFullscreen:
-    setFullscreen(true);
-    break;
-  case WindowMode::ExclusiveFullscreen: {
+  std::optional<SDL_DisplayMode> exclusive;
+  if (preferences.mode == WindowMode::ExclusiveFullscreen) {
     SDL_DisplayMode mode{};
     if (!SDL_GetClosestFullscreenDisplayMode(
             display, preferences.exclusiveSize.x, preferences.exclusiveSize.y,
             preferences.refreshRate, true, &mode))
       throwSDLError("No compatible exclusive fullscreen display mode");
-    if (!SDL_SetWindowFullscreenMode(_window.get(), &mode))
-      throwSDLError("Failed to select exclusive fullscreen display mode");
-    setFullscreen(true);
-    break;
+    exclusive = mode;
   }
-  case WindowMode::BorderlessDisplay:
-  case WindowMode::BorderlessWorkArea: {
+  std::optional<SDL_Rect> borderlessBounds;
+  if (fakeFullscreen) {
     SDL_Rect bounds{};
     const bool queried = preferences.mode == WindowMode::BorderlessWorkArea
                              ? SDL_GetDisplayUsableBounds(display, &bounds)
                              : SDL_GetDisplayBounds(display, &bounds);
     if (!queried)
       throwSDLError("Failed to query borderless window bounds");
-    setBorderless(true);
-    setWindowedSize({bounds.w, bounds.h});
-    setWindowedPosition({bounds.x, bounds.y});
-    break;
+    borderlessBounds = bounds;
   }
-  }
-  _applyingPreferences = false;
   refreshState();
+  const bool pending = _transition.outcome() == WindowTransitionOutcome::Pending;
+  auto targetSize = request.windowedSize.value_or(
+      pending ? _request.windowedSize.value_or(_state.windowedSize)
+              : _state.windowedSize);
+  targetSize.x = std::max(targetSize.x, request.minimumSize.x);
+  targetSize.y = std::max(targetSize.y, request.minimumSize.y);
+  auto targetPosition = request.windowedPosition;
+  if (!targetPosition && !preferences.center)
+    targetPosition = pending ? _request.windowedPosition : _state.windowedPosition;
+  if (!request.windowedPosition &&
+      (preferences.center || preferences.display.selection != DisplaySelection::Current) &&
+      placementCapabilities().requestsSupported) {
+    SDL_Rect bounds{};
+    if ((!SDL_GetDisplayUsableBounds(display, &bounds) ||
+         targetSize.x > bounds.w || targetSize.y > bounds.h) &&
+        !SDL_GetDisplayBounds(display, &bounds))
+      throwSDLError("Failed to query centering bounds");
+    targetPosition = playground::math::Vec2i{
+        bounds.x + (bounds.w - targetSize.x) / 2,
+        bounds.y + (bounds.h - targetSize.y) / 2};
+  }
+  auto nextRequest = request;
+  nextRequest.windowedSize = targetSize;
+  nextRequest.windowedPosition = targetPosition;
+  if (borderlessBounds) {
+    targetSize = {borderlessBounds->w, borderlessBounds->h};
+    targetPosition = playground::math::Vec2i{borderlessBounds->x, borderlessBounds->y};
+  }
+  _request = std::move(nextRequest);
+  _targetDisplay = display;
+  _exclusiveMode = exclusive;
+  _targetSize = targetSize;
+  _targetPosition = targetPosition;
+  _placementRequired = fakeFullscreen;
+  _geometryIssued = _modeIssued = _sizeObserved = _positionObserved = false;
+  _applyingPreferences = true;
+  _requestedMode = preferences.mode;
+  ++_requestStatus.generation;
+  _requestStatus.diagnostic.clear();
+  _requestStatus.placement.reset();
+  if (!placementCapabilities().requestsSupported &&
+      (_targetPosition || preferences.center ||
+       preferences.display.selection != DisplaySelection::Current)) {
+    _requestStatus.placement = WindowRequestResult::Unsupported;
+    _requestStatus.diagnostic =
+        "Optional window placement is unsupported by this video backend";
+    _targetPosition.reset();
+  }
+  _requestStatus.outcome = WindowTransitionOutcome::Pending;
+  _transition.begin(preferences.mode == WindowMode::DesktopFullscreen,
+                    WindowTransition::Clock::now());
+  return _requestStatus.generation;
+}
+
+std::optional<WindowRequest> Window::pendingRequest() const {
+  using namespace playground::platform;
+  if (_transition.outcome() != WindowTransitionOutcome::Pending)
+    return std::nullopt;
+  auto result = _request;
+  result.preferences.center = false;
+  if (const auto *name = SDL_GetDisplayName(_targetDisplay))
+    result.preferences.display = {DisplaySelection::Named, name};
+  return result;
+}
+
+void Window::cancelTransition() {
+  _transition.cancel();
+  _requestStatus.outcome = _transition.outcome();
+  _applyingPreferences = false;
+}
+
+bool Window::advanceTransition(
+    playground::platform::WindowTransition::TimePoint now) {
+  using namespace playground::platform;
+  if (_transition.outcome() != WindowTransitionOutcome::Pending)
+    return false;
+  const auto before = _state;
+  const auto beforeOutcome = _transition.outcome();
+  try {
+    // Multiple immediately-observed stages may advance in one tick. The pure
+    // sequencer emits each native operation once, never retries until success.
+    for (;;) {
+      refreshState();
+      if (_geometryIssued && (!_modeIssued ||
+          (!_request.minimized && (_requestedMode == WindowMode::Windowed ||
+                                   _placementRequired)))) {
+        _sizeObserved = _state.actualSize == _targetSize;
+        _positionObserved = !_targetPosition ||
+                            _state.actualPosition == _targetPosition;
+      }
+      const bool fullscreen = _requestedMode == WindowMode::DesktopFullscreen ||
+                              _requestedMode == WindowMode::ExclusiveFullscreen;
+      const bool modeObserved = _modeIssued &&
+          _state.fullscreen == fullscreen &&
+          _state.maximized == (_requestedMode == WindowMode::Maximized) &&
+          _state.minimized == _request.minimized;
+      const auto action = _transition.advance(
+          {_state.fullscreen, _state.maximized, _state.minimized,
+           _sizeObserved && _positionObserved, modeObserved,
+           !fullscreen || _state.display == _targetDisplay}, now);
+      if (action == WindowTransitionAction::None)
+        break;
+      switch (action) {
+      case WindowTransitionAction::LeaveFullscreen:
+        // Also supersedes a previous, still-unobserved fullscreen request.
+        setFullscreen(false);
+        break;
+      case WindowTransitionAction::Restore:
+        if ((_restoreRequired || _state.maximized || _state.minimized) &&
+            !SDL_RestoreWindow(_window.get()))
+          throwSDLError("Failed to request normal window state");
+        _restoreRequired = false;
+        break;
+      case WindowTransitionAction::ApplyGeometry: {
+        if (!SDL_SetWindowFullscreenMode(_window.get(), nullptr))
+          throwSDLError("Failed to clear exclusive fullscreen mode");
+        setResizable(_request.resizable);
+        setMinimumSize(_request.minimumSize);
+        setBorderless(_placementRequired || !_request.preferences.decorated);
+        _geometryIssued = true;
+        // Always submit: an older asynchronous resize may still be pending even
+        // when the currently observed size equals this newer request.
+        if (!SDL_SetWindowSize(_window.get(), _targetSize.x, _targetSize.y))
+          throwSDLError("Failed to request window size");
+        if (_targetPosition) {
+          const auto result = requestWindowedPosition(*_targetPosition);
+          _requestStatus.placement = result;
+          if (result != WindowRequestResult::Submitted) {
+            if (_placementRequired)
+              throwSDLError("Failed to position borderless window");
+            _requestStatus.diagnostic = result == WindowRequestResult::Unsupported
+                ? "Optional window placement is unsupported by this video backend"
+                : "Optional window placement failed: " + std::string{SDL_GetError()};
+            _targetPosition.reset();
+          }
+        }
+        break;
+      }
+      case WindowTransitionAction::ApplyMode:
+        // Store only actually observed normal geometry, never fullscreen bounds.
+        if (!_placementRequired && _sizeObserved && _positionObserved &&
+            !_state.fullscreen && !_state.maximized && !_state.minimized) {
+          _state.windowedSize = _state.actualSize;
+          _state.windowedPosition = _state.actualPosition;
+        }
+        if (_exclusiveMode &&
+            !SDL_SetWindowFullscreenMode(_window.get(), &*_exclusiveMode))
+          throwSDLError("Failed to select exclusive fullscreen display mode");
+        if (fullscreen)
+          setFullscreen(true);
+        else if (_requestedMode == WindowMode::Maximized) {
+          setMaximized(true);
+          // Accepted native requests can outlive cancellation/supersession.
+          _restoreRequired = true;
+        }
+        if (_request.minimized) {
+          setMinimized(true);
+          _restoreRequired = true;
+        }
+        _modeIssued = true;
+        break;
+      case WindowTransitionAction::RouteFullscreenDisplay:
+        // SDL supports output selection for an already desktop-fullscreen
+        // Wayland window even though ordinary global placement is unsupported.
+        if (!SDL_SetWindowPosition(
+                _window.get(), SDL_WINDOWPOS_CENTERED_DISPLAY(_targetDisplay),
+                SDL_WINDOWPOS_CENTERED_DISPLAY(_targetDisplay)))
+          throwSDLError("Failed to request fullscreen display");
+        break;
+      case WindowTransitionAction::None:
+        break;
+      }
+    }
+  } catch (const std::exception &error) {
+    _transition.fail();
+    _requestStatus.diagnostic = error.what();
+  }
+  _requestStatus.outcome = _transition.outcome();
+  if (_requestStatus.outcome == WindowTransitionOutcome::Observed &&
+      _requestStatus.placement == WindowRequestResult::Failed)
+    _requestStatus.outcome = WindowTransitionOutcome::Unconfirmed;
+  if (_requestStatus.outcome != WindowTransitionOutcome::Pending) {
+    _applyingPreferences = false;
+    if (_requestStatus.outcome == WindowTransitionOutcome::Observed &&
+        !_placementRequired) {
+      if (!_state.fullscreen && !_state.maximized && !_state.minimized) {
+        _state.windowedSize = _state.actualSize;
+        _state.windowedPosition = _state.actualPosition;
+      }
+    }
+    if (_transition.outcome() == WindowTransitionOutcome::Unconfirmed) {
+      if (!_requestStatus.diagnostic.empty())
+        _requestStatus.diagnostic += "; ";
+      _requestStatus.diagnostic +=
+          "Window request was not confirmed before its deadline; this does not prove denial";
+    }
+  }
+  return beforeOutcome != _transition.outcome() ||
+         before.actualSize != _state.actualSize ||
+         before.drawableSize != _state.drawableSize ||
+         before.actualPosition != _state.actualPosition ||
+         before.displayScale != _state.displayScale ||
+         before.fullscreen != _state.fullscreen ||
+         before.maximized != _state.maximized ||
+         before.minimized != _state.minimized;
 }
 
 WindowResource Window::createWindow(void *owner, const WindowConfig &config) {

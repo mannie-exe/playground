@@ -9,9 +9,16 @@ namespace playground::sdl {
 rendering::RendererState
 resolveRenderer(rendering::RendererPreferences requested,
                 rendering::RendererRequirements needs) {
-  auto candidates = availableGPURenderers();
+  std::string unavailable;
+  auto candidates = availableGPURenderers(unavailable);
   candidates.push_back(SurfaceRenderBackend::availableDescription());
-  return rendering::selectRenderer(requested, needs, candidates).state;
+  try {
+    return rendering::selectRenderer(requested, needs, candidates).state;
+  } catch (const std::runtime_error &error) {
+    if (unavailable.empty())
+      throw;
+    throw std::runtime_error(std::string{error.what()} + ": " + unavailable);
+  }
 }
 
 std::unique_ptr<rendering::RenderBackend>
@@ -43,18 +50,20 @@ createRenderBackend(SDL_Window &window,
                     rendering::RendererRequirements requirements,
                     const rendering::RenderBackendProps &props) {
   props.validate();
-  auto candidates = availableGPURenderers();
+  std::string unavailable;
+  auto candidates = availableGPURenderers(unavailable);
   candidates.push_back(SurfaceRenderBackend::availableDescription());
   std::string failures;
   while (!candidates.empty()) {
     auto selection = [&] {
       try {
         return rendering::selectRenderer(preferences, requirements, candidates);
-      } catch (const std::exception &error) {
-        if (failures.empty())
+      } catch (const std::runtime_error &error) {
+        if (failures.empty() && unavailable.empty())
           throw;
         throw std::runtime_error("Renderer creation failed: " + failures +
-                                 error.what());
+                                 error.what() +
+                                 (unavailable.empty() ? "" : ": " + unavailable));
       }
     }();
     try {
@@ -63,6 +72,10 @@ createRenderBackend(SDL_Window &window,
       if (!failures.empty())
         selection.state.fallbackReason = failures;
       return {std::move(backend), std::move(selection.state)};
+    } catch (const rendering::ResourcePressure &) {
+      throw; // Policy pressure does not mean the GPU is unavailable.
+    } catch (const rendering::ResourceAllocationFailure &) {
+      throw;
     } catch (const std::exception &error) {
       failures +=
           std::string(rendering::toString(selection.state.selected.backend)) +

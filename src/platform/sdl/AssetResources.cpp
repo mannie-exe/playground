@@ -47,9 +47,8 @@ AssetResources::image(const assets::AssetId<assets::ImageAsset> &id) {
     using Stream = SDLResource<SDL_IOStream, SDL_CloseIO>;
     Stream stream{requireSDL(SDL_IOFromConstMem(bytes.data(), bytes.size()),
                              "Open image asset")};
-    SurfaceHandle image{
-        requireSDL(IMG_Load_IO(stream.get(), false), "Decode image asset"),
-        SurfaceHandleDeleter{}};
+    auto image = adoptManagedSurface(
+        requireSDL(IMG_Load_IO(stream.get(), false), "Decode image asset"));
     if (image->pitch < 0 || image->h < 0 ||
         static_cast<std::uint64_t>(image->pitch) * image->h >
             _props.maxDecodedImageBytes)

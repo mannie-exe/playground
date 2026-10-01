@@ -75,11 +75,11 @@ public:
   ActionResult performAction(const UIAction &, ActionSource) override;
   TextInputState textInputState() const override;
 
-  Connection onValueChanged(std::move_only_function<void(std::string)> f) {
+  Connection onValueChanged(support::MoveOnlyFunction<void(std::string)> f) {
     return _changed.connect(std::move(f));
   }
 
-  Connection onCommit(std::move_only_function<void(std::string)> f) {
+  Connection onCommit(support::MoveOnlyFunction<void(std::string)> f) {
     return _committed.connect(std::move(f));
   }
 };
@@ -117,7 +117,7 @@ public:
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onNumberChanged(std::move_only_function<void(double)> f) {
+  Connection onNumberChanged(support::MoveOnlyFunction<void(double)> f) {
     return _changed.connect(std::move(f));
   }
 };

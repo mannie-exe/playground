@@ -6,6 +6,8 @@
 #include <optional>
 #include <stop_token>
 
+#include <support/MoveOnlyFunction.hpp>
+
 namespace playground::runtime {
 
 struct ExecutorProps {
@@ -40,7 +42,7 @@ class Executor {
   std::unique_ptr<Impl> _impl;
 
 public:
-  using Job = std::move_only_function<void(std::stop_token) noexcept>;
+  using Job = support::MoveOnlyFunction<void(std::stop_token) noexcept>;
   explicit Executor(ExecutorProps props = {});
   ~Executor();
   Executor(const Executor &) = delete;

@@ -29,8 +29,11 @@
 
 namespace playground::sdl {
 GPUDevice::GPUDevice(GPUDeviceProps props, GPUCommandAPI commands)
-    : _limits{props.limits}, _commands{commands} {
+    : _limits{props.limits}, _commands{commands},
+      _resources{std::move(props.resources)} {
   _limits.validate();
+  if (!_resources)
+    throw std::invalid_argument("GPU device requires a resource ledger");
   if (!_commands.submit)
     throw std::invalid_argument("GPU command API requires a submit function");
   if (!props.shaderFormats)
@@ -54,27 +57,59 @@ void GPUDevice::checkOwnerThread() const {
     throw rendering::RenderFailure("GPU resource domain is no longer active");
 }
 
-GPUDevice::~GPUDevice() { invalidate(); }
+GPUDevice::~GPUDevice() {
+  invalidate();
+  // SDL device teardown completes its own native cleanup before quarantined
+  // charges/frame credits are released. Invalidation alone is not completion.
+  _device.reset();
+  _recordings.clear();
+  _pending.clear();
+}
 
 void GPUDevice::invalidate() noexcept {
   _valid = false;
-  for (auto &[commands, recording] : _recordings) {
-    const bool canceled = SDL_CancelGPUCommandBuffer(commands);
-    if (recording.timestamp) {
+  _frame.reset();
+  for (auto it = _recordings.begin(); it != _recordings.end();) {
+    auto &recording = it->second;
+    if (recording.consumed) {
+      ++it;
+      continue;
+    }
+    const bool canceled = SDL_CancelGPUCommandBuffer(it->first);
+    if (recording.timestamp && _timestamps) {
       if (canceled)
         _timestamps->cancel(*recording.timestamp);
       else
         _timestamps->abandon(*recording.timestamp);
     }
+    recording.timestamp.reset();
+    if (canceled)
+      it = _recordings.erase(it);
+    else {
+      recording.consumed = true;
+      ++it;
+    }
   }
-  _recordings.clear();
   for (auto &pending : _pending)
-    if (pending.fence)
+    if (pending.fence) {
       SDL_ReleaseGPUFence(get(), pending.fence);
-  _pending.clear();
+      pending.fence = nullptr;
+    }
   _timings.clear();
   _completionLatencies.clear();
   _timestamps.reset();
+}
+
+bool GPUDevice::retireInvalidatedSubmissions() noexcept {
+  if (_valid || _pending.empty())
+    return !_valid;
+  // Only backend replacement/recovery calls this blocking retirement path.
+  // Native success establishes completion; failure keeps uncertain charges.
+  if (!SDL_WaitForGPUIdle(get()))
+    return false;
+  _completed = _submitted;
+  _pending.clear();
+  return true;
 }
 
 SDL_GPUCommandBuffer *
@@ -85,14 +120,23 @@ GPUDevice::acquireCommands(std::string_view label,
   rendering::validateGPUWorkContext(context);
   pollCompletions();
   if (_recordings.size() + _pending.size() >= _limits.maxInFlightSubmissions)
-    throw std::length_error("GPU submission capacity exhausted");
+    throw rendering::ResourcePressure("GPU command batches", 1,
+                                      _recordings.size() + _pending.size(),
+                                      _limits.maxInFlightSubmissions,
+                                      rendering::ResourcePressure::Unit::Slots);
   auto *commands = SDL_AcquireGPUCommandBuffer(get());
   if (!commands)
     throwRenderError("Cannot acquire GPU commands",
                      rendering::RenderOperation::Acquire);
   try {
     auto &recording = _recordings.emplace(commands, Recording{}).first->second;
-    if (_profiling && _timestamps)
+    recording.frame = _frame;
+    context.frameId = _frame ? _frame->id : 0;
+    const bool coarse = label == "paint2d" || label == "scene3d" ||
+                        label == "scene post-processing" ||
+                        label == "custom offscreen" ||
+                        label == "presentation composition";
+    if (_profiling && _timestamps && (_detailedTiming || coarse))
       recording.timestamp =
           _timestamps->begin(commands, label, context, _collectionGeneration);
   } catch (...) {
@@ -109,6 +153,7 @@ void GPUDevice::setTimingContext(SDL_GPUCommandBuffer *commands,
   checkOwnerThread();
   rendering::validateGPUWorkContext(context);
   const auto &recording = _recordings.at(commands);
+  context.frameId = recording.frame ? recording.frame->id : 0;
   if (recording.timestamp)
     _timestamps->setContext(*recording.timestamp, context);
 }
@@ -139,6 +184,7 @@ rendering::SubmissionId GPUDevice::submit(SDL_GPUCommandBuffer *commands) {
   // the recording cancelable by its owner.
   _pending.emplace_back();
   auto &pending = _pending.back();
+  pending.frame = std::move(recording->second.frame);
   pending.uses = std::move(recording->second.uses);
   _recordings.erase(recording);
   if (timestamp)
@@ -203,8 +249,10 @@ void GPUDevice::finishAbandonedPresentation(
     // Acquired swapchain commands cannot be canceled. On bookkeeping failure
     // submit for SDL cleanup, then retire the domain rather than reuse
     // resources whose completion could not be tracked.
-    if (_recordings.erase(commands))
+    if (auto it = _recordings.find(commands); it != _recordings.end()) {
+      it->second.consumed = true;
       SDL_SubmitGPUCommandBuffer(commands);
+    }
     _valid = false;
   }
 }
@@ -213,6 +261,8 @@ void GPUDevice::pollCompletions() {
   checkOwnerThread();
   while (!_pending.empty() &&
          SDL_QueryGPUFence(get(), _pending.front().fence)) {
+    if (_completionLatencies.size() >= _limits.maxTimestampScopes)
+      _completionLatencies.erase(_completionLatencies.begin());
     if (_pending.front().submittedAt)
       _completionLatencies.insert_or_assign(
           _pending.front().id,
@@ -246,8 +296,9 @@ void GPUDevice::pollCompletions() {
   }
 }
 
-void GPUDevice::setProfilingEnabled(bool enabled) {
+void GPUDevice::setProfilingEnabled(bool enabled, bool detailed) {
   checkOwnerThread();
+  _detailedTiming = detailed;
   if (enabled == _profiling)
     return;
   if (enabled &&

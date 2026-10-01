@@ -1,48 +1,39 @@
-# Offline tools are optional: software-only builds never fetch DXC/LLVM.
-# A host executable may be supplied when cross-compiling the application.
-option(PLAYGROUND_BUILD_SHADERCROSS "Build pinned shadercross and vendored compilers" OFF)
-set(PLAYGROUND_SHADERCROSS_EXECUTABLE "" CACHE FILEPATH "Host shadercross executable (including its runtime dependencies)")
-set(PLAYGROUND_SHADER_FORMATS "SPIRV" CACHE STRING "Packaged shader format (Vulkan only)")
-set(PLAYGROUND_DXC_EXECUTABLE "" CACHE FILEPATH "Optional host DXC producing SPIR-V")
-foreach(format IN LISTS PLAYGROUND_SHADER_FORMATS)
-    if(NOT format STREQUAL "SPIRV")
-        message(FATAL_ERROR "Only Vulkan/SPIRV is supported; set PLAYGROUND_SHADER_FORMATS=SPIRV")
-    endif()
-endforeach()
-
-if(PLAYGROUND_BUILD_SHADERCROSS AND PLAYGROUND_SHADERCROSS_EXECUTABLE)
-    message(FATAL_ERROR "Choose a shadercross source build OR a host executable")
+# Normal builds compile the pinned tool automatically. Reuse an existing tool
+# only to avoid rebuilding its substantial DXC/LLVM dependencies.
+set(PLAYGROUND_SHADERCROSS_EXECUTABLE "" CACHE FILEPATH "Existing shadercross executable (empty builds the pinned tool)")
+mark_as_advanced(PLAYGROUND_SHADERCROSS_EXECUTABLE)
+if(NOT PLAYGROUND_GPU)
+    message(STATUS "GPU shaders disabled for software-only development")
+    return()
 endif()
-if(PLAYGROUND_DXC_EXECUTABLE)
-    if(PLAYGROUND_BUILD_SHADERCROSS OR PLAYGROUND_SHADERCROSS_EXECUTABLE)
-        message(FATAL_ERROR "Choose DXC or shadercross, not both")
-    endif()
-    if(NOT EXISTS "${PLAYGROUND_DXC_EXECUTABLE}" OR IS_DIRECTORY "${PLAYGROUND_DXC_EXECUTABLE}")
-        message(FATAL_ERROR "PLAYGROUND_DXC_EXECUTABLE does not exist")
-    endif()
-endif()
-if(PLAYGROUND_BUILD_SHADERCROSS)
-    if(CMAKE_CROSSCOMPILING)
-        message(FATAL_ERROR "Cross builds require PLAYGROUND_SHADERCROSS_EXECUTABLE for the host")
-    endif()
+if(NOT PLAYGROUND_SHADERCROSS_EXECUTABLE)
     # No tags/releases are published upstream. Pin the reviewed source revision.
     CPMAddPackage(
         NAME SDL_shadercross
         GITHUB_REPOSITORY libsdl-org/SDL_shadercross
         GIT_TAG 1ff05bec573988a98ef9e0260b4da44f512b8367
-        OPTIONS
-        "SDLSHADERCROSS_VENDORED ON"
-        "SDLSHADERCROSS_DXC ON"
-        "SDLSHADERCROSS_SHARED ON"
-        "SDLSHADERCROSS_STATIC OFF"
-        "SDLSHADERCROSS_SPIRVCROSS_SHARED ON"
-        "SDLSHADERCROSS_CLI ON"
-        "SDLSHADERCROSS_TESTS OFF"
-        "SDLSHADERCROSS_INSTALL OFF"
-        "SDLSHADERCROSS_WERROR OFF"
-        "SPIRV_SKIP_TESTS ON"
-        "SPIRV_SKIP_EXECUTABLES ON"
+        DOWNLOAD_ONLY YES
     )
+    # Patch before configuration, including CPM local-source overrides.
+    if(APPLE)
+        include(${CMAKE_CURRENT_LIST_DIR}/patches/ShadercrossMac.cmake)
+        playground_patch_shadercross_macos("${SDL_shadercross_SOURCE_DIR}")
+    endif()
+    function(playground_add_shadercross)
+        set(SDLSHADERCROSS_VENDORED ON)
+        set(SDLSHADERCROSS_DXC ON)
+        set(SDLSHADERCROSS_SHARED ON)
+        set(SDLSHADERCROSS_STATIC OFF)
+        set(SDLSHADERCROSS_SPIRVCROSS_SHARED ON)
+        set(SDLSHADERCROSS_CLI ON)
+        set(SDLSHADERCROSS_TESTS OFF)
+        set(SDLSHADERCROSS_INSTALL OFF)
+        set(SDLSHADERCROSS_WERROR OFF)
+        set(SPIRV_SKIP_TESTS ON)
+        set(SPIRV_SKIP_EXECUTABLES ON)
+        add_subdirectory("${SDL_shadercross_SOURCE_DIR}" "${SDL_shadercross_BINARY_DIR}" EXCLUDE_FROM_ALL)
+    endfunction()
+    playground_add_shadercross()
     set(playground_shader_tool "$<TARGET_FILE:shadercross>")
     set(playground_shader_tool_dependency shadercross)
     if(WIN32)
@@ -62,7 +53,7 @@ if(PLAYGROUND_BUILD_SHADERCROSS)
             add_dependencies(playground_shader_tool_runtime playground_shader_dxc_runtime)
         endif()
     endif()
-elseif(PLAYGROUND_SHADERCROSS_EXECUTABLE)
+else()
     if(NOT EXISTS "${PLAYGROUND_SHADERCROSS_EXECUTABLE}" OR IS_DIRECTORY "${PLAYGROUND_SHADERCROSS_EXECUTABLE}")
         message(FATAL_ERROR "PLAYGROUND_SHADERCROSS_EXECUTABLE does not exist")
     endif()
@@ -75,46 +66,24 @@ function(playground_add_shader name source stage)
     if(NOT stage MATCHES "^(vertex|fragment|compute)$")
         message(FATAL_ERROR "Invalid shader stage: ${stage}")
     endif()
-    if(NOT playground_shader_tool AND NOT PLAYGROUND_DXC_EXECUTABLE)
-        return()
-    endif()
     if(IS_ABSOLUTE "${source}")
         set(input "${source}")
     else()
         set(input "${PROJECT_SOURCE_DIR}/${source}")
     endif()
+    get_filename_component(input_dir "${input}" DIRECTORY)
     set(output_dir "${PROJECT_BINARY_DIR}/shaders")
     set(outputs)
-    set(formats ${PLAYGROUND_SHADER_FORMATS} JSON)
-    list(REMOVE_DUPLICATES formats)
-    foreach(format IN LISTS formats)
-        if(PLAYGROUND_DXC_EXECUTABLE AND NOT playground_shader_tool AND format STREQUAL "JSON")
-            continue()
-        endif()
+    foreach(format IN ITEMS SPIRV JSON)
         string(TOLOWER "${format}" extension)
         set(output "${output_dir}/${name}.${extension}")
-        if(PLAYGROUND_DXC_EXECUTABLE AND NOT playground_shader_tool)
-            if(stage STREQUAL "vertex")
-                set(profile vs_6_0)
-            elseif(stage STREQUAL "fragment")
-                set(profile ps_6_0)
-            else()
-                set(profile cs_6_0)
-            endif()
-            set(extra -spirv -fspv-target-env=vulkan1.0)
-            add_custom_command(OUTPUT "${output}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
-                COMMAND "${PLAYGROUND_DXC_EXECUTABLE}" "${input}" -T ${profile} -E main -Fo "${output}" ${extra}
-                DEPENDS "${input}" ${shader_UNPARSED_ARGUMENTS} "${PLAYGROUND_DXC_EXECUTABLE}" VERBATIM)
-        else()
-            add_custom_command(OUTPUT "${output}"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
-                COMMAND "${playground_shader_tool}" "${input}"
-                    -s HLSL -d "${format}" -t "${stage}" -e main -o "${output}"
-                DEPENDS "${input}" ${shader_UNPARSED_ARGUMENTS} "${playground_shader_tool}" ${playground_shader_tool_dependency}
-                COMMENT "Compiling ${name} to ${format}"
-                VERBATIM)
-        endif()
+        add_custom_command(OUTPUT "${output}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
+            COMMAND "${playground_shader_tool}" "${input}"
+                -I "${input_dir}" -s HLSL -d "${format}" -t "${stage}" -e main -o "${output}"
+            DEPENDS "${input}" ${shader_UNPARSED_ARGUMENTS} "${playground_shader_tool}" ${playground_shader_tool_dependency}
+            COMMENT "Compiling ${name} to ${format}"
+            VERBATIM)
         list(APPEND outputs "${output}")
     endforeach()
     add_custom_target(playground_shader_${name} DEPENDS ${outputs})
@@ -138,13 +107,8 @@ playground_add_shader(paint_rect_fragment shaders/paint_rect.frag.hlsl fragment
 playground_add_shader(present_fragment shaders/present.frag.hlsl fragment
     "${PROJECT_SOURCE_DIR}/shaders/paint_rect.frag.hlsl"
     "${PROJECT_SOURCE_DIR}/shaders/paint.frag.hlsl")
-if(playground_shader_tool OR PLAYGROUND_DXC_EXECUTABLE)
-    target_compile_definitions(playground_sdl PRIVATE PLAYGROUND_SHADER_DIRECTORY="${PROJECT_BINARY_DIR}/shaders")
-    foreach(format IN LISTS PLAYGROUND_SHADER_FORMATS)
-        target_compile_definitions(playground_sdl PRIVATE PLAYGROUND_SHADER_${format}=1)
-    endforeach()
-    add_dependencies(playground_sdl playground_shaders)
-    message(STATUS "Offline shaders enabled: ${PLAYGROUND_SHADER_FORMATS}")
-else()
-    message(STATUS "Offline shaders disabled (software rendering needs no shader compiler)")
-endif()
+target_compile_definitions(playground_sdl PRIVATE
+    PLAYGROUND_SHADER_DIRECTORY="${PROJECT_BINARY_DIR}/shaders"
+    PLAYGROUND_SHADER_SPIRV=1)
+add_dependencies(playground_sdl playground_shaders)
+message(STATUS "GPU shaders enabled: SPIRV")

@@ -19,6 +19,12 @@
 #include <SDL3/SDL.h>
 #include <accesskit.h>
 
+#if defined(ACCESSKIT_MACOS)
+#include <set>
+
+#include <objc/runtime.h>
+#endif
+
 #include <platform/sdl/WindowServices.hpp>
 #include <support/SDLError.hpp>
 #include <ui/TextEdit.hpp>
@@ -446,11 +452,20 @@ WindowServices::WindowServices(SDL_Window *window)
           props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)),
       Impl::build, p, Impl::request, p);
 #elif defined(ACCESSKIT_MACOS)
-  accesskit_macos_add_focus_forwarder_to_window_class("SDLWindow");
+  auto *nativeWindow = SDL_GetPointerProperty(
+      props, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+  if (!nativeWindow)
+    throw std::runtime_error(
+        "Native macOS accessibility requires a Cocoa window");
+  // SDL's private Objective-C class names can change between releases.
+  // Resolve the class of this live window instead of assuming one by name.
+  const auto windowClass = object_getClass(static_cast<id>(nativeWindow));
+  static std::set<Class> patchedWindowClasses;
+  if (patchedWindowClasses.insert(windowClass).second)
+    accesskit_macos_add_focus_forwarder_to_window_class(
+        class_getName(windowClass));
   p->adapter = accesskit_macos_subclassing_adapter_for_window(
-      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER,
-                             nullptr),
-      Impl::build, p, Impl::request, p);
+      nativeWindow, Impl::build, p, Impl::request, p);
 #elif defined(__linux__)
   p->adapter = accesskit_unix_adapter_new(
       Impl::build, p, Impl::request, p, [](void *) {}, p);
@@ -471,7 +486,7 @@ ui::Connection WindowServices::attach(ui::UIRoot &root) {
     if (!SDL_SetClipboardText(std::string{text}.c_str()))
       throwSDLError("Write clipboard");
   };
-  auto disconnect = std::move_only_function<void() noexcept>{
+  auto disconnect = support::MoveOnlyFunction<void() noexcept>{
       [weak = std::weak_ptr{_impl}, owner = &root]() noexcept {
         if (auto self = weak.lock()) {
           auto at = self->attachments.find(owner);
@@ -497,6 +512,17 @@ ui::Connection WindowServices::attach(ui::UIRoot &root) {
   ++_impl->attachments[&root];
   _impl->root = &root;
   return ui::Connection{std::move(disconnect)};
+}
+
+void WindowServices::cancelInput() {
+  if (_impl->root) {
+    ui::UIEvent cancel{.type = ui::EventType::InputCancel};
+    _impl->root->dispatch(cancel);
+  }
+  SDL_ClearComposition(_impl->window);
+  SDL_StopTextInput(_impl->window);
+  _impl->composing = false;
+  _impl->textOptions.reset();
 }
 
 void WindowServices::setMode(ui::AccessibilityMode value) {

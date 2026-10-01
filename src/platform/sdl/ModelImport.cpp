@@ -77,7 +77,7 @@ rendering::PaintImageHandle decodeModelImage(std::span<const std::byte> encoded,
   auto *stream = SDL_IOFromConstMem(encoded.data(), encoded.size());
   if (!stream)
     throwSDLError("Cannot open model image bytes");
-  SurfaceHandle surface{IMG_Load_IO(stream, true), SurfaceHandleDeleter{}};
+  auto surface = adoptManagedSurface(IMG_Load_IO(stream, true));
   if (!surface)
     throwSDLError("Cannot decode model image");
   if (surface->pitch < 0 || surface->h < 0 ||

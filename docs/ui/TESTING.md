@@ -57,8 +57,8 @@ not overflow into an endpoint jump.
 | Visibility/input policy | `ui_component_variants`: all 3 visibility × 4 hit-test-policy combinations | Combination matrix uses a small overlay tree, not all ancestor/descendant structures |
 | Button | `ui_button_states`, `ui_containers`: primary/secondary click, wrong release, drag out/back, cancel, disable mid-press, Space/Enter/repeat | Not every multitouch interleaving |
 | Stepper | `ui_stepper`: keyboard/button activation, limit focus transfer, disabled/single-value range, saturating integer arithmetic, invalid patches and throwing notifications | Native reader announcement still requires interactive verification |
-| Unicode model | `ui_text_edit`: combining/ZWJ graphemes, bidi UTF-8 offsets, composition isolation, undo/redo, invalid UTF-8, capacity, readonly/password | Not every Unicode conformance corpus |
-| Plain editor | `ui_text_field`: real font shaping, wrapped bidi runs, offscreen painting, clipboard injection, password snapshots, invalid/valid numeric drafts | Native IME candidate windows and reader text-range behavior are manual checks |
+| Unicode model | `ui_text_edit`, `ui_text_boundaries`: shared label/editor boundaries, combining/ZWJ/Indic clusters, bidi UTF-8 offsets, composition isolation, targeted deletion/undo, invalid UTF-8/NUL, capacity, readonly/password | Not every Unicode conformance corpus; segmentation follows the linked ICU version |
+| Plain editor | `ui_text_field`: macOS Option/Command navigation and deletion, real font shaping, wrapped bidi runs, offscreen painting, clipboard injection, password snapshots, invalid/valid numeric drafts | Native IME candidate windows and reader text-range behavior are manual checks |
 | Actions/semantics | `ui_accessibility`: derived disabled actions, modal restriction/restoration, stale identities, explicit neighbors and numeric rejection | Native OS callback concurrency is not simulated by these owner-thread tests |
 | UI/application navigation ownership | `ui_navigation_routing`: decorative trees pass arrows/Tab; editor/modal claims block gameplay keys; focus, disable/hide/replacement and pointer capture invalidate ownership; `input_actions`: selective held-action cancellation, neutral reacquisition, global overrides and modal dismissal | Synthetic input routing, not an interactive camera test |
 | Native adapter lifetime | `ui_window_services`: hidden native window attachment, mode changes, detach/replacement and destruction | No screen reader is driven; dummy/offscreen SDL drivers bypass the native adapter portion |
@@ -97,7 +97,7 @@ not overflow into an endpoint jump.
 | Model importing | `model_import`: static glTF/GLB, hierarchy, materials, atomic scene publication and malformed/unsupported data | Static triangle subset; decoder and filesystem confinement are not a sandbox |
 | Model file adapter | `model_import_files`: bare/absolute document paths, percent-decoded sibling files, traversal/network rejection | Isolated temporary files; no decoder fuzzing or symlink race guarantee |
 | Paths | `vector_paths`: curve flattening, fill rules, closure, stroke and complexity limits, UI/software integration | Solid fills and round strokes, not the full SVG paint model |
-| Shader contracts | `shader_contracts`: SPIR-V reflection, bindings, stage interfaces and rejected layouts | Native pipeline creation/reload requires opt-in `gpu_shaders` |
+| Shader contracts | `shader_contracts`: SPIR-V reflection, bindings, stage interfaces and rejected layouts | Native pipeline creation/reload requires `gpu_shaders` |
 | Runtime handoff | `ui_completion_queue`, `runtime_transitions`: bounded delivery, throwing callbacks, rollback and recovery state | Does not assert rollback of arbitrary app side effects |
 | Image realization | `ui_image_preparation`: pitch packing, all encoding/alpha pairs, metadata mismatch rejection, byte counts, invalid device ownership, Image/Text/Vector preparation/retry and retained ownership | GPU upload and atlas code compile; no device is created; metadata tests do not prove correct labeling of arbitrary source pixels |
 
@@ -135,9 +135,9 @@ offscreen pixel checks with interactive visual quality.
 ## Coverage boundaries
 
 Renderer-specific tests are separate constituents: `scenes` checks scene ownership,
-software depth/clipping/alpha pixels and SceneView preparation. Optional hardware
+software depth/clipping/alpha pixels and SceneView preparation. Hardware
 test `gpu_device` (Vulkan only) covers actual GPU pixels, groups, atlas preparation and
-frame lifecycle. They require PLAYGROUND_GPU_TESTS plus compiled shader assets;
+frame lifecycle. GPU-enabled builds include hardware tests and compiled shaders;
 ordinary UI tests do not require a device. See the renderer contracts for limits.
 
 Additional renderer/runtime constituents:

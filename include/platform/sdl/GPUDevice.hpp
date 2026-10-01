@@ -14,6 +14,7 @@
 
 #include <platform/sdl/GPUTimestamps.hpp>
 #include <rendering/AllocationLimits.hpp>
+#include <rendering/RenderRuntime.hpp>
 #include <rendering/ResourceDomain.hpp>
 #include <rendering/Submission.hpp>
 #include <support/SDLResource.hpp>
@@ -25,6 +26,8 @@ struct GPUDeviceProps {
   bool debug{true};
   const char *driver{nullptr};
   rendering::AllocationLimits limits;
+  std::shared_ptr<rendering::ResourceLedger> resources{
+      rendering::defaultResourceLedger()};
 };
 
 // Narrow native boundary for deterministic submission-failure verification.
@@ -37,11 +40,14 @@ struct GPUCommandAPI {
 // Native resources retain the device, but SDL initialization remains external.
 class GPUDevice {
   struct Recording {
+    rendering::FrameLease frame;
+    bool consumed{};
     std::vector<rendering::ResourceLease> uses;
     std::optional<GPUTimestampRing::Ticket> timestamp;
   };
 
   struct Pending {
+    rendering::FrameLease frame;
     rendering::SubmissionId id{};
     SDL_GPUFence *fence{};
     std::vector<rendering::ResourceLease> uses;
@@ -51,6 +57,7 @@ class GPUDevice {
   SDLResource<SDL_GPUDevice, SDL_DestroyGPUDevice> _device;
   rendering::AllocationLimits _limits;
   GPUCommandAPI _commands;
+  std::shared_ptr<rendering::ResourceLedger> _resources;
   rendering::ResourceDomainId _domain{rendering::acquireResourceDomain()};
   std::thread::id _owner{std::this_thread::get_id()};
 
@@ -61,7 +68,9 @@ class GPUDevice {
   rendering::SubmissionId _submitted{};
   rendering::SubmissionId _completed{};
   bool _valid{true};
+  rendering::FrameLease _frame;
   bool _profiling{};
+  bool _detailedTiming{true};
   bool _timestampSupported{};
   std::unique_ptr<GPUTimestampRing> _timestamps;
   std::vector<rendering::GPUTimingSample> _timings;
@@ -82,6 +91,20 @@ public:
     return _domain;
   }
 
+  const auto &resources() const noexcept { return _resources; }
+
+  void beginFrame(rendering::FrameLease frame) {
+    checkOwnerThread();
+    if (_frame)
+      throw std::logic_error("GPU frame scope already active");
+    if (frame && (!frame->id || frame->domain != _domain))
+      throw std::invalid_argument(
+          "Frame admission belongs to another GPU domain");
+    _frame = std::move(frame);
+  }
+
+  void endFrame() noexcept { _frame.reset(); }
+
   void checkOwnerThread() const;
   SDL_GPUCommandBuffer *acquireCommands(std::string_view label = "commands",
                                         rendering::GPUWorkContext context = {});
@@ -101,7 +124,8 @@ public:
   std::size_t pendingSubmissions() const noexcept { return _pending.size(); }
 
   void invalidate() noexcept;
-  void setProfilingEnabled(bool enabled);
+  bool retireInvalidatedSubmissions() noexcept;
+  void setProfilingEnabled(bool enabled, bool detailed = true);
   bool supportsTimestamps() const noexcept;
   std::vector<rendering::GPUTimingSample> takeGPUTimings();
   rendering::GPUTimingCollection gpuTimingCollection() const;

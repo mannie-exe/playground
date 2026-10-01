@@ -34,7 +34,7 @@ class AssetRegistry {
   std::uint64_t _clock{};
 
   static SurfaceHandle ownSurface(SDL_Surface *surface) {
-    return SurfaceHandle{surface, SurfaceHandleDeleter{}};
+    return adoptManagedSurface(surface);
   }
 
   static std::string vectorKey(const std::string &path,

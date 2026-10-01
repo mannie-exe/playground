@@ -11,16 +11,11 @@
 #include <vector>
 
 #include <rendering/GPUTiming.hpp>
+#include <rendering/RenderRuntime.hpp>
 #include <rendering/PaintWork.hpp>
 #include <ui/WorkDiagnostics.hpp>
 
-enum class FramePhase : std::uint8_t {
-  Poll,
-  Update,
-  Render,
-  Present,
-  Total,
-};
+using FramePhase = playground::rendering::CPUPhase;
 
 // Counts are independent for execution duration and optional completion
 // latency.

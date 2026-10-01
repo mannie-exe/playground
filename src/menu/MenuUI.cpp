@@ -42,7 +42,7 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
   column->append(std::make_unique<ui::Text>(
       assets,
       ui::TextProps{.value =
-                        "1-5: launch | Tab: focus | Enter: open\nEsc / Q: quit",
+                        "1-5: launch | Tab: focus | Enter: open\nEsc: settings | Q: quit",
                     .font = font,
                     .wrap = ui::TextWrap::AvailableInlineSize,
                     .paragraphAlignment = layout::Align::Center}));

@@ -1,4 +1,7 @@
+#include <format>
 #include <optional>
+
+#include <SDL3/SDL_vulkan.h>
 
 #include "GPUPainter.hpp"
 #include "GPUSceneRenderer.hpp"
@@ -19,17 +22,34 @@ SDL_GPUShaderFormat packagedShaderFormats() noexcept {
   return formats;
 }
 
-std::vector<rendering::RendererCandidate> availableGPURenderers() {
-  std::vector<rendering::RendererCandidate> result;
-  for (auto driver : {rendering::GPUDriver::Vulkan})
-    if (packagedShaderFormats() &&
-        SDL_GPUSupportsShaderFormats(packagedShaderFormats(),
-                                     rendering::toString(driver).data()))
-      result.push_back(
-          {rendering::RendererKind::SDLGPU,
-           driver,
-           {true, true, rendering::CompositionSpace::Linear, true}});
-  return result;
+std::vector<rendering::RendererCandidate>
+availableGPURenderers(std::string &unavailabilityReason) {
+  unavailabilityReason.clear();
+  if (!packagedShaderFormats()) {
+    unavailabilityReason =
+        "Vulkan shaders are not packaged; enable PLAYGROUND_GPU and rebuild";
+    return {};
+  }
+  if (SDL_GPUSupportsShaderFormats(packagedShaderFormats(), "vulkan"))
+    return {{rendering::RendererKind::SDLGPU,
+             rendering::GPUDriver::Vulkan,
+             {true, true, rendering::CompositionSpace::Linear, true}}};
+
+  unavailabilityReason =
+      std::string{"Vulkan GPU unavailable: "} + SDL_GetError();
+  // SDL's GPU probe replaces the loader error with a generic backend error.
+  // Check the loader separately only on failure to recover the useful cause.
+  if (!SDL_Vulkan_LoadLibrary(nullptr))
+    unavailabilityReason =
+        std::string{"Vulkan loader unavailable: "} + SDL_GetError();
+  else
+    SDL_Vulkan_UnloadLibrary();
+#ifdef __APPLE__
+  unavailabilityReason +=
+      ". Check the bundled Frameworks/libMoltenVK.dylib and any "
+      "SDL_VULKAN_LIBRARY override on macOS";
+#endif
+  return {};
 }
 
 struct GPURenderBackend::Impl {
@@ -46,10 +66,12 @@ struct GPURenderBackend::Impl {
   Impl(SDL_Window &window, rendering::GPUDriver driver,
        const rendering::RenderBackendProps &props)
       : window{window}, driver{driver},
-        device{std::make_shared<GPUDevice>(GPUDeviceProps{
-            packagedShaderFormats(), props.gpuDebug,
-            rendering::toString(driver).data(), props.allocations})},
+        device{std::make_shared<GPUDevice>(
+            GPUDeviceProps{packagedShaderFormats(), props.gpuDebug,
+                           rendering::toString(driver).data(),
+                           props.allocations, props.resources})},
         paint{device} {
+    device->setProfilingEnabled(true, false);
     if (!SDL_GPUTextureSupportsFormat(
             device->get(), SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT,
             SDL_GPU_TEXTURETYPE_2D,
@@ -102,7 +124,8 @@ public:
     if (!record)
       throw std::invalid_argument(
           "Offscreen rendering requires a recording callback");
-    device->limits().validateTarget(props.size, props.depth ? 12 : 8);
+    device->limits().validateTarget(props.size, props.depth ? 12 : 8,
+                                    "GPU custom offscreen pass");
     auto target = _device.targets.color(props.size);
     std::shared_ptr<gpu_detail::DepthTarget> depth;
     if (props.depth)
@@ -148,14 +171,21 @@ public:
   GPUFrame(SDL_Window &window, gpu_detail::PaintDevice &device,
            std::unique_ptr<gpu_detail::GPUSceneRenderer> &scenes, bool &active,
            std::shared_ptr<gpu_detail::ColorTarget> target, math::Vec2i size,
-           math::Vec2f scale, math::ColorRGBA8 clear)
+           math::Vec2f scale, math::ColorRGBA8 clear,
+           rendering::FrameLease admission)
       : _window{window}, _device{device}, _scenes{scenes}, _active{active},
         _size{size}, _clear{clear}, _target{std::move(target)},
         _painter{std::in_place, device, scale} {
+    _admission = admission;
+    _device.device->beginFrame(std::move(admission));
     _active = true;
   }
 
-  ~GPUFrame() override { _active = false; }
+  ~GPUFrame() override {
+    _painter.reset();
+    _device.device->endFrame();
+    _active = false;
+  }
 
   rendering::PaintContext &paint2D() override {
     if (!_painter)
@@ -191,8 +221,7 @@ public:
     } guard{*_device.device, commands, swapchain};
 
     Uint32 w{}, h{};
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, &_window, &swapchain,
-                                               &w, &h))
+    if (!SDL_AcquireGPUSwapchainTexture(commands, &_window, &swapchain, &w, &h))
       throwRenderError("Cannot acquire GPU swapchain",
                        rendering::RenderOperation::Acquire);
     if (!swapchain)
@@ -228,7 +257,21 @@ GPURenderBackend::GPURenderBackend(SDL_Window &window,
 
 GPURenderBackend::~GPURenderBackend() = default;
 
-void GPURenderBackend::invalidate() noexcept { _impl->device->invalidate(); }
+std::size_t GPURenderBackend::pendingWork() const {
+  return _impl->device->pendingSubmissions();
+}
+
+void GPURenderBackend::trimUnused() {
+  _impl->device->pollCompletions();
+  _impl->paint.trimUnused();
+  if (_impl->scenes)
+    _impl->scenes->trimUnused();
+}
+
+void GPURenderBackend::invalidate() noexcept {
+  _impl->device->invalidate();
+  (void)_impl->device->retireInvalidatedSubmissions();
+}
 
 void GPURenderBackend::setProfilingEnabled(bool enabled) {
   _impl->device->setProfilingEnabled(enabled);
@@ -322,7 +365,16 @@ GPURenderBackend::beginFrame(rendering::RenderFrameProps props) {
       !math::hasArea(drawable))
     return {};
   const auto size = props.settings.targetSize(drawable);
-  auto target = _impl->paint.targets.color(size);
+  std::shared_ptr<gpu_detail::ColorTarget> target;
+  try {
+    target = _impl->paint.targets.color(size, "GPU frame");
+  } catch (const rendering::ResourcePressure &) {
+    throw;
+  } catch (const std::length_error &error) {
+    throw std::length_error(
+        std::format("{}; drawable {}x{}, resolution scale {}", error.what(),
+                    drawable.x, drawable.y, props.settings.resolutionScale));
+  }
   int width{}, height{};
   if (!SDL_GetWindowSize(&_impl->window, &width, &height) || width <= 0 ||
       height <= 0)
@@ -332,7 +384,7 @@ GPURenderBackend::beginFrame(rendering::RenderFrameProps props) {
       _impl->window, _impl->paint, _impl->scenes, _impl->active,
       std::move(target), size,
       math::Vec2f{float(size.x) / width, float(size.y) / height},
-      props.clearColor);
+      props.clearColor, std::move(props.admission));
 }
 
 } // namespace playground::sdl

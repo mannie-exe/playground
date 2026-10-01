@@ -20,6 +20,7 @@ playground_add_module(playground_runtime
 playground_add_module(playground_rendering
     src/rendering/RendererTypes.cpp
     src/rendering/RenderSettings.cpp
+    src/rendering/GraphicsSettings.cpp
     src/rendering/Shader.cpp
     src/rendering/Texture.cpp)
 target_sources(playground_rendering PRIVATE src/rendering/TextureStorage.cpp)
@@ -44,6 +45,11 @@ target_link_libraries(playground_assets PUBLIC playground_scene)
 
 playground_add_module(playground_layout src/layout/LayoutAlgorithms.cpp)
 target_link_libraries(playground_layout PUBLIC playground_math)
+
+playground_add_module(playground_text
+    src/support/Unicode.cpp
+    src/support/TextFlow.cpp)
+target_link_libraries(playground_text PRIVATE ICU::uc ICU::i18n ICU::data)
 
 playground_add_module(playground_ui_core
     src/ui/Theme.cpp
@@ -80,9 +86,10 @@ playground_add_module(playground_ui_core
     src/ui/controls/Stepper.cpp)
 target_link_libraries(playground_ui_core PUBLIC playground_layout playground_rendering playground_scene)
 find_package(Threads REQUIRED)
+target_link_libraries(playground_rendering PUBLIC Threads::Threads)
 target_link_libraries(playground_ui_core PUBLIC Threads::Threads)
 target_link_libraries(playground_runtime PUBLIC Threads::Threads playground_math)
-target_link_libraries(playground_ui_core PUBLIC playground_runtime)
+target_link_libraries(playground_ui_core PUBLIC playground_runtime playground_text)
 target_link_libraries(playground_ui_core PRIVATE ICU::uc ICU::i18n ICU::data)
 
 playground_add_module(playground_constraints
@@ -93,11 +100,11 @@ target_include_directories(playground_constraints SYSTEM PRIVATE ${kiwi_SOURCE_D
 playground_add_module(playground_ui_resources
     src/support/AssetRegistry.cpp
     src/support/Font.cpp
-    src/support/SVGDocument.cpp
-    src/support/TextFlow.cpp)
+    src/support/SVGDocument.cpp)
 target_link_libraries(playground_ui_resources
-    PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf
-    PRIVATE utf8proc pugixml::pugixml)
+    PUBLIC SDL3::SDL3 SDL3_image::SDL3_image SDL3_ttf::SDL3_ttf playground_text
+    PRIVATE pugixml::pugixml)
+target_link_libraries(playground_ui_resources PUBLIC playground_rendering)
 
 playground_add_module(playground_sdl
     src/app/PresentationSession.cpp
@@ -142,6 +149,7 @@ target_sources(playground_sdl PRIVATE
     src/platform/sdl/ModelPreparation.cpp
     src/platform/sdl/GPUText.cpp
     src/platform/sdl/TextColumns.cpp
+    src/ui/views/SettingsView.cpp
     src/ui/content/Text.cpp
     src/ui/controls/TextField.cpp
     src/ui/content/Vector.cpp)
@@ -149,7 +157,6 @@ target_link_libraries(playground_sdl PUBLIC playground_ui_core playground_ui_res
     PRIVATE utf8proc tomlplusplus::tomlplusplus ktx_read accesskit-static)
 target_include_directories(playground_sdl SYSTEM PRIVATE ${stb_SOURCE_DIR})
 if(APPLE)
-    enable_language(OBJCXX)
     set_target_properties(playground_sdl PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
     target_sources(playground_sdl PRIVATE src/platform/sdl/SystemAppearanceMac.mm)
     target_link_libraries(playground_sdl PRIVATE "-framework AppKit")

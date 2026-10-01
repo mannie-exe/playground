@@ -42,7 +42,7 @@ public:
   ActionResult performAction(const UIAction &, ActionSource) override;
 
   Connection
-  onValueChanged(std::move_only_function<void(CheckState)> callback) {
+  onValueChanged(support::MoveOnlyFunction<void(CheckState)> callback) {
     return _changed.connect(std::move(callback));
   }
 };
@@ -122,7 +122,7 @@ public:
   ActionResult performAction(const UIAction &, ActionSource) override;
 
   Connection
-  onSelectionChanged(std::move_only_function<void(std::string)> callback) {
+  onSelectionChanged(support::MoveOnlyFunction<void(std::string)> callback) {
     return _changed.connect(std::move(callback));
   }
 };

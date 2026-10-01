@@ -65,6 +65,12 @@ std::size_t texelBytes(TextureFormat format) {
 PackedTexels::PackedTexels(TextureFormat format, ColorEncoding encoding,
                            std::vector<std::byte> data)
     : _format{format}, _encoding{encoding}, _data{std::move(data)} {
+  if (!_data.empty()) {
+    _allocation = defaultResourceLedger()->reserve(
+        MemoryClass::CPU, ResourceKind::Asset, _data.capacity(),
+        "Packed texture adoption");
+    _allocation->setState(AllocationState::Owned);
+  }
   if (!isValid(encoding) || _data.size() % texelBytes(format) ||
       (encoding == ColorEncoding::SRGB && format != TextureFormat::RGBA8))
     throw std::invalid_argument("Invalid packed texture layout/encoding");
@@ -76,7 +82,13 @@ PackedTexels::PackedTexels(TextureFormat format, ColorEncoding encoding,
   const auto stride = texelBytes(format);
   if (linear.size() > std::numeric_limits<std::size_t>::max() / stride)
     throw std::length_error("Texture byte count overflow");
+  if (!linear.empty())
+    _allocation = defaultResourceLedger()->reserve(
+        MemoryClass::CPU, ResourceKind::Asset, linear.size() * stride,
+        "Packed texture storage");
   _data.resize(linear.size() * stride);
+  if (_allocation)
+    _allocation->setState(AllocationState::Owned);
   for (std::size_t i = 0; i < linear.size(); ++i) {
     const auto p = linear[i];
     if (!math::isFinite(p))
@@ -132,5 +144,34 @@ math::Vec4f PackedTexels::operator[](std::size_t index) const {
 bool PackedTexels::operator==(const PackedTexels &other) const {
   return _format == other._format && _encoding == other._encoding &&
          _data == other._data;
+}
+
+PackedTexels::PackedTexels(const PackedTexels &other)
+    : _format{other._format}, _encoding{other._encoding},
+      _allocation{other._data.empty()
+                      ? ResourceLedger::Token{}
+                      : defaultResourceLedger()->reserve(
+                            MemoryClass::CPU, ResourceKind::Asset,
+                            other._data.size(), "Packed texture copy")},
+      _data{other._data} {
+  if (_allocation)
+    _allocation->setState(AllocationState::Owned);
+}
+
+PackedTexels &PackedTexels::operator=(const PackedTexels &other) {
+  if (this != &other)
+    *this = PackedTexels{other};
+  return *this;
+}
+
+PackedTexels &PackedTexels::operator=(PackedTexels &&other) noexcept {
+  if (this != &other) {
+    PackedTexels previous{std::move(*this)};
+    _format = other._format;
+    _encoding = other._encoding;
+    _allocation = std::move(other._allocation);
+    _data = std::move(other._data);
+  }
+  return *this;
 }
 } // namespace playground::rendering

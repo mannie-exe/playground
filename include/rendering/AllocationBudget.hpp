@@ -1,40 +1,29 @@
 #pragma once
 
-#include <cstddef>
-#include <memory>
-#include <stdexcept>
+#include <rendering/ResourceLedger.hpp>
 
 namespace playground::rendering {
-
-// Owner-thread accounting of estimated bytes. A reservation outlives the cache
-// if a native allocation is still in use; this is not a query of free VRAM.
+// Compatibility facade for an isolated byte budget. Shared renderer resources
+// reserve directly from their ResourceLedger instead of creating another pool.
 class AllocationBudget {
-  struct State {
-    std::size_t bytes{};
-  };
-
-  struct Reservation {
-    std::shared_ptr<State> state;
-    std::size_t bytes;
-
-    ~Reservation() { state->bytes -= bytes; }
-  };
-
-  std::shared_ptr<State> _state{std::make_shared<State>()};
+  ResourceLedger _ledger;
   std::size_t _limit;
 
 public:
-  explicit AllocationBudget(std::size_t limit) : _limit{limit} {}
+  explicit AllocationBudget(std::size_t limit)
+      : _ledger{
+            ResourceBudgetProps{.cpuBytes = std::max(std::size_t{1}, limit)}},
+        _limit{limit} {}
 
-  std::size_t bytes() const noexcept { return _state->bytes; }
+  std::size_t bytes() const { return _ledger.snapshot().memory[0].bytes; }
 
-  std::shared_ptr<void> reserve(std::size_t bytes) {
-    if (bytes > _limit || _state->bytes > _limit - bytes)
-      throw std::length_error("Live render target allocation budget exhausted");
-    auto result = std::make_shared<Reservation>(_state, bytes);
-    _state->bytes += bytes;
-    return result;
+  ResourceLedger::Token reserve(std::size_t amount) {
+    if (!_limit)
+      throw ResourcePressure("Allocation", amount, bytes(), _limit);
+    if (!amount)
+      return {};
+    return _ledger.reserve(MemoryClass::CPU, ResourceKind::Surface, amount,
+                           "Allocation");
   }
 };
-
 } // namespace playground::rendering

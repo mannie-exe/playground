@@ -1,6 +1,7 @@
 #include <limits>
 #include <memory>
 
+#include <rendering/ResourceLedger.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/containers/Boundaries.hpp>
@@ -17,12 +18,29 @@ public:
   math::Size2 pixelSize() const noexcept override { return _size; }
 };
 
+class Content final : public ui::Node {
+  layout::MeasureResult
+  measureContent(ui::MeasureContext &,
+                 const layout::SizeConstraints &) override {
+    return {.size = {10, 10}};
+  }
+
+  void paint(ui::PaintContext &context) const override {
+    context.fill(bounds(), {255, 0, 0, 255});
+  }
+
+public:
+  Content()
+      : Node{layout::BoxProps{.width = layout::SizeRule::fixed(10),
+                              .height = layout::SizeRule::fixed(10)}} {}
+};
+
 class Painter final : public rendering::PaintContext {
 public:
   rendering::PaintImageHandle result;
   int captures{};
   int draws{};
-  int depth{};
+  int depth{}, fills{}, pressure{};
 
   void save() override { ++depth; }
 
@@ -32,12 +50,17 @@ public:
 
   void clip(math::Rect) override {}
 
-  void fill(math::Rect, math::ColorRGBA8) override {}
+  void fill(math::Rect, math::ColorRGBA8) override { ++fills; }
 
   rendering::PaintImageHandle
   capture(math::Rect, math::Vec2f,
-          const std::function<void(rendering::PaintContext &)> &) override {
+          const std::function<void(rendering::PaintContext &)> &draw) override {
     ++captures;
+    if (pressure) {
+      if (pressure == 2)
+        draw(*this);
+      throw rendering::ResourcePressure("Optional capture", 400, 400, 400);
+    }
     return result;
   }
 
@@ -83,5 +106,25 @@ int main() {
     root.setContent({});
     test::require(root.services().rasterBudget->used == 0,
                   "detachment releases successful capture");
+    root.setContent(std::make_unique<ui::Layer>(
+        std::make_unique<Content>(),
+        ui::LayerProps{.cachePolicy = ui::LayerCachePolicy::WhenUnchanged},
+        layout::BoxProps{.width = layout::SizeRule::fixed(10),
+                         .height = layout::SizeRule::fixed(10)}));
+    root.flushLayout({10, 10});
+    root.prepare();
+    painter.pressure = 1;
+    root.render(painter);
+    test::require(
+        painter.fills == 1 && root.services().rasterBudget->used == 0,
+        "optional cache refusal before recording paints uncached once");
+    painter.pressure = 2;
+    painter.fills = 0;
+    test::rejects<rendering::ResourcePressure>(
+        [&] { root.render(painter); },
+        "pressure after content recording propagates without replay");
+    test::require(painter.fills == 1 && painter.depth == 0 &&
+                      root.services().rasterBudget->used == 0,
+                  "partially recorded content is not painted twice");
   });
 }

@@ -128,7 +128,7 @@ public:
     information->append(std::move(status));
     information->append(
         label("Tab / Shift+Tab: focus • arrows: navigate or adjust • "
-              "Enter/Space: activate • Esc: dismiss, then return to menu. "
+              "Enter/Space: activate • Esc: settings; Ctrl/Cmd+Shift+M: menu. "
               "Gamepad D-pad and south/east buttons work too."));
     auto column = std::make_unique<ui::VStack>(
         layout::StackProps{
@@ -324,7 +324,7 @@ public:
         .gap = 16, .childrenAlignment = layout::CrossAlignment::Stretch});
     dialogContent->append(
         label("Modal dialog — background controls cannot receive input. Close "
-              "or press Escape to restore the opener."));
+              "to restore the opener."));
     dialogContent->append(std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = _font,
                            .name = "Dialog input",

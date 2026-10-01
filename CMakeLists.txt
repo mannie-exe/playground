@@ -1,8 +1,28 @@
 cmake_minimum_required(VERSION 4.4)
 
-project(playground LANGUAGES C CXX)
+# Set before compiler detection so every target shares the supported macOS floor.
+if(CMAKE_HOST_APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING "Minimum supported macOS version" FORCE)
+    elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "26.0")
+        message(FATAL_ERROR "playground requires macOS 26 or later")
+    endif()
+endif()
 
-include(GNUInstallDirs)
+set(PLAYGROUND_VERSION "0.0.0" CACHE STRING "Application version (major.minor.patch; 0.0.0 denotes development)")
+if(NOT PLAYGROUND_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "PLAYGROUND_VERSION must be major.minor.patch")
+endif()
+project(playground VERSION ${PLAYGROUND_VERSION} LANGUAGES C CXX)
+include(cmake/Platform.cmake)
+if(APPLE)
+    # Enable in the common parent before SDL adds Objective-C/Objective-C++
+    # sources; enabling from a dependency first loses rule variables in siblings.
+    enable_language(OBJC OBJCXX)
+endif()
+
+option(PLAYGROUND_BUILD_TESTS "Build focused UI and supporting-module tests" ON)
+option(PLAYGROUND_GPU "Build GPU shaders and include hardware tests (disable for software-only development)" ON)
 
 #[[
 Collect build products into predictable directories inside the active build
@@ -27,13 +47,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-file(
-    DOWNLOAD
-    https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.43.1/CPM.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
-    EXPECTED_HASH SHA256=1c40fc102ce9625d7de7eb14f541cab30cc3138dca627f0b0ec40293ce6c2934
-)
-include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
+include(cmake/Dependencies.cmake)
 include(cmake/Accessibility.cmake)
 
 #[[
@@ -107,7 +121,7 @@ function(playground_add_sdl_target target_name)
 endfunction()
 
 CPMAddPackage(
-    URI "gh:libsdl-org/SDL#147a8ee@3.4.14"
+    URI "gh:libsdl-org/SDL#fa2c02bb6e21974a89ea9824bc53c9932abe5f9c@3.4.16"
     OPTIONS
     "SDL_SHARED ON"
     "SDL_STATIC OFF"
@@ -123,7 +137,7 @@ include(cmake/SDLTimestamps.cmake)
 playground_apply_sdl_timestamps("${SDL_SOURCE_DIR}")
 
 CPMAddPackage(
-    URI "gh:libsdl-org/SDL_image#bec9134@3.4.4"
+    URI "gh:libsdl-org/SDL_image#f661fa1ad24ab1b81e43662532f9a6a9fcf67ea6@3.4.6"
     OPTIONS
     "SDLIMAGE_INSTALL OFF"
     "SDLIMAGE_SAMPLES OFF"
@@ -150,6 +164,7 @@ CPMAddPackage(
     "SDLIMAGE_JPG ON"
     "SDLIMAGE_PNG ON"
     "SDLIMAGE_PNG_LIBPNG ON"
+    "SDLIMAGE_PNG_SHARED OFF"
     "SDLIMAGE_QOI ON"
     "SDLIMAGE_BMP_SAVE OFF"
     "SDLIMAGE_JPG_SAVE OFF"
@@ -175,7 +190,7 @@ include(cmake/patches/SDLTTFText.cmake)
 playground_patch_sdl_ttf("${SDL_ttf_SOURCE_DIR}")
 
 CPMAddPackage(
-    URI "gh:JuliaStrings/utf8proc@2.11.3"
+    URI "gh:JuliaStrings/utf8proc#79cdd5ab40c79afa559f689ffc13b76812dee1ac@2.12.0"
     OPTIONS "BUILD_SHARED_LIBS OFF" "UTF8PROC_INSTALL OFF" "UTF8PROC_ENABLE_TESTING OFF"
 )
 CPMAddPackage(
@@ -198,6 +213,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME spirv_reflect
     GITHUB_REPOSITORY KhronosGroup/SPIRV-Reflect
+    # vulkan-sdk-1.4.357.0
     GIT_TAG 9137a7e529e4e911a4dbd63f1ce71e4b3e8f4cfc
     OPTIONS
     "SPIRV_REFLECT_STATIC_LIB ON"
@@ -207,6 +223,7 @@ CPMAddPackage(
     "SPIRV_REFLECT_EXAMPLES OFF"
     "SPIRV_REFLECT_INSTALL OFF"
 )
+# These upstream projects publish no release tags; retain reviewed commits.
 CPMAddPackage(NAME mikktspace GITHUB_REPOSITORY mmikk/MikkTSpace
     GIT_TAG 3e895b49d05ea07e4c2133156cfa94369e19e409 DOWNLOAD_ONLY YES)
 CPMAddPackage(NAME stb GITHUB_REPOSITORY nothings/stb
@@ -215,6 +232,7 @@ CPMAddPackage(
     URI "gh:zeux/meshoptimizer#9e1f07b159d3cb777f1c67ed31fc11fd117986f4@1.3"
     OPTIONS "MESHOPT_BUILD_DEMO OFF" "MESHOPT_BUILD_GLTFPACK OFF" "MESHOPT_BUILD_SHARED_LIBS OFF")
 CPMAddPackage(NAME ktx GITHUB_REPOSITORY KhronosGroup/KTX-Software
+    # v4.4.2
     GIT_TAG 936b655d10fe75f900967f524ba31005bebcbb47
     GIT_SUBMODULES "" DOWNLOAD_ONLY YES)
 # Only the reader/transcoder is linked; dependency tools, tests and install
@@ -288,7 +306,6 @@ playground_add_sdl_target(playground
     INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(playground PRIVATE playground_sdl playground_constraints)
-add_dependencies(playground playground_shaders)
 
 # Compile the guide's additive snippets without adding an example program.
 set(playground_guide_check ${CMAKE_CURRENT_BINARY_DIR}/generated/UIGuideCheck.cpp)
@@ -303,85 +320,10 @@ add_library(playground_docs_check OBJECT EXCLUDE_FROM_ALL ${playground_guide_che
 playground_configure_cpp_target(playground_docs_check)
 target_link_libraries(playground_docs_check PRIVATE playground_sdl playground_constraints)
 
-option(PLAYGROUND_BUILD_TESTS "Build focused UI and supporting-module tests" ON)
 if(PLAYGROUND_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-set(playground_assets_dir
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets)
-
-#[[
-Install means "assemble the runnable/exportable form of this project."
-
-For this repo, install does not mean modifying the operating system or placing
-files into Program Files, /usr/local, or another machine-wide location. The
-install prefix from CMakePresets.json points at dist/<config>, so install means:
-
-- copy our executables into dist/<config>/bin
-- copy the SDL shared libraries they need into dist/<config>/bin on Windows
-- copy shared libraries into dist/<config>/lib on Unix-like systems when that is
-  the platform convention
-- copy import/static libraries into dist/<config>/lib when CMake has them
-]]
-
-get_property(playground_install_targets GLOBAL PROPERTY playground_install_targets)
-
-foreach(shared_target IN ITEMS
-    SDL3-shared
-    SDL3_image-shared
-    SDL3_ttf-shared)
-
-    if(TARGET ${shared_target})
-        list(APPEND playground_install_targets ${shared_target})
-    endif()
-endforeach()
-
-install(
-    TARGETS ${playground_install_targets}
-    RUNTIME_DEPENDENCY_SET playground_runtime_deps
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    BUNDLE DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-#[[
-Install runtime dependencies discovered from the targets above.
-
-`RUNTIME_DEPENDENCY_SET playground_runtime_deps` in the previous install(TARGETS)
-call asks CMake to scan those targets for dynamic library dependencies. This
-second install() call copies the discovered dependencies into the install tree.
-
-The exclude regexes prevent CMake from copying operating-system libraries:
-
-- api-ms-* and ext-ms-* are Windows API-set forwarding DLL names
-- system32/System32/Windows paths are Windows system components
-- /System/Library and /usr/lib are system library locations on macOS/Linux
-
-The goal is to copy project/runtime dependencies such as SDL DLLs or shared
-libraries, while leaving OS-provided libraries where the OS already provides
-them.
-]]
-install(
-    RUNTIME_DEPENDENCY_SET playground_runtime_deps
-    PRE_EXCLUDE_REGEXES
-    [[api-ms-]]
-    [[ext-ms-]]
-    POST_EXCLUDE_REGEXES
-    [[.*[\\/]system32[\\/].*]]
-    [[.*[\\/]System32[\\/].*]]
-    [[.*[\\/]Windows[\\/].*]]
-    [[^/System/Library/.*]]
-    [[^/usr/lib/.*]]
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
-
-if(EXISTS ${playground_assets_dir})
-    install(
-        DIRECTORY ${playground_assets_dir}/
-        DESTINATION ${CMAKE_INSTALL_BINDIR}/assets
-    )
-endif()
+include(cmake/Install.cmake)
+include(cmake/Package.cmake)

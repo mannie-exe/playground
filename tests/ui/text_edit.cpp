@@ -37,6 +37,23 @@ int main() {
                   "undo restores original caret");
     test::require(edit.redo() && edit.value() == combining + "x",
                   "redo deletion");
+    ui::TextEditModel line{{}, combining + " word"};
+    line.setSelection({line.value().size(), line.value().size()});
+    const auto lineCaret = line.selection();
+    test::require(line.eraseTo(3) && line.value() == combining,
+                  "delete to explicit grapheme boundary");
+    test::require(line.undo() && line.value() == combining + " word" &&
+                      line.selection() == lineCaret,
+                  "undo targeted deletion restores text and original caret");
+    test::require(!line.undo(), "targeted deletion is one undo step");
+    test::rejects([&] { line.eraseTo(1); },
+                  "targeted deletion rejects interior grapheme offsets");
+    test::require(line.value() == combining + " word" &&
+                      line.selection() == lineCaret,
+                  "invalid targeted deletion preserves text and selection");
+    test::require(!line.eraseTo(lineCaret.caret) &&
+                      line.selection() == lineCaret,
+                  "deleting empty range preserves caret");
     edit.setSelection({0, 3});
     edit.setComposition("b");
     test::require(edit.value() == combining + "x",
@@ -91,7 +108,8 @@ int main() {
     auto props = edit.props();
     props.readOnly = true;
     edit.setProps(props);
-    test::require(!edit.replace("no") && !edit.erase(true) && !edit.undo(),
+    test::require(!edit.replace("no") && !edit.erase(true) &&
+                      !edit.eraseTo(0) && !edit.undo(),
                   "readonly mutations rejected");
     ui::TextEditModel multi{{.multiline = true}, "a\nb"};
     multi.selectAll();

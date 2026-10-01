@@ -14,12 +14,12 @@ class DeferredMutations {
 public:
   explicit DeferredMutations(CompletionQueueProps props = {}) : _queue{props} {}
 
-  bool defer(std::move_only_function<void()> operation) {
+  bool defer(support::MoveOnlyFunction<void()> operation) {
     return _queue.sink().post(std::move(operation));
   }
 
   bool remove(ActivationLifetime &owner,
-              std::move_only_function<void()> destroy) {
+              support::MoveOnlyFunction<void()> destroy) {
     if (!defer(std::move(destroy)))
       return false;
     owner.deactivate();

@@ -54,7 +54,7 @@ public:
 
   bool isInteractionEnabled() const noexcept override { return _props.enabled; }
 
-  Connection onValueChanged(std::move_only_function<void(int)> callback) {
+  Connection onValueChanged(support::MoveOnlyFunction<void(int)> callback) {
     return _changed.connect(std::move(callback));
   }
 };

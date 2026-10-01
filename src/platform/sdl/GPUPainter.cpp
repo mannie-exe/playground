@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <limits>
 
 #include "GPUPainter.hpp"
@@ -56,7 +57,7 @@ ContentPreparer::prepareText(const rendering::TextSource &source) {
   auto size = text.size();
   size.x = std::max(1, size.x);
   size.y = std::max(1, size.y);
-  _paint.device->limits().validateTarget(size, 8);
+  _paint.device->limits().validateTarget(size, 8, "GPU text raster");
   const auto *sequenceHead = text.drawData();
   auto target = _paint.targets.color(size);
   std::vector<Draw> draws;
@@ -472,10 +473,13 @@ void GPUPainter::endLayer() {
   if (!math::isFinite(extent) || extent.w() > limit || extent.h() > limit ||
       static_cast<double>(extent.w()) > std::numeric_limits<int>::max() ||
       static_cast<double>(extent.h()) > std::numeric_limits<int>::max())
-    throw std::length_error("GPU layer dimensions exceed limit");
+    throw std::length_error(std::format(
+        "GPU layer composition dimensions exceed limit: {}x{} pixels at ({}, {}); "
+        "maximum {} pixels/axis",
+        extent.w(), extent.h(), extent.x(), extent.y(), limit));
   const auto size =
       math::Vec2i{int(std::ceil(extent.w())), int(std::ceil(extent.h()))};
-  _device.device->limits().validateTarget(size, 8);
+  _device.device->limits().validateTarget(size, 8, "GPU layer composition");
   for (auto &draw : draws) {
     draw.bounds.position.x -= extent.x();
     draw.bounds.position.y -= extent.y();
@@ -523,9 +527,12 @@ rendering::PaintImageHandle GPUPainter::capture(
   if (!std::isfinite(w) || !std::isfinite(h) || w > limit || h > limit ||
       w > std::numeric_limits<int>::max() ||
       h > std::numeric_limits<int>::max())
-    throw std::length_error("GPU capture dimensions exceed allocation policy");
+    throw std::length_error(std::format(
+        "GPU layer capture dimensions exceed limit: {}x{} logical units at "
+        "scale ({}, {}) produces {}x{} pixels; maximum {} pixels/axis",
+        bounds.w(), bounds.h(), scale.x, scale.y, w, h, limit));
   const math::Vec2i size{int(w), int(h)};
-  _device.device->limits().validateTarget(size, 8);
+  _device.device->limits().validateTarget(size, 8, "GPU layer capture");
   auto target = _device.targets.color(size);
   GPUPainter painter{_device, scale};
   painter.translate({-bounds.x(), -bounds.y()});

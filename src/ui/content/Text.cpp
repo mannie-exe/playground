@@ -251,7 +251,7 @@ SurfaceHandle Text::rasterize(const Measurement &m) const {
   if (!surface)
     throw std::runtime_error(std::string{"Text rasterization: "} +
                              SDL_GetError());
-  return SurfaceHandle{surface, SurfaceHandleDeleter{}};
+  return adoptManagedSurface(surface);
 }
 
 layout::MeasureResult
@@ -367,6 +367,8 @@ void Text::prepareContent(PrepareContext &context) {
     if (!_raster || !_atlasRaster || key != _rasterKey ||
         _rasterDomain != textPreparer->resourceDomain() ||
         _rasterImageDomain != imageDomain) {
+      if (_rasterDomain != textPreparer->resourceDomain() || _rasterImageDomain != imageDomain)
+        _raster.reset();
       auto raster = rendering::prepareTextImage(
           sdl::FontTextSource{m.font, m.value, m.wrap, foreground()},
           *textPreparer);

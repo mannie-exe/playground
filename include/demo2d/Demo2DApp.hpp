@@ -18,17 +18,8 @@ class Demo2DApp final : public IApp {
   playground::sdl::UISession _ui{playground::sdl::UISessionTiming::Monotonic};
 
 public:
-  Demo2DApp() {
-    input().addContext(
-        {.name = "navigation", .stage = playground::input::InputStage::AfterUI},
-        {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
-  }
+  Demo2DApp() = default;
 
-  void onActions(AppContext &ctx,
-                 const playground::input::InputSnapshot &actions) override {
-    if (actions["back"].pressed)
-      ctx.requestMenu();
-  }
 
   static AppInfo staticInfo() {
     return AppInfo{

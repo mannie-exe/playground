@@ -5,6 +5,8 @@ may supply 2D composition and 3D scene rendering independently. Both software an
 SDL GPU 3D are required project targets; neither requires a 2D-only app to create
 a scene, camera, depth buffer, or glyph engine. Allocate these resources on use.
 
+Runtime resource and scheduling definitions are in [RESOURCES.md](RESOURCES.md).
+
 ## Vocabulary and ownership
 
 | Value/service | Responsibility |
@@ -14,10 +16,12 @@ a scene, camera, depth buffer, or glyph engine. Allocate these resources on use.
 | RendererCapabilities | Implemented services and composition color behavior |
 | RendererState | Requested preferences, selected implementation, fallback reason |
 | RenderBackend | Own renderer resources; lend one frame at a time |
-| RenderBackendProps | Immutable allocation/debug policy retained across backend replacement |
+| RenderBackendProps | Creation constraints, debug policy and shared resource ledger |
 | RenderFrame | Borrow backend; record work, then explicitly present with Submitted/Skipped outcome |
 | SubmissionId / ResourceUse | Track ordered native completion and resource leases within one domain |
-| AllocationBudget | Retain estimated allocation reservations independently of cache ownership |
+| ResourceLedger | Shared CPU/GPU commitments, live budgets and ownership tokens |
+| GraphicsSettings / QualityController | Shared preferences, bounded scene-scale decisions and revision attribution |
+| RenderRuntime / FrameLease | Admission, pacing, frame identity and baseline telemetry |
 | SceneRenderer | Render a view from immutable submissions, not own the world |
 | PaintContext | Compose 2D content; never measure layout or own a camera |
 
@@ -98,8 +102,10 @@ CPU source ownership, device-local realization, frame recording and in-flight GP
 usage have different lifetimes. Immutable CPU handles survive backend replacement;
 device realizations do not. Shared ownership is not permission to overwrite an
 in-flight buffer. Use SDL cycling for transient reuse and fences where completion
-must be observed. Keep decode jobs CPU-only and publish through the completion
-mailbox; no worker mutation of nodes or registries.
+must be observed. Keep decode jobs CPU-only and publish results at an owner-thread
+boundary, through a completion mailbox or an explicitly polled result slot such
+as [ModelPreparation](../platform/ASSETS.md#asynchronous-requests). Workers never
+mutate nodes or registries.
 
 Frame destruction abandons application recording, not arbitrary GPU work. SDL
 forbids cancelling a command buffer after swapchain acquisition. The GPU backend
@@ -133,11 +139,13 @@ ordered affine display list; Scene2DView uses either 2D painter.
 Rigid TRS animation changes scene-authored state. PBR requires metallicRoughness
 capability; unlitPreview is an explicit lossy author choice. Shadows, skinning,
 VAT and advanced transparency remain extensions.
-Reconciliation is not required. Idle/damage updates, additional controls and native
-accessibility remain in the UI plan, independently of renderer work.
+Reconciliation is not required. [Whole-frame activity](../platform/ACTIVITY.md)
+already supports on-demand updates and painting, including completion and native
+accessibility wakes. Partial damage rendering remains separate future work;
+controls and accessibility remain UI/platform responsibilities.
 
 Tests cover pure contracts and failure paths without hardware. Device tests must
-be opt-in and report backend/platform; CPU/offscreen success does not establish
+report backend/platform and skip explicitly when unavailable; CPU/offscreen success does not establish
 GPU or cross-platform correctness. Compare color in the declared working space
 with tolerances, not indiscriminate byte-identical screenshots.
 

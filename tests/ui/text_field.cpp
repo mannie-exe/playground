@@ -80,6 +80,50 @@ int main() {
     root.dispatch(copy);
     test::require(clipboard == "office",
                   "copy uses injected clipboard, not global desktop");
+#if defined(__APPLE__)
+    raw->setValue("hello world");
+    root.flushLayout({280, 48});
+    root.performAction(raw->id(), ui::TextSelection{11, 11},
+                       ui::ActionSource::Assistive);
+    const auto press = [&](ui::Key key, bool option, bool command,
+                           bool shift = false) {
+      ui::UIEvent event{.type = ui::EventType::KeyDown,
+                         .logicalKey = key,
+                         .shift = shift,
+                         .alt = option,
+                         .command = command};
+      root.dispatch(event);
+    };
+    press(ui::Key::Left, true, false);
+    test::require(raw->model().selection().caret == 6,
+                  "Option-Left moves one word");
+    press(ui::Key::Right, true, false);
+    test::require(raw->model().selection().caret == 11,
+                  "Option-Right moves one word");
+    press(ui::Key::Left, false, true);
+    test::require(raw->model().selection().caret == 0,
+                  "Command-Left moves to visual line start");
+    press(ui::Key::Right, false, true, true);
+    test::require(raw->model().selection() == ui::TextSelection{0, 11},
+                  "Command-Shift-Right extends selection to line end");
+    root.performAction(raw->id(), ui::TextSelection{11, 11},
+                       ui::ActionSource::Assistive);
+    press(ui::Key::Backspace, true, false);
+    test::require(raw->model().value() == "hello ",
+                  "Option-Backspace deletes one word");
+    press(ui::Key::Z, false, true);
+    root.flushLayout({280, 48});
+    press(ui::Key::Backspace, false, true);
+    test::require(raw->model().value().empty(),
+                  "Command-Backspace deletes to visual line start");
+    press(ui::Key::Z, false, true);
+    test::require(raw->model().value() == "hello world" &&
+                      raw->model().selection() == ui::TextSelection{11, 11},
+                  "undo Command-Backspace restores original caret");
+    raw->setValue("office x");
+    root.performAction(raw->id(), ui::TextSelection{0, 6},
+                       ui::ActionSource::Assistive);
+#endif
     auto p = raw->props();
     p.editing.password = true;
     raw->setProps(p);
@@ -116,6 +160,32 @@ int main() {
     test::require(snapshot.nodes.front().state.textRuns.size() > 1 &&
                       multiline->textInputState().multiline,
                   "wrapped mixed bidi multiline layout");
+#if defined(__APPLE__)
+    multiline->setValue("one two\nthree four");
+    root.flushLayout({280, 120});
+    root.requestFocus(multiline->id());
+    root.performAction(multiline->id(), ui::TextSelection{12, 12},
+                       ui::ActionSource::Assistive);
+    press(ui::Key::Left, false, true);
+    test::require(multiline->model().selection().caret == 8,
+                  "Command-Left stays on current line");
+    press(ui::Key::Right, false, true);
+    test::require(multiline->model().selection().caret == 18,
+                  "Command-Right reaches current line end");
+    press(ui::Key::Up, false, true);
+    test::require(multiline->model().selection().caret == 0,
+                  "Command-Up reaches document start");
+    press(ui::Key::Down, false, true);
+    test::require(multiline->model().selection().caret == 18,
+                  "Command-Down reaches document end");
+    auto readOnly = multiline->props();
+    readOnly.editing.readOnly = true;
+    multiline->setProps(readOnly);
+    press(ui::Key::Backspace, false, true);
+    test::require(multiline->model().value() == "one two\nthree four" &&
+                      multiline->model().selection() == ui::TextSelection{18, 18},
+                  "read-only Command-Backspace preserves text and caret");
+#endif
     auto number = std::make_unique<ui::NumberField>(
         ui::TextFieldProps{.font = font},
         ui::NumberFieldProps{.range = {2, 0, 10, 1}, .integer = true});

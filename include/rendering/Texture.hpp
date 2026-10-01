@@ -10,6 +10,7 @@
 #include <math/Geometry3D.hpp>
 #include <rendering/ImageData.hpp>
 #include <rendering/PaintImage.hpp>
+#include <rendering/ResourceLedger.hpp>
 
 namespace playground::rendering {
 
@@ -25,6 +26,7 @@ std::size_t texelBytes(TextureFormat format);
 class PackedTexels {
   TextureFormat _format;
   ColorEncoding _encoding;
+  ResourceLedger::Token _allocation;
   std::vector<std::byte> _data;
 
 public:
@@ -32,6 +34,11 @@ public:
                std::vector<std::byte> data);
   PackedTexels(TextureFormat format, ColorEncoding encoding,
                std::span<const math::Vec4f> linear);
+
+  PackedTexels(const PackedTexels &other);
+  PackedTexels(PackedTexels &&) noexcept = default;
+  PackedTexels &operator=(const PackedTexels &other);
+  PackedTexels &operator=(PackedTexels &&other) noexcept;
 
   TextureFormat format() const noexcept { return _format; }
 

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_log.h>
 
 #include <app/Assets.hpp>
 #include <demo3d/Demo3DApp.hpp>
@@ -36,8 +37,7 @@ void registerAssets(assets::AssetCatalog &catalog) {
 
 Demo3DApp::Demo3DApp() {
   input().addContext({.name = "demo3d"},
-                     {{.action = "back", .code = SDL_SCANCODE_ESCAPE},
-                      {.action = "left", .code = SDL_SCANCODE_LEFT},
+                     {{.action = "left", .code = SDL_SCANCODE_LEFT},
                       {.action = "right", .code = SDL_SCANCODE_RIGHT},
                       {.action = "up", .code = SDL_SCANCODE_UP},
                       {.action = "down", .code = SDL_SCANCODE_DOWN},
@@ -131,7 +131,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
       ctx.assets(),
       ui::TextProps{
           .value = "Arrows: orbit | W/S: zoom | Q/E: exposure | L: "
-                   "direct light | Space: smoke pause | Esc: menu",
+                   "direct light | Space: smoke pause | Esc: settings",
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 16}}),
           .wrap = ui::TextWrap::AvailableInlineSize}));
   ui::SceneViewProps props{
@@ -150,8 +150,6 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
 
 void Demo3DApp::onActions(AppContext &ctx,
                           const input::InputSnapshot &actions) {
-  if (actions["back"].pressed)
-    ctx.requestMenu();
   if (actions["pause"].pressed)
     _playback.setPaused(!_playback.isPaused());
   const bool viewChanged =
@@ -197,6 +195,7 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
     try {
       createView(ctx, _pending.get());
     } catch (const std::exception &e) {
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Material preparation failed: %s", e.what());
       _view = nullptr;
       _scene.reset();
       _resources = {};

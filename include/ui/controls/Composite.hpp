@@ -44,7 +44,7 @@ public:
 
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onExpandedChanged(std::move_only_function<void(bool)> f) {
+  Connection onExpandedChanged(support::MoveOnlyFunction<void(bool)> f) {
     return _changed.connect(std::move(f));
   }
 };
@@ -86,7 +86,7 @@ public:
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onSelectionChanged(std::move_only_function<void(std::string)> f) {
+  Connection onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
     return _changed.connect(std::move(f));
   }
 };
@@ -128,7 +128,7 @@ public:
 
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onSelectionChanged(std::move_only_function<void(std::string)> f) {
+  Connection onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
     return _changed.connect(std::move(f));
   }
 };
@@ -171,7 +171,7 @@ public:
   void dismiss(DismissReason) override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onDismissed(std::move_only_function<void()> f) {
+  Connection onDismissed(support::MoveOnlyFunction<void()> f) {
     return _dismissed.connect(std::move(f));
   }
 };

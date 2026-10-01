@@ -1,13 +1,40 @@
 # Installed read-only defaults. User overrides live in SDL_GetPrefPath(),
 # never in this file. App policies still own whether resizing is allowed.
-schema_version = 2
+schema_version = 5
 
 [defaults]
 ui_scale = 1.0
 follow_system_scale = true
-resolution_scale = 1.0
-glyph_atlases = true
-vsync = true
+
+# Shared by all applications. Scales below are percentages; memory is MiB.
+[graphics]
 renderer = "auto"
 gpu_driver = "auto"
 renderer_fallback = true
+frame_scale = 100
+vsync = true
+glyph_atlases = true
+frame_cap = 0
+raster_scale = 100
+image_filter = "linear"
+scene_scale = 100
+scene_filter = "linear"
+automatic = false
+adaptive_scene = true
+minimum_scene_scale = 50
+target_fps = 60
+outstanding_frames = 2
+cpu_mib = 1024
+gpu_mib = 2048
+target_mib = 1024
+preparation_mib = 512
+
+# Stored preferences only: these features are not implemented by the renderers.
+texture_quality = "high"
+mesh_quality = "high"
+shadow_quality = "high"
+effect_quality = "high"
+antialiasing = "none"
+anisotropy = "1x"
+ambient_occlusion = false
+reflections = false

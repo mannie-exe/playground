@@ -16,7 +16,8 @@
 using namespace playground;
 
 int main() {
-  return test::run([] {
+  bool unsupported{};
+  const auto result = test::run([&] {
     SDLGuard sdl{SDL_INIT_VIDEO};
     TTFGuard ttf;
     AssetRegistry assets;
@@ -27,9 +28,17 @@ int main() {
     // Offscreen drivers have no native accessibility host. Other tests cover
     // core semantics without a desktop; this check exercises native ownership
     // only.
-    if (driver == "dummy" || driver == "offscreen")
+    if (driver == "dummy" || driver == "offscreen") {
+      unsupported = true;
       return;
+    }
     sdl::WindowServices services{window.get()};
+    {
+      SDLResource<SDL_Window, SDL_DestroyWindow> second{SDL_CreateWindow(
+          "second accessibility host", 100, 100, SDL_WINDOW_HIDDEN)};
+      test::require(bool(second), "second hidden native window");
+      sdl::WindowServices repeated{second.get()};
+    }
     ui::UIRoot root;
     root.setContent(std::make_unique<ui::Button>());
     root.flushLayout({200, 100});
@@ -68,6 +77,16 @@ int main() {
     root.flushLayout({200, 100});
     services.publish(root, mapping);
     root.requestFocus(editor->id());
+    ui::UIEvent composing{.type = ui::EventType::TextEditing,
+                          .text = "pending"};
+    root.dispatch(composing);
+    test::require(editor->textInputState().composing,
+                  "composition starts before modal suspension");
+    services.cancelInput();
+    test::require(
+        !editor->textInputState().composing &&
+            root.focusedNode() == editor->id(),
+        "modal cancellation clears composition but preserves logical focus");
     auto props = editor->props();
     props.enabled = false;
     editor->setProps(props);
@@ -87,4 +106,5 @@ int main() {
     services.publish(replacement, mapping);
     services.pump();
   });
+  return result ? result : unsupported ? 77 : 0;
 }

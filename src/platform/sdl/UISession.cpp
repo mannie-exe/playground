@@ -98,7 +98,8 @@ void UISession::render(rendering::PaintContext &context,
   _root.prepare({.pixelScale = context.pixelScale(),
                  .images = context.imagePreparer(),
                  .scenes = scenes,
-                 .text = context.textPreparer()});
+                 .text = context.textPreparer(),
+                 .graphics = &_graphics});
   _root.render(context);
   if (_windowServices)
     _windowServices->publish(_root, _mapping);

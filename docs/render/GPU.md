@@ -87,13 +87,15 @@ without moving or copying the pending command payload.
 | Failure | Host treatment |
 |---|---|
 | Invalid arguments, state misuse, arithmetic overflow | Reject/propagate; do not recreate the renderer |
-| AllocationLimits or submission-capacity refusal (`length_error`) | Policy refusal; no automatic resolution reduction or recovery |
+| Managed budget refusal (`ResourcePressure`) | Reclaim/defer or block painting; retain input/update and pending paint |
+| Invalid extent/format or other validation failure | Reject invalid request; no automatic quality change |
 | Native frame acquire/record/submit/present/query (`RenderFailure`) | Bounded recreation, after frame destruction; no update replay |
-| Resource construction, font/image decoding or native allocation errors | Ordinary exceptions; candidate creation may follow configured fallback |
+| Managed native allocation failure (`ResourceAllocationFailure`) | Reclaim/block the frame with a diagnostic; not automatically device loss |
+| Other resource construction or font/image decoding errors | Ordinary exceptions; candidate creation may follow configured fallback |
 | Failed rollback or recovery factory/notification | Terminal; do not keep using partially restored state |
 
 `RenderBackendProps` supplies immutable creation policy to AppHost and the backend
-factory: `allocations` and `gpuDebug`. It is preserved across switching, restoration
+factory: `allocations`, `gpuDebug` and the shared `resources` ledger. It is preserved across switching, restoration
 and recovery, not stored as a per-frame option or user-settings field. Both software
 frame/scene allocation and GPU device allocation consume this policy. UI layer and
 software composition cache budgets remain separate and explicitly scoped.
@@ -101,7 +103,7 @@ software composition cache budgets remain separate and explicitly scoped.
 RenderSettings controls whole-frame resolutionScale, glyphAtlases and vsync,
 without changing input/layout coordinates. SceneView has a separate resolution
 multiplier. GPU immediate presentation falls back to VSYNC when unsupported;
-software pacing remains platform-controlled. See [settings](../platform/SETTINGS.md).
+both backends obey the host runtime frame-rate cap when configured. See [settings](../platform/SETTINGS.md).
 
 <a id="resource-contracts"></a>
 ## Image sources and ownership
@@ -169,9 +171,15 @@ SDL forbids cancellation then. Earlier uploads/captures cannot be rolled back.
 CPU Render/Present profiling does not measure GPU execution time.
 
 AllocationLimits centralizes maximum dimensions, target bytes, transfer bytes and
-retained-cache bytes. Default target cap is 64 MiB, dimensions 16384 per axis;
-scene color-plus-depth accounting uses 12 bytes/pixel. UI Layer also enforces its
-root/individual cache policies. Layer and text compare ResourceDomainId;
+retained-cache bytes. Default target cap is 256 MiB, dimensions 16384 per axis;
+scene color-plus-depth accounting uses 12 bytes/pixel. Uploads are capped at
+256 MiB each; software targets at 32 × 1024² pixels. These are allocation
+ceilings, not reserved memory or a total device-memory budget. UI Layer also enforces its
+root/individual cache policies. Allocation refusal diagnostics identify the
+operation, requested extent/bytes, and limiting policy; live-budget errors also
+report current usage. Managed aggregate refusals are `ResourcePressure` values
+(a `length_error` subtype), handled by host admission rather than device recovery.
+Invalid dimensions/arithmetic retain validation/length/overflow errors. Layer and text compare ResourceDomainId;
 SceneView includes scene-renderer and image-preparer domains. Changed domains
 rebuild output, not the application model. No ID is recycled during the process.
 
@@ -182,7 +190,9 @@ an SDL fence and polls completion on its owner thread. Submission IDs increase
 within one resource domain; neither an ID nor a shared pointer proves completion.
 Leases contain bookkeeping, not device-owning handles, avoiding ownership cycles.
 Recorded painter draws retain images before encoding; encoded commands lease
-every project texture they read or write. Native custom callbacks must declare
+every managed texture, mesh/stream buffer and transfer allocation they use.
+GPU upload and draw streams reuse explicit completed backing slots with SDL
+cycling disabled. Each slot has its own charge and submission lease. Native custom callbacks must declare
 sampled project images with `GPURecordingContext::use(image)` before drawing.
 Do not submit/cancel the borrowed commands yourself.
 
@@ -192,15 +202,30 @@ waits for device idle. Recent targets remain cached for 240 completed submission
 by default; aging is evaluated on later acquisitions. This is demand-driven
 hysteresis, not a GPU-time-based adaptive controller or a free-VRAM query.
 
-`maxTargetPoolBytes` (64 MiB) limits retained cache entries; `maxLivePoolBytes`
-(256 MiB) limits estimated pool allocations, including published targets and
-reservations held by recorded/in-flight uses. Allocation pressure first trims
-unused completed targets, then throws `length_error` if capacity is still absent.
-It does not block or silently reduce resolution. Native retirement and driver
-overhead are not exact VRAM accounting; independent uploads, mesh residency and
-TTF atlas pages have separate ownership and are not charged to this pool.
+`maxTargetPoolBytes` (512 MiB) limits retained cache entries. The creation-time
+`maxLivePoolBytes` ceiling and the ledger's live target budget (both 1 GiB by
+default) constrain target growth. The target count includes published images and
+recorded/in-flight uses across the shared ledger. Aggregate GPU commitment also
+includes managed sampled textures and mesh/stream buffers. CPU staging has its
+own account. Required scene color/depth and post-processing output are acquired
+before mesh/material preparation submits uploads; custom incremental requests
+still undergo allocation admission.
+
+Pressure first trims unused targets. Host-level refusal handling trims backend
+caches and permits one reclamation retry for the same paint demand. Further
+attempts require changed demand, policy or accounting; no callback is replayed
+inside a failed frame. Opt-in automatic scene resolution may request a lower
+scale at the next boundary, within its declared floor; see
+[GRAPHICS.md](../platform/GRAPHICS.md). Native
+retirement, swapchain storage, shader/pipeline overhead and SDL_ttf internal
+atlases remain outside exact managed accounting. See [RESOURCES.md](RESOURCES.md).
+
 `maxInFlightSubmissions` bounds tracked recordings plus pending batches (256);
-capacity exhaustion is a policy error, not proof of device loss. SDL fence polls
+capacity exhaustion is a policy refusal, not proof of device loss.
+Host frame credits default to two independently of this command-batch bound.
+Recorded/pending work retains its frame credit even when presentation is skipped
+or a frame is abandoned. Failed domains quarantine uncertain uses until confirmed idle or native
+device teardown; invalidation does not release their charges as completed work. SDL fence polls
 do not distinguish not-ready from every native failure, so recovery may first be
 triggered by a later acquisition/submission/query failure or an explicit request.
 
@@ -314,7 +339,7 @@ applies the narrow timestamp extension described in [PROFILING.md](PROFILING.md)
 plus SDL_ttf raster/atlas corrections; it does not replace SDL's backend.
 
 Ordinary tests cover packing, ownership, preparation, software pixels and failures
-without hardware. PLAYGROUND_GPU_TESTS adds gpu_device and gpu_shaders (Vulkan),
-skip code 77 for unsupported drivers. These read back selected pixels
+without hardware. GPU-enabled builds include gpu_device and gpu_shaders (Vulkan),
+with skip code 77 for unsupported drivers. Use CTest `-LE hardware` to exclude them. These read back selected pixels
 and exercise layers, paths, atlases, custom-pipeline reload and frame lifecycle. Windows success is not Linux,
 mobile or exhaustive visual verification. See [CONTRIBUTING](../../CONTRIBUTING.md#testing).

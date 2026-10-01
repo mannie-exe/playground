@@ -1,5 +1,7 @@
 #pragma once
 
+#include <rendering/GraphicsSettings.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -42,6 +44,7 @@ struct PrepareContext {
   rendering::ImagePreparer *images{};
   scene::SceneRenderer *scenes{};
   rendering::TextImagePreparer *text{};
+  const rendering::ResolvedGraphicsState *graphics{};
 };
 
 class UIRoot;
@@ -253,7 +256,7 @@ public:
   DirtyFlags dirtyFlags() const noexcept { return _dirty; }
 
   Connection
-  onChanged(std::move_only_function<void(const ChangeSet &)> callback) {
+  onChanged(support::MoveOnlyFunction<void(const ChangeSet &)> callback) {
     return _changes.connect(std::move(callback));
   }
 

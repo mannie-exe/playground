@@ -31,9 +31,12 @@ class SurfaceFrame final : public rendering::RenderFrame,
 public:
   SurfaceFrame(SDL_Window &window, bool &frameActive,
                std::uint64_t &completedWork, rendering::RenderFrameProps props,
-               SDL_Surface *scaled, const rendering::AllocationLimits &limits)
+               SDL_Surface *scaled,
+               const rendering::RenderBackendProps &backend)
       : _window{window}, _frameActive{frameActive},
-        _completedWork{completedWork}, _scaled{scaled}, _scene{limits} {
+        _completedWork{completedWork}, _scaled{scaled},
+        _scene{backend.allocations, backend.resources} {
+    _admission = std::move(props.admission);
     auto *surface = scaled ? scaled : SDL_GetWindowSurface(&_window);
     if (!surface)
       throwRenderError("Failed to acquire window surface for frame",
@@ -45,9 +48,11 @@ public:
     if (width <= 0 || height <= 0)
       throw std::runtime_error("Surface frame requires positive logical size");
 
-    _painter.emplace(*surface,
-                     math::Vec2f{static_cast<float>(surface->w) / width,
-                                 static_cast<float>(surface->h) / height});
+    _painter.emplace(
+        *surface, SurfacePainterProps{
+                      .pixelScale = {static_cast<float>(surface->w) / width,
+                                     static_cast<float>(surface->h) / height},
+                      .resources = backend.resources});
     // Clearing replaces pixels rather than alpha-blending over the last frame.
     const auto color = props.clearColor;
     SDL_SetSurfaceClipRect(surface, nullptr);
@@ -126,7 +131,7 @@ SurfaceRenderBackend::beginFrame(rendering::RenderFrameProps props) {
       !math::hasArea(drawable))
     return {};
   const auto targetSize = props.settings.targetSize(drawable);
-  _props.allocations.validateTarget(targetSize, 4);
+  _props.allocations.validateTarget(targetSize, 4, "Software frame");
   if (rendering::AllocationLimits::textureBytes(targetSize, 1) >
       _props.allocations.maxSoftwareTargetPixels)
     throw std::length_error("Software frame exceeds pixel policy");
@@ -136,16 +141,14 @@ SurfaceRenderBackend::beginFrame(rendering::RenderFrameProps props) {
     const auto size = targetSize;
     if (!_scaledTarget || _scaledTarget->w != size.x ||
         _scaledTarget->h != size.y) {
-      SDLResource<SDL_Surface, SDL_DestroySurface> replacement{
-          SDL_CreateSurface(size.x, size.y, SDL_PIXELFORMAT_RGBA32)};
+      auto replacement = createManagedSurface(size.x, size.y, _props.resources);
       if (!replacement)
         throwSDLError("Failed to allocate scaled frame target");
       _scaledTarget = std::move(replacement);
     }
   }
   return std::make_unique<SurfaceFrame>(_window, _frameActive, _completedWork,
-                                        props, _scaledTarget.get(),
-                                        _props.allocations);
+                                        props, _scaledTarget.get(), _props);
 }
 
 } // namespace playground::sdl

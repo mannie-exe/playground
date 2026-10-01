@@ -281,7 +281,7 @@ void SurfacePainter::fill(math::Rect rectangle, math::ColorRGBA8 color) {
     return;
   }
   if (!_colorPixel) {
-    _colorPixel.reset(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGBA32));
+    _colorPixel = createManagedSurface(1, 1, _props.resources);
     if (!_colorPixel)
       throw std::runtime_error(SDL_GetError());
     require(SDL_SetSurfaceBlendMode(_colorPixel.get(), SDL_BLENDMODE_BLEND));
@@ -390,8 +390,7 @@ void SurfacePainter::beginLayer(math::Rect localBounds, float opacity) {
     throw std::length_error("UI layer exceeds configured byte budget");
   OwnedSurface surface;
   if (pixels.w && pixels.h && _target && opacity > 0) {
-    surface.reset(
-        SDL_CreateSurface(pixels.w, pixels.h, SDL_PIXELFORMAT_RGBA32));
+    surface = createManagedSurface(pixels.w, pixels.h, _props.resources);
     if (!surface)
       throw std::runtime_error(SDL_GetError());
     require(SDL_FillSurfaceRect(surface.get(), nullptr, 0));
@@ -483,15 +482,14 @@ std::shared_ptr<const rendering::PaintImage> SurfacePainter::capture(
                                PixelRounding::Ceil));
   if (static_cast<std::uint64_t>(width) * height * 4 > _props.layerByteBudget)
     throw std::length_error("Cached layer exceeds backend byte budget");
-  SurfaceHandle surface{
-      SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32),
-      SurfaceHandleDeleter{}};
+  auto surface = createManagedSurface(width, height, _props.resources);
   if (!surface)
     throw std::runtime_error(SDL_GetError());
   require(SDL_FillSurfaceRect(surface.get(), nullptr, 0));
   {
-    SurfacePainter painter{*surface,
-                           SurfacePainterProps{scale, _props.layerByteBudget}};
+    SurfacePainter painter{
+        *surface,
+        SurfacePainterProps{scale, _props.layerByteBudget, _props.resources}};
     painter.translate({-bounds.x(), -bounds.y()});
     draw(painter);
   }

@@ -226,19 +226,23 @@ GPUSceneRenderer::mesh(scene::MeshHandle source) {
   const auto indices = source->data().indices.size() * sizeof(std::uint32_t);
   if (indices > std::numeric_limits<Uint32>::max() - vertices)
     throw std::length_error("GPU mesh exceeds combined transfer capacity");
-  _device.device->limits().validateUpload(vertices + indices);
+  _device.device->limits().validateUpload(vertices + indices,
+                                          "GPU mesh upload");
   SDL_GPUBufferCreateInfo vertexInfo{SDL_GPU_BUFFERUSAGE_VERTEX,
                                      Uint32(vertices)};
   SDL_GPUBufferCreateInfo indexInfo{SDL_GPU_BUFFERUSAGE_INDEX, Uint32(indices)};
   auto device = _device.device;
-  Mesh result{{device, SDL_CreateGPUBuffer(device->get(), &vertexInfo)},
-              {device, SDL_CreateGPUBuffer(device->get(), &indexInfo)},
+  Mesh result{createBuffer(device, vertexInfo, rendering::ResourceKind::Mesh),
+              createBuffer(device, indexInfo, rendering::ResourceKind::Mesh),
               Uint32(source->data().indices.size())};
   auto *mapped = static_cast<std::byte *>(_uploads.map(vertices + indices));
   std::memcpy(mapped, source->data().vertices.data(), vertices);
   std::memcpy(mapped + vertices, source->data().indices.data(), indices);
   _uploads.unmap();
   Commands commands{device, "mesh upload"};
+  _uploads.record(commands.value);
+  device->recordUse(commands.value, result.vertices.use());
+  device->recordUse(commands.value, result.indices.use());
   auto *copy = SDL_BeginGPUCopyPass(commands.value);
   if (!copy)
     throwRenderError("Cannot begin mesh upload",
@@ -278,8 +282,15 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
   _device.device->checkOwnerThread();
   scene::validate(view, draws);
   // Combined live color/depth allocation, not merely the color pixel count.
-  _device.device->limits().validateTarget(view.pixelSize, 8 + 4);
+  _device.device->limits().validateTarget(view.pixelSize, 8 + 4,
+                                          "GPU scene color and depth");
   pruneResources();
+  // Admit required attachments before mesh/material preparation can submit.
+  auto attachments = _device.targets.sceneTargets(
+      view.pixelSize, view.toneMap || view.exposure != 1);
+  auto target = std::move(attachments.color);
+  auto depth = std::move(attachments.depth);
+  auto output = std::move(attachments.output);
 
   struct Prepared {
     std::shared_ptr<const Mesh> mesh;
@@ -294,7 +305,16 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
     std::array<SDL_GPUTextureSamplerBinding, 8> bindings{};
   };
 
+  if (draws.size() > std::numeric_limits<std::size_t>::max() / sizeof(Prepared))
+    throw std::overflow_error("Scene preparation size overflow");
+  auto preparation = draws.empty() ? rendering::ResourceLedger::Token{}
+                                   : _device.device->resources()->reserve(
+                                         rendering::MemoryClass::CPU,
+                                         rendering::ResourceKind::Preparation,
+                                         sizeof(Prepared) * draws.size(),
+                                         "Scene draw preparation");
   std::vector<Prepared> prepared;
+  prepared.reserve(draws.size());
   for (const auto &draw : draws) {
     auto image = draw.material.baseColorImage
                      ? _device.images.prepare(draw.material.baseColorImage)
@@ -394,13 +414,16 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
       }
     }
   }
-  auto target = _device.targets.color(view.pixelSize);
-  auto depth = _device.targets.depth(view.pixelSize);
-  Commands commands{
-      _device.device, "scene3d", {.targetPixels = view.pixelSize}};
+  Commands commands{_device.device,
+                    "scene3d",
+                    {.targetPixels = view.pixelSize,
+                     .workloadId = view.workloadId,
+                     .qualityRevision = view.qualityRevision}};
   _device.device->recordTexture(commands.value, target->get());
   _device.device->recordTexture(commands.value, depth->texture.get());
   for (const auto &draw : prepared) {
+    _device.device->recordUse(commands.value, draw.mesh->vertices.use());
+    _device.device->recordUse(commands.value, draw.mesh->indices.use());
     _device.device->recordTexture(
         commands.value, static_cast<const GPUImage &>(*draw.image).get());
     if (draw.modern)
@@ -455,11 +478,12 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
   SDL_EndGPURenderPass(pass);
   commands.submit();
   if (view.toneMap || view.exposure != 1) {
-    auto output = _device.targets.color(view.pixelSize);
-    Commands toneCommands{
-        _device.device,
-        "scene post-processing",
-        {.targetPixels = view.pixelSize, .sourcePixels = view.pixelSize}};
+    Commands toneCommands{_device.device,
+                          "scene post-processing",
+                          {.targetPixels = view.pixelSize,
+                           .sourcePixels = view.pixelSize,
+                           .workloadId = view.workloadId,
+                           .qualityRevision = view.qualityRevision}};
     _device.device->recordTexture(toneCommands.value, target->get());
     _device.device->recordTexture(toneCommands.value, output->get());
     SDL_GPUColorTargetInfo out{};

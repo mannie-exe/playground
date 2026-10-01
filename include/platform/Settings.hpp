@@ -7,6 +7,7 @@
 
 #include <platform/FileStore.hpp>
 #include <platform/Presentation.hpp>
+#include <rendering/GraphicsSettings.hpp>
 
 namespace playground::platform {
 
@@ -40,6 +41,7 @@ struct SettingsPatch {
 };
 
 struct SettingsDocument {
+  std::optional<rendering::GraphicsSettings> graphics;
   SettingsPatch defaults;
   std::map<std::string, SettingsPatch, std::less<>> apps;
   void apply(std::string_view app, PresentationProps &, AppViewPolicy &) const;
@@ -47,7 +49,7 @@ struct SettingsDocument {
 
 struct SavedWindow {
   math::Vec2i size;
-  math::Vec2i position;
+  std::optional<math::Vec2i> position;
   std::string displayName;
 };
 
@@ -75,6 +77,8 @@ public:
   SettingsStore(FileStore &project, FileStore &user)
       : _projectFiles{project}, _userFiles{user} {}
 
+  rendering::GraphicsSettings graphics() const;
+  rendering::GraphicsSettings graphics(const SettingsDocument &user) const;
   void reload();
   SettingsSnapshot readSnapshot() const;
 

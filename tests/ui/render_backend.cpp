@@ -72,6 +72,26 @@ int main() {
                       selected.selected.backend ==
                           rendering::RendererKind::Software,
                   "explicit software selection remains deterministic");
+    // CTest uses SDL's dummy video driver, which cannot load Vulkan.
+    for (const bool create : {false, true}) {
+      const rendering::RendererPreferences preferences{
+          rendering::RendererChoice::SDLGPU, rendering::GPUDriver::Vulkan, false};
+      const rendering::RendererRequirements requirements{
+          .scene3D = true, .linearComposition = true, .metallicRoughness = true};
+      std::string message;
+      try {
+        if (create)
+          sdl::createRenderBackend(*window.get(), preferences, requirements);
+        else
+          sdl::resolveRenderer(preferences, requirements);
+      } catch (const std::runtime_error &error) {
+        message = error.what();
+      }
+      test::require(
+          message.find("Vulkan loader unavailable:") != std::string::npos ||
+              message.find("Vulkan shaders are not packaged") != std::string::npos,
+          "GPU selection and creation report runtime or shader prerequisites");
+    }
     test::rejects<std::runtime_error>(
         [] {
           sdl::resolveRenderer({rendering::RendererChoice::Software,
@@ -189,10 +209,60 @@ int main() {
     window.applyPreferences(
         {.display = {.selection = platform::DisplaySelection::Primary},
          .center = false});
+    window.advanceTransition(platform::WindowTransition::Clock::now());
+    test::require(window.requestStatus().outcome ==
+                      platform::WindowTransitionOutcome::Observed,
+                  "normal window presentation does not require native restoration");
     window.refreshState();
     test::require(
         window.state().actualSize == window.getWindowSize() &&
             !window.state().fullscreen,
         "observed window state is queried rather than copied from a request");
+
+    const WindowRequest resize{.preferences = {.center = false},
+                               .windowedSize = math::Vec2i{64, 48}};
+    const auto first = window.requestPreferences(resize);
+    test::require(window.pendingRequest()->windowedSize == resize.windowedSize,
+                  "pending request retains normal geometry");
+    window.applyPreferences({.center = false});
+    test::require(window.requestStatus().generation > first &&
+                      window.pendingRequest()->windowedSize == resize.windowedSize,
+                  "presentation supersession preserves pending normal size");
+    window.advanceTransition(platform::WindowTransition::Clock::now());
+    test::require(window.state().windowedSize == *resize.windowedSize &&
+                      window.requestStatus().outcome ==
+                          platform::WindowTransitionOutcome::Observed,
+                  "superseded resize reaches requested size");
+
+    window.requestPreferences(resize);
+    const auto generation = window.requestStatus().generation;
+    auto invalid = resize;
+    invalid.minimumSize = {0, 1};
+    test::rejects([&] { window.requestPreferences(invalid); },
+                  "invalid request fails before superseding pending work");
+    test::require(window.requestStatus().generation == generation &&
+                      window.pendingRequest().has_value(),
+                  "preflight failure retains pending request");
+    window.cancelTransition();
+    test::require(!window.pendingRequest() && !window.transitionWakeAt() &&
+                      !window.advanceTransition(platform::WindowTransition::Clock::now()),
+                  "cancellation prevents further adapter work");
+
+    // The dummy backend accepts normal geometry but cannot maximize windows.
+    window.requestPreferences(
+        {.preferences = {.mode = platform::WindowMode::Maximized, .center = false},
+         .windowedSize = math::Vec2i{80, 60}});
+    window.advanceTransition(platform::WindowTransition::Clock::now());
+    test::require(window.requestStatus().outcome ==
+                      platform::WindowTransitionOutcome::Failed &&
+                      !window.pendingRequest() && !window.transitionWakeAt(),
+                  "native mode failure terminates the request");
+    test::require(window.state().windowedSize == math::Vec2i{80, 60},
+                  "late mode failure preserves already observed normal geometry");
+    window.applyPreferences({.center = false});
+    window.advanceTransition(platform::WindowTransition::Clock::now());
+    test::require(window.requestStatus().outcome ==
+                      platform::WindowTransitionOutcome::Observed,
+                  "rejected native mode does not require undoing an accepted request");
   });
 }

@@ -166,6 +166,6 @@ devices produce no fabricated samples.
 
 Verification includes invalid props, failed preparation/activation, stale domains,
 snapshot ownership, camera/input mapping, alpha ordering, cache reuse and bounded
-allocation. Vulkan readback tests are opt-in. Colored/complex glyph comparisons
+allocation. Vulkan readback tests explicitly skip when no device is available. Colored/complex glyph comparisons
 must use appropriate licensed test fonts and color-space-aware tolerances.
 Cross-platform execution remains unverified until run on those platforms.

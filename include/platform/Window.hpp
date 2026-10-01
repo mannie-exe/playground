@@ -1,15 +1,26 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_video.h>
 
 #include <math/Geometry2D.hpp>
 #include <platform/WindowTypes.hpp>
+#include <platform/WindowTransition.hpp>
 #include <support/SDLResource.hpp>
 
 using WindowResource = SDLResource<SDL_Window, SDL_DestroyWindow>;
+
+struct WindowRequest {
+  playground::platform::WindowPreferences preferences;
+  std::optional<playground::math::Vec2i> windowedSize;
+  std::optional<playground::math::Vec2i> windowedPosition;
+  playground::math::Vec2i minimumSize{1, 1};
+  bool resizable{true};
+  bool minimized{};
+};
 
 class Window {
   WindowResource _window;
@@ -17,6 +28,16 @@ class Window {
   playground::platform::WindowMode _requestedMode{
       playground::platform::WindowMode::Windowed};
   bool _applyingPreferences{};
+  playground::platform::WindowTransition _transition;
+  WindowRequest _request;
+  WindowRequestStatus _requestStatus;
+  SDL_DisplayID _targetDisplay{};
+  std::optional<SDL_DisplayMode> _exclusiveMode;
+  playground::math::Vec2i _targetSize{};
+  std::optional<playground::math::Vec2i> _targetPosition;
+  bool _geometryIssued{}, _modeIssued{}, _sizeObserved{}, _positionObserved{};
+  bool _restoreRequired{};
+  bool _placementRequired{};
 
 public:
   explicit Window(const WindowConfig &config = WindowConfig{});
@@ -56,6 +77,9 @@ public:
   void setTitle(const std::string &title);
 
   void setWindowedPosition(playground::math::Vec2i position);
+  playground::platform::WindowPlacementCapabilities placementCapabilities() const;
+  playground::platform::WindowRequestResult
+  requestWindowedPosition(playground::math::Vec2i position);
 
   void setWindowedSize(playground::math::Vec2i size);
 
@@ -84,6 +108,13 @@ public:
   playground::math::Rect
   usableBounds(const playground::platform::DisplayPreference &) const;
   void applyPreferences(const playground::platform::WindowPreferences &);
+  // Submission validates synchronously; completion is observed asynchronously.
+  std::uint64_t requestPreferences(const WindowRequest &);
+  bool advanceTransition(playground::platform::WindowTransition::TimePoint now);
+  void cancelTransition();
+  const WindowRequestStatus &requestStatus() const { return _requestStatus; }
+  std::optional<WindowRequest> pendingRequest() const;
+  auto transitionWakeAt() const { return _transition.wakeAt(); }
   void setMinimumSize(playground::math::Vec2i size);
   playground::platform::WindowMetrics metrics() const;
 

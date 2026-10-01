@@ -198,7 +198,7 @@ preparation. Renderer recreation reuses CPU assets; no native resources are stor
 in the app model.
 
 Arrow keys orbit, W/S adjust distance, Q/E adjust exposure, L toggles direct light,
-Space pauses the smoke, Escape returns to the menu. Environment illumination remains
+Space pauses the smoke, Escape opens shared settings; Ctrl/Cmd+Shift+M returns to the menu. Environment illumination remains
 when direct light is disabled. Asset provenance and the cropped smoke-row detail
 are in [the asset manifest](../../assets/demo3d/README.md).
 

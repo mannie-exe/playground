@@ -116,8 +116,8 @@ void TextField::rebuild(float width) {
   for (std::size_t i = 0; i < source.size(); ++i)
     source[i] = i;
   if (!_model.composition().empty()) {
-    const auto [a, b] =
-        std::minmax(_model.selection().anchor, _model.selection().caret);
+    const auto selection = _model.selection();
+    const auto [a, b] = std::minmax(selection.anchor, selection.caret);
     display.replace(a, b - a, _model.composition());
     source.clear();
     for (std::size_t i = 0; i <= display.size(); ++i)
@@ -295,6 +295,8 @@ void TextField::prepareContent(PrepareContext &context) {
                                        : rendering::ResourceDomainId::cpu();
   if (_layout->scale == scale && _layout->domain == domain)
     return;
+  if (_layout->domain != domain)
+    for (auto &run : _layout->runs) run.image.reset();
   for (auto &run : _layout->runs) {
     if (run.bounds.w() <= 0 || run.bounds.h() <= 0)
       continue;
@@ -306,11 +308,10 @@ void TextField::prepareContent(PrepareContext &context) {
                                                  : _props.foreground};
       run.image = context.text->prepareText(source);
     } else {
-      SurfaceHandle surface{
+      auto surface = adoptManagedSurface(
           TTF_RenderText_Blended(
               font->get(), run.text.data(), run.text.size(),
-              sdl::toSDL(_props.useTheme ? theme().text : _props.foreground)),
-          SurfaceHandleDeleter{}};
+              sdl::toSDL(_props.useTheme ? theme().text : _props.foreground)));
       if (!surface)
         throwSDLError("Render editor run");
       run.image = sdl::makeSurfaceImage(std::move(surface));
@@ -417,8 +418,8 @@ void TextField::paint(PaintContext &context) const {
                          hasFocus() ? 2.f : 1.f);
   if (!_layout)
     return;
-  const auto [a, b] =
-      std::minmax(_model.selection().anchor, _model.selection().caret);
+  const auto selection = _model.selection();
+  const auto [a, b] = std::minmax(selection.anchor, selection.caret);
   PaintScope scope{context};
   context.clip({{}, bounds().size});
   context.translate(-_scroll);
@@ -566,10 +567,22 @@ void TextField::onDefaultEvent(UIEvent &e) {
     }
   }
   if (e.type == EventType::KeyDown) {
+    auto key = e.logicalKey;
 #if defined(__APPLE__)
     const bool shortcut = e.command;
+    const bool word = e.alt;
+    const bool document =
+        e.command && key != Key::Left && key != Key::Right;
+    if (e.command) {
+      if (key == Key::Left || key == Key::Up)
+        key = Key::Home;
+      else if (key == Key::Right || key == Key::Down)
+        key = Key::End;
+    }
 #else
     const bool shortcut = e.control;
+    const bool word = e.control;
+    const bool document = e.control;
 #endif
     bool edit{};
     bool handled = true;
@@ -577,16 +590,33 @@ void TextField::onDefaultEvent(UIEvent &e) {
       e.handled = true;
       return;
     }
-    switch (e.logicalKey) {
+    const auto edge = [&](bool start, bool wholeDocument) {
+      auto p = start ? std::size_t{0} : _model.value().size();
+      if (!wholeDocument && _layout) {
+        const auto current = textInputState().caret.position + _scroll;
+        math::Point2 selected = current;
+        for (const auto &c : _layout->carets)
+          if (c.point.y == current.y &&
+              ((start && c.point.x <= selected.x) ||
+               (!start && c.point.x >= selected.x))) {
+            selected = c.point;
+            p = c.offset;
+          }
+        _visualCaret = selected;
+      } else
+        _visualCaret.reset();
+      return p;
+    };
+    switch (key) {
     case Key::Left:
-      if (shortcut) {
+      if (word) {
         _model.move(-1, e.shift, true);
         _visualCaret.reset();
       } else
         moveVisually(-1, e.shift);
       break;
     case Key::Right:
-      if (shortcut) {
+      if (word) {
         _model.move(1, e.shift, true);
         _visualCaret.reset();
       } else
@@ -603,29 +633,22 @@ void TextField::onDefaultEvent(UIEvent &e) {
     }
     case Key::Home:
     case Key::End: {
-      auto p =
-          e.logicalKey == Key::Home ? std::size_t{0} : _model.value().size();
-      if (!shortcut && _layout) {
-        const auto current = textInputState().caret.position + _scroll;
-        math::Point2 selected = current;
-        for (const auto &c : _layout->carets)
-          if (c.point.y == current.y &&
-              ((e.logicalKey == Key::Home && c.point.x <= selected.x) ||
-               (e.logicalKey == Key::End && c.point.x >= selected.x))) {
-            selected = c.point;
-            p = c.offset;
-          }
-        _visualCaret = selected;
-      } else
-        _visualCaret.reset();
+      const auto p = edge(key == Key::Home, document);
       _model.setSelection({e.shift ? _model.selection().anchor : p, p});
       break;
     }
     case Key::Backspace:
-      edit = _model.erase(true, shortcut);
+#if defined(__APPLE__)
+      if (e.command && !_props.editing.readOnly &&
+          _model.selection().anchor == _model.selection().caret) {
+        edit = _model.eraseTo(edge(true, false));
+        break;
+      }
+#endif
+      edit = _model.erase(true, word);
       break;
     case Key::Delete:
-      edit = _model.erase(false, shortcut);
+      edit = _model.erase(false, word);
       break;
     case Key::Enter:
       if (_props.editing.multiline && !shortcut) {

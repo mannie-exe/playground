@@ -69,7 +69,7 @@ public:
   void dismiss(DismissReason) override;
 
   Connection
-  onDismissed(std::move_only_function<void(DismissReason)> callback) {
+  onDismissed(support::MoveOnlyFunction<void(DismissReason)> callback) {
     return _dismissed.connect(std::move(callback));
   }
 

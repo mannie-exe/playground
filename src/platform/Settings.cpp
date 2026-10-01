@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -301,12 +302,35 @@ void SettingsDocument::apply(std::string_view app, PresentationProps &p,
 }
 
 SettingsDocument parseSettings(std::string_view text) {
-  const auto root = document(text, 4);
+  const auto root = document(text, 5);
   SettingsDocument result;
   for (const auto &[key, node] : root) {
     if (key == "schema_version")
       continue;
-    if (key == "defaults")
+    if (key == "graphics") {
+      rendering::GraphicsSettings settings;
+      for (const auto &[field, entry] : table(node)) {
+        const auto schema = rendering::graphicsSettingsSchema();
+        const auto it = std::ranges::find(schema, field.str(),
+                                          &rendering::GraphicsSetting::key);
+        if (it == schema.end())
+          throw std::invalid_argument("Unknown graphics setting");
+        double number{};
+        if (!it->choices.empty()) {
+          const auto selected = value<std::string>(entry);
+          const auto at = std::ranges::find(it->choices, selected);
+          if (at == it->choices.end())
+            throw std::invalid_argument("Unknown graphics setting choice");
+          number = std::distance(it->choices.begin(), at);
+        } else
+          number = it->kind == rendering::SettingKind::Boolean
+                       ? value<bool>(entry)
+                       : value<double>(entry);
+        rendering::setGraphicsSetting(settings, *it, number);
+      }
+      settings.validate();
+      result.graphics = settings;
+    } else if (key == "defaults")
       result.defaults = readPatch(table(node));
     else if (key == "apps") {
       for (const auto &[app, props] : table(node))
@@ -321,13 +345,30 @@ std::string serializeSettings(const SettingsDocument &document) {
   toml::table apps;
   for (const auto &[key, patch] : document.apps)
     apps.insert(key, writePatch(patch));
-  return format(toml::table{{"schema_version", 4},
-                            {"defaults", writePatch(document.defaults)},
-                            {"apps", std::move(apps)}});
+  toml::table root{{"schema_version", 5},
+                   {"defaults", writePatch(document.defaults)},
+                   {"apps", std::move(apps)}};
+  if (document.graphics) {
+    document.graphics->validate();
+    toml::table values;
+    for (const auto &field : rendering::graphicsSettingsSchema()) {
+      const auto v = field.get(*document.graphics);
+      if (field.kind == rendering::SettingKind::Boolean)
+        values.insert(field.key, bool(v));
+      else if (!field.choices.empty())
+        values.insert(field.key,
+                      std::string{field.choices[static_cast<std::size_t>(v)]});
+      else
+        values.insert(field.key, v);
+    }
+    root.insert("graphics", std::move(values));
+  }
+  return format(root);
 }
 
 SessionState parseSession(std::string_view text) {
-  const auto root = document(text);
+  const auto root = document(text, 2);
+  const auto version = value<int>(*root.get("schema_version"));
   for (const auto &[key, node] : root)
     if (key != "schema_version" && key != "apps")
       throw std::invalid_argument("Unknown session section");
@@ -338,12 +379,13 @@ SessionState parseSession(std::string_view text) {
       for (const auto &[key, ignored] : fields)
         if (key != "size" && key != "position" && key != "display_name")
           throw std::invalid_argument("Unknown session field");
-      if (!fields.get("size") || !fields.get("position") ||
-          !fields.get("display_name"))
+      if (!fields.get("size") || !fields.get("display_name") ||
+          (version == 1 && !fields.get("position")))
         throw std::invalid_argument("Incomplete saved window");
-      SavedWindow saved{integers(*fields.get("size")),
-                        integers(*fields.get("position")),
+      SavedWindow saved{integers(*fields.get("size")), std::nullopt,
                         value<std::string>(*fields.get("display_name"))};
+      if (const auto *position = fields.get("position"))
+        saved.position = integers(*position);
       if (!math::hasArea(saved.size))
         throw std::invalid_argument("Invalid saved window size");
       result.emplace(std::string{app.str()}, std::move(saved));
@@ -354,13 +396,49 @@ SessionState parseSession(std::string_view text) {
 
 std::string serializeSession(const SessionState &state) {
   toml::table apps;
-  for (const auto &[app, saved] : state)
-    apps.insert(app,
-                toml::table{{"size", toml::array{saved.size.x, saved.size.y}},
-                            {"position",
-                             toml::array{saved.position.x, saved.position.y}},
-                            {"display_name", saved.displayName}});
-  return format(toml::table{{"schema_version", 1}, {"apps", std::move(apps)}});
+  for (const auto &[app, saved] : state) {
+    toml::table fields{{"size", toml::array{saved.size.x, saved.size.y}},
+                       {"display_name", saved.displayName}};
+    if (saved.position)
+      fields.insert("position",
+                    toml::array{saved.position->x, saved.position->y});
+    apps.insert(app, std::move(fields));
+  }
+  return format(toml::table{{"schema_version", 2}, {"apps", std::move(apps)}});
+}
+
+rendering::GraphicsSettings SettingsStore::graphics() const {
+  return graphics(_user);
+}
+
+rendering::GraphicsSettings
+SettingsStore::graphics(const SettingsDocument &user) const {
+  if (user.graphics)
+    return *user.graphics;
+  rendering::GraphicsSettings result;
+  if (_project.graphics)
+    result = *_project.graphics;
+  else {
+    PresentationProps p;
+    AppViewPolicy v;
+    _project.defaults.apply(p, v);
+    result.presentation = p.render;
+    result.renderer = p.renderer;
+  }
+  // A new project schema must not erase existing user-wide render preferences.
+  if (user.defaults.renderer)
+    result.renderer.backend = *user.defaults.renderer;
+  if (user.defaults.gpuDriver)
+    result.renderer.driver = *user.defaults.gpuDriver;
+  if (user.defaults.rendererFallback)
+    result.renderer.allowFallback = *user.defaults.rendererFallback;
+  if (user.defaults.resolutionScale)
+    result.presentation.resolutionScale = *user.defaults.resolutionScale;
+  if (user.defaults.glyphAtlases)
+    result.presentation.glyphAtlases = *user.defaults.glyphAtlases;
+  if (user.defaults.vsync)
+    result.presentation.vsync = *user.defaults.vsync;
+  return result;
 }
 
 void SettingsStore::reload() { publish(readSnapshot()); }
@@ -410,6 +488,9 @@ void SettingsStore::resolveWithUser(std::string_view app,
   _project.apply(app, presentation, policy);
   policy.userContrast = ui::ContrastPreference::System;
   user.apply(app, presentation, policy);
+  const auto shared = graphics(user);
+  presentation.render = shared.presentation;
+  presentation.renderer = shared.renderer;
   presentation.validate();
   policy.validate();
   p = std::move(presentation);

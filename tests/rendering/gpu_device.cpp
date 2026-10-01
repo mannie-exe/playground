@@ -274,6 +274,47 @@ int main(int argc, char **argv) {
       foreign.join();
       test::require(rejectedThread,
                     "owner-thread GPU boundary rejects foreign work");
+      {
+        const auto before = device->resources()->snapshot();
+        rendering::RenderRuntime runtime{device->resources()};
+        runtime.attachDomain(device->resourceDomain());
+        auto frame = runtime.beginFrame(rendering::RenderClock::now(),
+                                        device->resourceDomain(), 1);
+        device->beginFrame(frame);
+        rendering::RGBA8Image pixels{.size = {8, 8},
+                                     .pixels = std::vector<std::uint8_t>(256)};
+        auto uploaded = std::make_shared<GPUImage>(device, pixels);
+        device->endFrame();
+        frame.reset();
+        uploaded.reset();
+        const auto pending = device->resources()->snapshot();
+        test::require(
+            runtime.snapshot().outstandingFrames == 1 &&
+                pending.memory[1].bytes == before.memory[1].bytes + 256 &&
+                pending.memory[0].bytes == before.memory[0].bytes + 256,
+            "abandoned upload retains frame, texture and staging until "
+            "observed completion");
+        test::require(SDL_WaitForGPUIdle(device->get()),
+                      "upload lifetime completion");
+        device->pollCompletions();
+        const auto retired = device->resources()->snapshot();
+        test::require(
+            runtime.snapshot().outstandingFrames == 0 &&
+                retired.memory[1].bytes == before.memory[1].bytes &&
+                retired.memory[0].bytes == before.memory[0].bytes,
+            "completion releases texture/staging charges and frame credit");
+        frame = runtime.beginFrame(rendering::RenderClock::now(),
+                                   device->resourceDomain(), 2);
+        device->beginFrame(frame);
+        auto *commands = device->acquireCommands("canceled frame");
+        device->endFrame();
+        frame.reset();
+        test::require(runtime.snapshot().outstandingFrames == 1,
+                      "unsubmitted recording retains its admission credit");
+        device->cancel(commands);
+        test::require(runtime.snapshot().outstandingFrames == 0,
+                      "successful cancellation retires recording credit");
+      }
       PaintDevice paint{device};
       {
         TargetPool pool{device};
@@ -329,8 +370,13 @@ int main(int argc, char **argv) {
         test::rejects<rendering::RenderFailure>(
             [&] { held->publish(); }, "failed domain forbids publication");
         failing->invalidate();
-        test::require(!held->isLeased(),
-                      "domain retirement releases unknown leases");
+        test::require(
+            held->isLeased(),
+            "invalidation quarantines unknown work until confirmed retirement");
+        test::require(failing->retireInvalidatedSubmissions() &&
+                          !held->isLeased(),
+                      "explicit successful idle confirmation retires "
+                      "quarantined submissions");
       }
       {
         device->setProfilingEnabled(true);

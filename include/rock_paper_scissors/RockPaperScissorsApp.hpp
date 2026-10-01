@@ -11,11 +11,7 @@ namespace rock_paper_scissors = playground::rock_paper_scissors::config;
 
 class RockPaperScissorsApp : public IApp {
 public:
-  RockPaperScissorsApp() {
-    input().addContext({.name = "navigation",
-                        .stage = playground::input::InputStage::BeforeUI},
-                       {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
-  }
+  RockPaperScissorsApp() = default;
 
   static AppInfo staticInfo() {
     return AppInfo{
@@ -31,9 +27,4 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
-  void onActions(AppContext &ctx,
-                 const playground::input::InputSnapshot &actions) override {
-    if (actions["back"].pressed)
-      ctx.requestMenu();
-  }
 };

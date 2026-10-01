@@ -24,6 +24,67 @@ public:
 
 int main() {
   return test::run([] {
+    platform::SettingsDocument graphicsDocument;
+    graphicsDocument.graphics = rendering::GraphicsSettings{};
+    graphicsDocument.graphics->threeD.antialiasing =
+        rendering::Antialiasing::Temporal;
+    graphicsDocument.graphics->threeD.textures = rendering::QualityLevel::Ultra;
+    graphicsDocument.graphics->automatic.enabled = true;
+    const auto roundtrip =
+        platform::parseSettings(platform::serializeSettings(graphicsDocument));
+    test::require(roundtrip.graphics == graphicsDocument.graphics,
+                  "shared graphics including inactive future fields roundtrip");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=5\n[graphics]\nframe_scale=0");
+        },
+        "invalid shared scale rejected");
+    test::rejects(
+        [] {
+          platform::parseSettings("schema_version=5\n[graphics]\nunknown=1");
+        },
+        "unknown graphics field rejected");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=5\n[graphics]\nautomatic=true\nminimum_scene_"
+              "scale=150\nscene_scale=100");
+        },
+        "invalid automatic range rejected");
+    MemoryStore graphicsProject, graphicsUser;
+    platform::SettingsStore graphicsStore{graphicsProject, graphicsUser};
+    graphicsDocument.graphics->presentation.resolutionScale = .75f;
+    graphicsDocument.apps["one"].resolutionScale = .5f;
+    graphicsDocument.apps["two"].resolutionScale = 2;
+    graphicsStore.setUser(graphicsDocument, false);
+    platform::PresentationProps firstApp, secondApp;
+    platform::AppViewPolicy appPolicy;
+    graphicsStore.resolve("one", firstApp, appPolicy);
+    graphicsStore.resolve("two", secondApp, appPolicy);
+    test::require(
+        firstApp.render == secondApp.render &&
+            firstApp.render.resolutionScale == .75f,
+        "shared graphics overrides legacy per-app rendering preferences");
+    auto migratedProject = graphicsStore.snapshot();
+    migratedProject.project = graphicsDocument;
+    migratedProject.user = {};
+    migratedProject.user.defaults.resolutionScale = .6f;
+    migratedProject.user.defaults.vsync = false;
+    graphicsStore.publish(migratedProject);
+    test::require(
+        graphicsStore.graphics().presentation.resolutionScale == .6f &&
+            !graphicsStore.graphics().presentation.vsync,
+        "new project defaults preserve legacy shared user preferences");
+    graphicsStore.setUser(graphicsDocument, false);
+    graphicsUser.failWrite = true;
+    auto failedGraphics = graphicsDocument;
+    failedGraphics.graphics->threeD.resolutionScale = .8f;
+    test::rejects<std::runtime_error>(
+        [&] { graphicsStore.setUser(failedGraphics, true); },
+        "failed graphics save reported");
+    test::require(graphicsStore.graphics() == *graphicsDocument.graphics,
+                  "failed graphics write preserves published settings");
     MemoryStore project, user;
     project.files["project.toml"] =
         "schema_version=1\n[defaults]\nui_scale=2.0\n[apps.demo]\ninitial_"
@@ -117,7 +178,7 @@ int main() {
                       replacement.viewport.followSystemScale,
                   "removing user overrides resolves from project/app values, "
                   "not previous effective settings");
-    user.files["settings.toml"] = "schema_version=5";
+    user.files["settings.toml"] = "schema_version=6";
     test::rejects([&] { store.reload(); }, "unsupported schema rejected");
     test::require(platform::serializeSettings(store.user()) == saved,
                   "failed reload preserves published settings");
@@ -209,8 +270,8 @@ int main() {
                 std::string{"schema_version=2\n[defaults]\n"} + field);
           },
           "invalid renderer preferences rejected");
-    test::rejects([] { platform::parseSession("schema_version=2"); },
-                  "settings schema migration does not change session schema");
+    test::rejects([] { platform::parseSession("schema_version=3"); },
+                  "unknown session schema rejected independently of settings");
     platform::PresentationProps unchanged;
     platform::AppViewPolicy unchangedPolicy;
     platform::SettingsDocument invalidName;
@@ -224,12 +285,68 @@ int main() {
     test::require(unchanged == platform::PresentationProps{},
                   "failed resolution does not partially mutate output");
     platform::SessionState session{
-        {"demo", {{640, 480}, {-800, 20}, "Secondary"}}};
+        {"demo", {{640, 480}, math::Vec2i{-800, 20}, "Secondary"}}};
     store.saveSession(session);
     test::require(platform::parseSession(*user.read("session.toml"))
                           .at("demo")
                           .position == math::Vec2i{-800, 20},
                   "negative desktop coordinates survive session roundtrip");
+    const auto legacy =
+        platform::parseSession("schema_version=1\n[apps.demo]\nsize=[640,480]\n"
+                               "position=[-800,0]\ndisplay_name='Secondary'\n");
+    const auto migrated = platform::serializeSession(legacy);
+    test::require(platform::parseSession(migrated).at("demo").position ==
+                      math::Vec2i{-800, 0},
+                  "legacy session coordinates survive migration");
+    test::require(migrated.find("schema_version = 2") != std::string::npos,
+                  "session writer explicitly upgrades to schema two");
+    const auto unpositioned =
+        platform::parseSession("schema_version=2\n[apps.demo]\nsize=[640,480]\n"
+                               "display_name='Compositor'\n");
+    const auto unpositionedText = platform::serializeSession(unpositioned);
+    test::require(
+        !unpositioned.at("demo").position &&
+            unpositioned.at("demo").size == math::Vec2i{640, 480} &&
+            unpositionedText.find("position") == std::string::npos &&
+            !platform::parseSession(unpositionedText).at("demo").position,
+        "unavailable position stays absent without losing size");
+    auto origin = unpositioned;
+    origin.at("demo").position = math::Vec2i{0, 0};
+    test::require(platform::parseSession(platform::serializeSession(origin))
+                          .at("demo")
+                          .position == math::Vec2i{0, 0},
+                  "origin is a known position, not an absence sentinel");
+    test::rejects(
+        [] {
+          platform::parseSession("schema_version=1\n[apps.demo]\n"
+                                 "size=[640,480]\ndisplay_name='Legacy'\n");
+        },
+        "legacy session still requires its coordinate-bearing shape");
+    for (const char *invalid :
+         {"position=[1]", "position=[1,2.5]", "position=[2147483648,0]",
+          "position=false", "size=[0,480]", "unknown=true"})
+      test::rejects(
+          [&] {
+            const auto size = std::string_view{invalid}.starts_with("size=")
+                                  ? ""
+                                  : "size=[640,480]\n";
+            platform::parseSession(
+                std::string{"schema_version=2\n[apps.demo]\n"} + size +
+                "display_name='Compositor'\n" + invalid);
+          },
+          "optional session position retains strict type and range checks");
+    const auto priorSession = *user.read("session.toml");
+    user.failWrite = true;
+    test::rejects<std::runtime_error>([&] { store.saveSession(unpositioned); },
+                                      "session write failure propagates");
+    test::require(*user.read("session.toml") == priorSession &&
+                      platform::serializeSession(store.snapshot().session) ==
+                          priorSession,
+                  "session write failure preserves stored and published state");
+    user.failWrite = false;
+    store.saveSession(unpositioned);
+    test::require(!store.snapshot().session.at("demo").position,
+                  "coordinate-free session publishes after successful write");
 
     // A unique test-owned directory, never the user's actual preference path.
     const auto directory =

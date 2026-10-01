@@ -51,8 +51,12 @@ performs a one-second maintenance update for native appearance/services. This is
 a failure/platform fallback, not normal input latency. SDL waits retain events in
 the queue for ordinary polling/dispatch. Pending GPU queries are polled without
 painting; observed completion latency can therefore increase while idle without
-GPU execution becoming slower. A skipped target is retried after 100 ms; pending
+GPU execution becoming slower. Outstanding GPU work adds a 2 ms completion
+poll deadline; an unavailable target is retried after 16 ms. Pending
 paint is retained. Native exposure/resize events also request a full redraw.
+Pending [window transitions](WINDOWING.md#runtime-requests-and-failure-boundaries)
+contribute their own polling deadline, so presentation requests progress even
+when the application has no update or paint demand.
 
 Worker posting endpoints may outlive the host, but cannot use SDL after the wake
 owner is closed. Queue callbacks execute outside queue locks. Native accessibility
@@ -72,3 +76,33 @@ whole-tree comparisons or screen-pixel comparisons.
 This does not yet suppress arbitrary custom node preparation independently of
 rendering, infer animation deadlines from application code, pause continuous apps
 when minimized, or implement regional repaint. Those need their own contracts.
+
+## Runtime frame admission
+
+`RenderRuntime` checks the optional frame-rate deadline and outstanding-frame
+credits before expensive painting. Its wake deadline joins input, application,
+window-transition and GPU-completion deadlines; it does not sleep inside the
+render callback. A cap limits demanded frames but does not create demand.
+Missed presentation deadlines do not accumulate catch-up frames.
+
+Continuous variable updates run with eligible paints and retain an independent
+update deadline while painting is paced or blocked. That deadline uses the fixed
+simulation interval when present, otherwise the default simulation interval.
+Events and explicit update requests still run immediately. Fixed simulation's
+step duration, catch-up bounds and pause rules remain independent of frame caps.
+
+Resource pressure preserves paint demand, reclaims backend caches and reports a
+blocked state until policy, ownership or demand changes. One immediate
+reclamation retry is permitted for the same demand. GPU work submitted by an
+abandoned frame remains accounted and retains credits until retirement. Renderer
+replacement starts credits for its new queue while old memory charges survive.
+See [runtime resources](../render/RESOURCES.md).
+
+## Host settings presentation
+
+The shared settings view replaces application painting and input while open.
+Application simulation and variable updates pause; worker completions and native
+window transitions continue. Held actions, pointer gestures and composition are
+canceled at the boundary. Settings UI demand and 500 ms meter refreshes drive
+its activity; closing rebases app elapsed time and restores its window policy
+without replacing the renderer. See [GRAPHICS.md](GRAPHICS.md).

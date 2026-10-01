@@ -14,7 +14,8 @@ See [WINDOWING.md](WINDOWING.md) for the presentation values they configure.
 | `session.toml` | Machine-written normal bounds/display-name hint per app in that same preference directory |
 
 Resolve app baseline -> project defaults -> project app overrides -> user defaults
--> user app overrides. Session state does not override settings; it is consulted
+-> user app overrides for window, viewport and interaction. Shared graphics
+resolve separately and override legacy per-app render fields. Session state does not override settings; it is consulted
 only for RestorePrevious sizing. Keys are stable strings: `menu`, `demo`,
 `material-lab`, `minesweeper`, `rock-paper-scissors`, `snake`. Demo 2D retains
 `demo` and Demo 3D retains `material-lab` so existing preferences survive renames.
@@ -26,15 +27,40 @@ or PATH change is required. Install prepares runtime files. Running directly fro
 the build tree need not find `project.toml`; absent files retain compiled defaults.
 The project root is not treated as a writable preferences directory.
 
-Settings readers accept integer schema versions 1 through 4; writers emit version 4.
+Settings readers accept integer schema versions 1 through 5; writers emit version 5.
 Version 1 settings retain their defaults and are upgraded on the next explicit
 save. Renderer and interaction preference fields are additive and accepted by this
 reader in older documents; older readers reject unknown fields. Version 3 adds
-accessibility/navigation preferences; version 4 adds appearance. Session documents remain version 1.
+accessibility/navigation preferences; version 4 adds appearance; version 5 adds
+shared graphics and runtime policy. See [GRAPHICS.md](GRAPHICS.md).
+Session readers accept versions 1 and 2; writers emit version 2. Version 1 requires
+normal-window size, position and display name. Version 2 keeps size and display
+name required but makes position optional: compositor-managed placement may not
+expose desktop coordinates. Existing coordinates, including negative values and
+the origin, survive reading and saving; unavailable positions are omitted, not
+replaced with `[0, 0]`. A version 1 record missing position remains invalid, and
+older readers reject version 2 instead of inventing placement. The next session
+save performs this migration; reading alone does not rewrite a file.
 Missing files mean no overrides;
 malformed/unreadable files are errors, not silently replaced defaults. Unknown
 sections, fields and enum strings are rejected to expose spelling/schema errors.
 Unknown versions still fail rather than being silently repaired.
+
+For example, a compositor-managed session can retain size without placement:
+
+```toml
+schema_version = 2
+
+[apps.demo]
+size = [960, 720]
+display_name = "Built-in Display"
+# position = [-800, 20] # optional, only when observed
+```
+
+`SavedWindow::position` is `std::optional<math::Vec2i>`. `RestorePrevious`
+can restore size even when position is absent or the active windowing backend
+cannot place windows. Display names remain best-effort hints, never persisted
+native display IDs.
 
 ## Settings schema
 
@@ -55,7 +81,7 @@ scheme/contrast use light/normal fallbacks. No OS setting is modified.
 Both project and user files use this shape; every field inside the tables is optional:
 
 ```toml
-schema_version = 4
+schema_version = 5
 
 [defaults]
 accessibility = "auto"
@@ -71,10 +97,15 @@ initial_sizing = "preferred"
 viewport_mode = "reflow"
 ui_scale = 1.0
 follow_system_scale = true
-resolution_scale = 1.0
 renderer = "auto"
 gpu_driver = "auto"
 renderer_fallback = true
+
+[graphics]
+frame_scale = 100
+scene_scale = 100
+automatic = false
+scene_filter = "linear"
 
 [apps.demo]
 initial_sizing = "fit-content"
@@ -147,10 +178,16 @@ document is not proof that every possible app-baseline combination is valid.
 
 `setUser(document, persist)` validates serialized values and, if requested, writes
 before publishing the replacement user document. AppHost validates, realizes the
-required renderer services and applies the active app's merged settings first.
+required renderer services and submits the merged window preferences first.
 Disk failures preserve the previous published document and trigger restoration of
-the previous backend/window policy. OS restoration is best-effort and may itself
-fail; such a failure is terminal and retains both exception causes.
+the previous backend/window policy. A synchronous restoration failure is terminal
+and retains both exception causes.
+
+Window completion is asynchronous: saving preferences records requested intent,
+not proof that the OS applied it. A later native failure or unconfirmed transition
+is reported through `windowRequestStatus()` and logged; it does not undo a settings
+save or app activation. Restoring a checkpoint likewise submits a window request.
+See [window outcomes](WINDOWING.md#runtime-requests-and-failure-boundaries).
 An explicit save rewrites TOML canonically: comments/formatting are not retained.
 Runtime-only changes do not touch `settings.toml`. App switches/settings reloads
 resolve values again; explicit runtime presentation requests do not edit preferences.
@@ -161,7 +198,7 @@ the old app's cleanup runs before it is destroyed. `onEnter` must build owned st
 not perform irreversible external effects. Shared service mutations and external
 IO cannot be rolled back automatically. `onExit` is cleanup-only; its exceptions
 are logged and isolated, and its host commands are discarded. It must not rely on
-the outgoing window configuration still being active. Rejected commands preserve
+the outgoing window configuration still being active. Synchronously rejected commands preserve
 the prior app and are reported through `AppContext::lastCommandError()`; startup,
 restoration and unrecoverable renderer failures terminate normally through the
 entry-point exception handler. There is no interactive error dialog.
@@ -229,10 +266,11 @@ Optional completion latency is separately validated and labeled: it measures
 host submit-to-observed-completion delay, including queueing and polling delay,
 and must not be mistaken for the native GPU scope's execution duration.
 
-F10 toggles monitoring, Shift+F10 reports the current interval, and F11 switches
-the reporting interval between 60 and 300 frames while preserving enabled state,
-logging policy and history budget. Toggling monitoring resets sample state;
-enabling mid-frame waits until the next complete frame for its first sample.
+F10 toggles optional reporting and detailed UI measurement. While reporting is
+enabled, Shift+F10 reports the current interval. F11 switches the reporting
+interval between 60 and 300 frames while preserving enabled state, logging policy
+and history budget. Toggling reporting resets only its reporting sample state;
+baseline runtime counters and timing collection continue independently.
 
 ## Window session persistence
 
@@ -294,3 +332,38 @@ References: [SDL preference paths](https://wiki.libsdl.org/SDL3/SDL_GetPrefPath)
 [SDL executable base path](https://wiki.libsdl.org/SDL3/SDL_GetBasePath),
 [replacement rename](https://wiki.libsdl.org/SDL3/SDL_RenamePath),
 [toml++ release](https://github.com/marzer/tomlplusplus/releases/tag/v3.4.0).
+
+## Live resource and pacing policy
+
+`AppContext::renderRuntimeState()` exposes managed commitments, policy revisions,
+pressure, frame admission and the latest baseline CPU/GPU telemetry.
+`renderTelemetry()` copies bounded CPU/GPU histories only when requested; raw
+GPU samples retain originating frame IDs. Owner-thread
+`requestRenderRuntime(RenderRuntimePatch)` validates a patch and applies it at the
+next host boundary outside a frame. Repeated pending patches merge their budget
+and pacing fields. These low-level runtime patches are transient and never
+write user files. Applying shared `GraphicsSettings` replaces their budget/pacing
+values; its explicit Save path persists those preferences in `[graphics]`.
+
+```cpp
+auto state = ctx.renderRuntimeState();
+auto pacing = state.pacing;
+pacing.maximumFramesPerSecond = 60;
+ctx.requestRenderRuntime({.pacing = pacing});
+// Remove the cap while retaining the outstanding-frame policy.
+pacing.maximumFramesPerSecond.reset();
+ctx.requestRenderRuntime({.pacing = pacing});
+```
+
+A pacing value validates one to three outstanding application frames and an
+optional 1–1000 Hz cap. SDL's native presentation allowance remains independent
+(default two); changing host admission does not flush the device queue. Budgets
+can be lowered below existing commitments without revoking resources; new growth
+is refused until usage permits it. See [RESOURCES.md](../render/RESOURCES.md).
+
+## Shared graphics and settings view
+
+[GRAPHICS.md](GRAPHICS.md) defines schema version 5 shared graphics, draft
+Apply/Save behavior, inactive future features and automatic scene resolution.
+These preferences apply across sub-apps. Escape opens the host settings view;
+Ctrl/Cmd+Shift+M returns to the launcher.

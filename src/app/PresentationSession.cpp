@@ -23,23 +23,26 @@ PresentationSession::PresentationSession(WindowConfig window,
 }
 
 void PresentationSession::prepareWindowForSizing() {
-  auto normal = _presentation.window;
-  normal.mode = playground::platform::WindowMode::Windowed;
-  _window.setMinimumSize({1, 1});
-  _window.applyPreferences(normal);
-  _window.setWindowedSize(_viewPolicy.initialWindowSize(_bootstrapSize));
+  // Measurement remains synchronous. Only numeric geometry crosses the native
+  // transition boundary; no borrowed application callback is retained.
+  _stagedSize = _viewPolicy.initialWindowSize(_bootstrapSize);
+  _stagedPosition.reset();
+  _stagedDisplay.reset();
+  _restoreMinimized = false;
+  _restoreMode.reset();
 }
 
 void PresentationSession::applyPresentation(bool preservePosition) {
   _presentation.validate();
   _viewPolicy.validate();
   auto preferences = _presentation.window;
+  if (_restoreMode)
+    preferences.mode = *_restoreMode;
+  if (_stagedDisplay)
+    preferences.display = *_stagedDisplay;
   if (preservePosition) {
     preferences.center = false;
-    preferences.display.selection =
-        playground::platform::DisplaySelection::Current;
   }
-  _window.applyPreferences(preferences);
   const auto factor = playground::platform::uiWindowScale(
       _presentation.viewport, _window.metrics());
   const auto minimum = _viewPolicy.minimumSize;
@@ -49,11 +52,21 @@ void PresentationSession::applyPresentation(bool preservePosition) {
     return std::max(1, static_cast<int>(std::ceil(value)));
   };
   const auto area = _window.usableBounds(preferences.display);
-  _window.setMinimumSize(
-      {coordinate(std::min(double(minimum.width) * factor.x, double(area.w()))),
-       coordinate(
-           std::min(double(minimum.height) * factor.y, double(area.h())))});
-  _window.setResizable(_viewPolicy.resizable);
+  _window.requestPreferences(
+      {.preferences = preferences,
+       .windowedSize = _stagedSize,
+       .windowedPosition = _stagedPosition,
+       .minimumSize = {coordinate(std::min(double(minimum.width) * factor.x,
+                                           double(area.w()))),
+                       coordinate(std::min(double(minimum.height) * factor.y,
+                                           double(area.h())))},
+       .resizable = _viewPolicy.resizable,
+       .minimized = _restoreMinimized});
+  _stagedSize.reset();
+  _stagedPosition.reset();
+  _stagedDisplay.reset();
+  _restoreMinimized = false;
+  _restoreMode.reset();
 }
 
 void PresentationSession::applyWindowProps() {
@@ -65,9 +78,14 @@ void PresentationSession::applyWindowProps() {
 }
 
 void PresentationSession::fitContent(const Measure &measure) {
-  auto normal = _presentation.window;
-  normal.mode = playground::platform::WindowMode::Windowed;
-  _window.applyPreferences(normal);
+  if (auto size = measureContent(measure)) {
+    _stagedSize = size;
+    applyPresentation();
+  }
+}
+
+std::optional<math::Vec2i>
+PresentationSession::measureContent(const Measure &measure) const {
   const auto area = _window.usableBounds(_presentation.window.display);
   const auto metrics = _window.metrics();
   const auto factor =
@@ -87,34 +105,33 @@ void PresentationSession::fitContent(const Measure &measure) {
                              ? std::optional{_presentation.viewport.canvasSize}
                              : measure(maximum, pixelScale);
   if (!preferred)
-    return;
+    return std::nullopt;
   if (!playground::math::isFinite(*preferred) ||
       !playground::math::isNonNegative(*preferred))
     throw std::invalid_argument(
         "App returned an invalid preferred content size");
-  _window.setWindowedSize(
-      {static_cast<int>(std::clamp(
-           std::ceil(double(std::max(preferred->width,
-                                     _viewPolicy.minimumSize.width)) *
-                     factor.x),
-           1.0, double(available.width))),
-       static_cast<int>(std::clamp(
-           std::ceil(double(std::max(preferred->height,
-                                     _viewPolicy.minimumSize.height)) *
-                     factor.y),
-           1.0, double(available.height)))});
-  if (_presentation.window.center) {
-    _window.applyPreferences(normal);
-  }
+  return math::Vec2i{
+      static_cast<int>(
+          std::clamp(std::ceil(double(std::max(preferred->width,
+                                               _viewPolicy.minimumSize.width)) *
+                               factor.x),
+                     1.0, double(available.width))),
+      static_cast<int>(std::clamp(
+          std::ceil(double(std::max(preferred->height,
+                                    _viewPolicy.minimumSize.height)) *
+                    factor.y),
+          1.0, double(available.height)))};
 }
 
 void PresentationSession::applyViewSizing(
     const std::optional<platform::SavedWindow> &saved, const Measure &measure) {
   using playground::platform::InitialWindowSizing;
   bool restored = false;
-  if (_viewPolicy.initialSizing == InitialWindowSizing::FitContent)
-    fitContent(measure);
-  else if (_viewPolicy.initialSizing == InitialWindowSizing::RestorePrevious) {
+  if (_viewPolicy.initialSizing == InitialWindowSizing::FitContent) {
+    if (auto size = measureContent(measure))
+      _stagedSize = size;
+  } else if (_viewPolicy.initialSizing ==
+             InitialWindowSizing::RestorePrevious) {
     if (saved) {
       auto preference = _presentation.window.display;
       if (preference.selection ==
@@ -126,19 +143,23 @@ void PresentationSession::applyViewSizing(
       const playground::math::Vec2i size{
           std::min(saved->size.x, static_cast<int>(area.w())),
           std::min(saved->size.y, static_cast<int>(area.h()))};
-      _window.setWindowedSize(size);
-      _window.setWindowedPosition(
-          {std::clamp(saved->position.x, static_cast<int>(area.x()),
-                      static_cast<int>(area.right()) - size.x),
-           std::clamp(saved->position.y, static_cast<int>(area.y()),
-                      static_cast<int>(area.bottom()) - size.y)});
-      restored = true;
+      _stagedSize = size;
+      _stagedDisplay = preference;
+      if (saved->position)
+        _stagedPosition = math::Vec2i{
+            std::clamp(saved->position->x, static_cast<int>(area.x()),
+                       static_cast<int>(area.right()) - size.x),
+            std::clamp(saved->position->y, static_cast<int>(area.y()),
+                       static_cast<int>(area.bottom()) - size.y)};
+      restored = saved->position.has_value() &&
+                 _window.placementCapabilities().requestsSupported;
     }
   }
   applyPresentation(restored);
 }
 
 void PresentationSession::restore(const Checkpoint &previous) {
+  _window.cancelTransition();
   _rendererRecovery.skipped();
   _windowProps = previous.windowProps;
   _viewPolicy = previous.view;
@@ -155,18 +176,34 @@ void PresentationSession::restore(const Checkpoint &previous) {
         *_window.get(), previous.renderer, _backendProps);
     _renderer->prepare(previous.requirements);
   }
-  auto normal = _presentation.window;
-  normal.mode = playground::platform::WindowMode::Windowed;
-  normal.center = false;
-  _window.setMinimumSize({1, 1});
-  _window.applyPreferences(normal);
-  _window.setWindowedSize(previous.window.windowedSize);
-  _window.setWindowedPosition(previous.window.windowedPosition);
+  restoreWindow(previous);
+}
+
+void PresentationSession::restoreWindow(const Checkpoint &previous) {
+  _window.cancelTransition();
+  _windowProps = previous.windowProps;
+  _viewPolicy = previous.view;
+  _presentation = previous.presentation;
+  _stagedSize = previous.window.windowedSize;
+  _stagedPosition = previous.window.windowedPosition;
+  _stagedDisplay.reset();
+  if (const auto *name = SDL_GetDisplayName(previous.window.display))
+    _stagedDisplay =
+        platform::DisplayPreference{platform::DisplaySelection::Named, name};
+  _restoreMinimized = previous.window.minimized;
+  _restoreMode.reset();
+  if (!previous.window.fullscreen && previous.window.maximized)
+    _restoreMode = platform::WindowMode::Maximized;
   applyWindowProps();
-  applyPresentation(true);
-  if (!previous.window.fullscreen) {
-    _window.setMaximized(previous.window.maximized);
-    _window.setMinimized(previous.window.minimized);
+  if (previous.pendingWindowRequest) {
+    _window.requestPreferences(*previous.pendingWindowRequest);
+    _stagedSize.reset();
+    _stagedPosition.reset();
+    _stagedDisplay.reset();
+    _restoreMinimized = false;
+    _restoreMode.reset();
+  } else {
+    applyPresentation(true);
   }
 }
 
@@ -227,8 +264,9 @@ void PresentationSession::recover(std::string reason,
 PresentationSession::Checkpoint
 PresentationSession::checkpoint(rendering::RendererRequirements requirements) {
   _window.refreshState();
-  return {_windowProps, _viewPolicy,     _presentation,  _rendererState,
-          requirements, bool(_renderer), _window.state()};
+  return {
+      _windowProps, _viewPolicy,     _presentation,   _rendererState,
+      requirements, bool(_renderer), _window.state(), _window.pendingRequest()};
 }
 
 void PresentationSession::observeFrame(rendering::PresentationOutcome outcome,

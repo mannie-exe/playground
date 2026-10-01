@@ -8,6 +8,7 @@
 namespace playground::sdl {
 // AppHost-specific convenience stays out of the reusable SDL module.
 void UISession::synchronize(AppContext &ctx) {
+  _graphics = ctx.graphicsState();
   auto &services = ctx.windowServices();
   _root.setInteractionProps(ctx.viewPolicy().interaction);
   _root.setTheme(ui::resolveTheme(ctx.viewPolicy().colorScheme,

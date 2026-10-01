@@ -77,7 +77,7 @@ public:
   void setEnabled(bool value);
   void applyButtonPatch(const ButtonPatch &p);
 
-  Connection onActivate(std::move_only_function<void()> callback) {
+  Connection onActivate(support::MoveOnlyFunction<void()> callback) {
     return _activated.connect(std::move(callback));
   }
 };

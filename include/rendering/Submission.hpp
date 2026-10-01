@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <rendering/ResourceDomain.hpp>
+#include <rendering/ResourceLedger.hpp>
 
 namespace playground::rendering {
 
@@ -15,7 +16,7 @@ using SubmissionId = std::uint64_t;
 struct ResourceUse {
   ResourceDomainId domain;
   SubmissionId lastSubmission{};
-  std::shared_ptr<void> allocation;
+  ResourceLedger::Token allocation;
 };
 
 using ResourceLease = std::shared_ptr<ResourceUse>;

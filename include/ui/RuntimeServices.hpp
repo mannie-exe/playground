@@ -13,17 +13,18 @@
 #include <utility>
 #include <vector>
 
+#include <support/MoveOnlyFunction.hpp>
 #include <ui/Theme.hpp>
 
 namespace playground::ui {
 
 class Connection {
-  std::move_only_function<void() noexcept> _disconnect;
+  support::MoveOnlyFunction<void() noexcept> _disconnect;
 
 public:
   Connection() = default;
 
-  explicit Connection(std::move_only_function<void() noexcept> disconnect)
+  explicit Connection(support::MoveOnlyFunction<void() noexcept> disconnect)
       : _disconnect{std::move(disconnect)} {}
 
   ~Connection() { disconnect(); }
@@ -53,7 +54,7 @@ public:
 template <typename... Args> class Signal {
   struct Slot {
     bool active{true};
-    std::move_only_function<void(Args...)> callback;
+    support::MoveOnlyFunction<void(Args...)> callback;
     std::size_t executions{};
 
     void invoke(Args... args) {
@@ -75,7 +76,7 @@ template <typename... Args> class Signal {
   std::vector<std::shared_ptr<Slot>> _slots;
 
 public:
-  Connection connect(std::move_only_function<void(Args...)> callback) {
+  Connection connect(support::MoveOnlyFunction<void(Args...)> callback) {
     if (!callback)
       throw std::invalid_argument("A subscription requires a callback");
     auto slot = std::make_shared<Slot>(Slot{true, std::move(callback)});
@@ -108,7 +109,7 @@ class Scheduler {
     double interval{};
     std::uint64_t order{};
     bool active{true};
-    std::move_only_function<void()> callback;
+    support::MoveOnlyFunction<void()> callback;
     bool executing{};
   };
 
@@ -138,7 +139,7 @@ public:
     return std::max(0.0, _timers.top()->deadline - _now);
   }
 
-  TimerHandle schedule(double delay, std::move_only_function<void()> callback,
+  TimerHandle schedule(double delay, support::MoveOnlyFunction<void()> callback,
                        double interval = 0);
 
   void advance(double seconds);

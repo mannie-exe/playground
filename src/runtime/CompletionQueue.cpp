@@ -11,7 +11,7 @@ namespace detail {
 struct CompletionState {
   const CompletionQueueProps props;
   std::mutex mutex;
-  std::deque<std::move_only_function<void()>> pending;
+  std::deque<support::MoveOnlyFunction<void()>> pending;
   bool closed{};
   std::function<void()> wake;
 
@@ -27,7 +27,7 @@ void CompletionQueueProps::validate() const {
 CompletionSink::CompletionSink(std::weak_ptr<detail::CompletionState> state)
     : _state{std::move(state)} {}
 
-bool CompletionSink::post(std::move_only_function<void()> callback) const {
+bool CompletionSink::post(support::MoveOnlyFunction<void()> callback) const {
   if (!callback)
     throw std::invalid_argument("Completion requires a callback");
   auto state = _state.lock();
@@ -58,7 +58,7 @@ CompletionQueue::CompletionQueue(CompletionQueueProps props)
 }
 
 bool CompletionSink::post(ActivationToken owner,
-                          std::move_only_function<void()> callback) const {
+                          support::MoveOnlyFunction<void()> callback) const {
   if (!callback)
     throw std::invalid_argument("Completion requires a callback");
   if (!owner.isActive())
@@ -95,7 +95,7 @@ void CompletionQueue::setWakeCallback(std::function<void()> callback) {
 }
 
 void CompletionQueue::close() {
-  std::deque<std::move_only_function<void()>> discarded;
+  std::deque<support::MoveOnlyFunction<void()>> discarded;
   {
     std::lock_guard lock{_state->mutex};
     _state->closed = true;
@@ -123,7 +123,7 @@ std::size_t CompletionQueue::drain() {
   }
   std::size_t completed{};
   for (; completed < count; ++completed) {
-    std::move_only_function<void()> callback;
+    support::MoveOnlyFunction<void()> callback;
     {
       std::lock_guard lock{_state->mutex};
       if (_state->closed || _state->pending.empty())

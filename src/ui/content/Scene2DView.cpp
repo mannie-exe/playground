@@ -28,7 +28,9 @@ void Scene2DView::applyPatch(const Scene2DViewPatch &patch) {
   setProps({patch.scene.appliedTo(_props.scene),
             patch.camera.appliedTo(_props.camera, defaults.camera),
             patch.preferredSize.appliedTo(_props.preferredSize,
-                                          defaults.preferredSize)});
+                                          defaults.preferredSize),
+            patch.useGraphicsSampling.appliedTo(_props.useGraphicsSampling,
+                                                defaults.useGraphicsSampling)});
 }
 
 layout::MeasureResult
@@ -38,6 +40,13 @@ Scene2DView::measureContent(MeasureContext &, const layout::SizeConstraints &) {
 
 void Scene2DView::prepareContent(PrepareContext &context) {
   _prepared = false;
+  const auto sampling = context.graphics
+                            ? context.graphics->requested.twoD.sampling
+                            : rendering::Sampling::Linear;
+  if (sampling != _sampling) {
+    _sampling = sampling;
+    invalidatePaint();
+  }
   const auto domain = context.images ? context.images->resourceDomain()
                                      : rendering::ResourceDomainId::cpu();
   if (_preparedRevision == _props.scene->revision() && _imageDomain == domain) {
@@ -67,8 +76,12 @@ void Scene2DView::paint(PaintContext &context) const {
     PaintScope itemScope{context};
     context.transform(item.transform);
     if (item.image)
-      context.drawImage(item.image, {{}, item.image->pixelSize()}, item.bounds,
-                        item.paint);
+      context.drawImage(
+          item.image, {{}, item.image->pixelSize()}, item.bounds,
+          rendering::ImagePaint{.tint = item.paint.tint,
+                                .sampling = _props.useGraphicsSampling
+                                                ? _sampling
+                                                : item.paint.sampling});
     else
       context.fill(item.bounds, item.paint.tint);
   }

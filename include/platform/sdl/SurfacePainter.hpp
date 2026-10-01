@@ -21,13 +21,15 @@ namespace playground::sdl {
 struct SurfacePainterProps {
   math::Vec2f pixelScale{1, 1};
   std::size_t layerByteBudget{64 * 1024 * 1024};
+  std::shared_ptr<rendering::ResourceLedger> resources{
+      rendering::defaultResourceLedger()};
 };
 
 // Synchronous, UI-thread-only backend. Source modulation is scoped and
 // restored; neither this painter nor its shared SDL resources support
 // concurrent mutation.
 class SurfacePainter final : public rendering::PaintContext {
-  using OwnedSurface = SDLResource<SDL_Surface, SDL_DestroySurface>;
+  using OwnedSurface = SurfaceHandle;
 
   struct Mask {
     math::RoundedRect shape;

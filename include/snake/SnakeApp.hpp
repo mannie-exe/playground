@@ -11,11 +11,7 @@ namespace snake = playground::snake::config;
 
 class SnakeApp : public IApp {
 public:
-  SnakeApp() {
-    input().addContext({.name = "navigation",
-                        .stage = playground::input::InputStage::BeforeUI},
-                       {{.action = "back", .code = SDL_SCANCODE_ESCAPE}});
-  }
+  SnakeApp() = default;
 
   static AppInfo staticInfo() {
     return AppInfo{.id = AppId::Snake,
@@ -29,9 +25,4 @@ public:
 
   AppInfo info() const override { return staticInfo(); }
 
-  void onActions(AppContext &ctx,
-                 const playground::input::InputSnapshot &actions) override {
-    if (actions["back"].pressed)
-      ctx.requestMenu();
-  }
 };

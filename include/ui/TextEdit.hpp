@@ -5,11 +5,12 @@
 #include <string_view>
 #include <vector>
 
+#include <support/Unicode.hpp>
 #include <ui/Semantics.hpp>
 
 namespace playground::ui {
-enum class TextBoundary { Grapheme, Word, Line };
-std::vector<std::size_t> textBoundaries(std::string_view, TextBoundary);
+using support::TextBoundary;
+using support::textBoundaries;
 
 struct BidiRun {
   std::size_t begin{}, end{};
@@ -51,6 +52,7 @@ class TextEditModel {
   void validate(std::string_view) const;
   void remember();
   void trimHistory();
+  bool eraseSelection(TextSelection previous);
 
 public:
   explicit TextEditModel(TextEditProps props = {}, std::string value = {});
@@ -77,6 +79,8 @@ public:
 
   bool replace(std::string_view);
   bool erase(bool backward, bool word = false);
+  // Delete between the caret and a UTF-8 grapheme boundary, as one undo step.
+  bool eraseTo(std::size_t offset);
   void move(int direction, bool extend, bool word = false);
   void selectAll();
   std::string selectedText() const;

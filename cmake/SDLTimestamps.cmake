@@ -32,7 +32,7 @@ function(playground_apply_sdl_timestamps source_dir)
     set(vulkan_dir "${source_dir}/src/gpu/vulkan")
     set(source "${vulkan_dir}/SDL_gpu_vulkan.c")
     playground_sdl_original("${source}"
-        "35903d00b75a6ec9b119f576bd1ed040dfac997b4184af415d9b4e23afa3af33" original)
+        "83750ff683d9f242ef431b155042ece67e9f99fa04698315e59debda019c5d85" original)
     set(body "${original}")
     string(REPLACE "#include <SDL3/SDL_vulkan.h>"
         "#include <SDL3/SDL_vulkan.h>\n#include <SDL3/SDL_gpu_timestamps_playground.h>" body "${body}")

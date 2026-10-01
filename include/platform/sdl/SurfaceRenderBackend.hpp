@@ -6,6 +6,7 @@
 #include <rendering/RenderBackend.hpp>
 #include <rendering/RenderBackendProps.hpp>
 #include <support/SDLResource.hpp>
+#include <support/SurfaceHandles.hpp>
 
 namespace playground::sdl {
 
@@ -17,7 +18,7 @@ class SurfaceRenderBackend final : public rendering::RenderBackend {
 
   bool _frameActive{};
   std::uint64_t _completedWork{};
-  SDLResource<SDL_Surface, SDL_DestroySurface> _scaledTarget;
+  SurfaceHandle _scaledTarget;
 
 public:
   explicit SurfaceRenderBackend(SDL_Window &window,

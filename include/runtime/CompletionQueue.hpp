@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <runtime/ActivationLifetime.hpp>
+#include <support/MoveOnlyFunction.hpp>
 
 namespace playground::runtime {
 namespace detail {
@@ -26,9 +27,9 @@ class CompletionSink {
   friend class CompletionQueue;
 
 public:
-  bool post(std::move_only_function<void()> callback) const;
+  bool post(support::MoveOnlyFunction<void()> callback) const;
   bool post(ActivationToken owner,
-            std::move_only_function<void()> callback) const;
+            support::MoveOnlyFunction<void()> callback) const;
 };
 
 class ActivationSink {
@@ -39,7 +40,7 @@ public:
   ActivationSink(CompletionSink sink, ActivationToken owner)
       : _sink{std::move(sink)}, _owner{owner} {}
 
-  bool post(std::move_only_function<void()> callback) const {
+  bool post(support::MoveOnlyFunction<void()> callback) const {
     return _sink.post(_owner, std::move(callback));
   }
 };

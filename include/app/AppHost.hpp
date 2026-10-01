@@ -19,6 +19,7 @@
 #include <platform/sdl/AssetResources.hpp>
 #include <platform/sdl/EventWake.hpp>
 #include <platform/sdl/SDLGamepads.hpp>
+#include <platform/sdl/UISession.hpp>
 #include <rendering/RenderBackend.hpp>
 #include <rendering/RenderBackendProps.hpp>
 #include <rendering/RenderFailure.hpp>
@@ -27,6 +28,7 @@
 #include <runtime/UpdateClock.hpp>
 #include <support/AssetRegistry.hpp>
 #include <support/PerformanceMonitor.hpp>
+#include <ui/views/SettingsView.hpp>
 
 class AppHost {
   SDLGuard _sdl;
@@ -42,8 +44,27 @@ class AppHost {
   std::unique_ptr<playground::sdl::AssetResources> _resources;
   std::unique_ptr<playground::runtime::Executor> _workers;
   PerformanceMonitor _performance;
+  playground::rendering::RenderRuntime _renderRuntime;
+  std::optional<playground::rendering::RenderRuntimePatch> _pendingRuntimePatch;
+  playground::rendering::QualityController _quality;
+  void processSettings();
+  void showSettings(bool visible);
+  void applyGraphics(playground::rendering::GraphicsSettings, bool persist);
+  std::string _reportedResourcePressure;
+  std::uint64_t _lastCompletedWork{};
+  std::optional<std::uint64_t> _pressureRetriedRevision;
 
   playground::app::PresentationSession _session;
+  playground::sdl::UISession _settingsUI{
+      playground::sdl::UISessionTiming::Monotonic};
+  playground::ui::SettingsViewFactory _settingsViewFactory;
+  playground::ui::SettingsPanel *_settingsView{};
+  std::optional<playground::app::PresentationSession::Checkpoint>
+      _settingsWindow;
+  std::optional<bool> _pendingSettingsVisible;
+  std::optional<std::pair<playground::rendering::GraphicsSettings, bool>>
+      _pendingGraphics;
+  playground::runtime::ActivityClock::time_point _settingsMetersAt{};
   playground::rendering::ResourceDomainId _notifiedRendererDomain;
   playground::runtime::UpdateClock _updateClock;
   AppRegistry _registry;
@@ -55,6 +76,7 @@ class AppHost {
   playground::runtime::PaintRequest _paintRequest;
   std::optional<PendingAppCommand> _pendingCommand;
   std::string _lastCommandError;
+  std::uint64_t _reportedWindowRequest{};
   std::unique_ptr<IApp> _activeApp;
   AppId _activeAppId{AppId::Menu};
 
@@ -66,9 +88,19 @@ public:
   void requestRepaint() { _paintRequest.request(); }
 
   explicit AppHost(WindowConfig initialWindow = WindowConfig{},
-                   playground::rendering::RenderBackendProps backendProps = {});
+                   playground::rendering::RenderBackendProps backendProps = {},
+                   playground::ui::SettingsViewFactory settingsView =
+                       playground::ui::makeSettingsView);
 
   const WindowState &windowState() const { return _session.windowState(); }
+
+  const WindowRequestStatus &windowRequestStatus() const {
+    return _session.windowRequestStatus();
+  }
+
+  auto windowPlacementCapabilities() const {
+    return _session.windowPlacementCapabilities();
+  }
 
   playground::sdl::WindowServices &windowServices() {
     return _session.windowServices();
@@ -117,6 +149,40 @@ public:
 
   PerformanceMonitor &performance() { return _performance; }
 
+  const auto &graphicsState() const noexcept { return _quality.state(); }
+
+  bool settingsVisible() const noexcept { return _settingsView != nullptr; }
+
+  void requestSettings(bool visible = true) {
+    _pendingSettingsVisible = visible;
+    requestUpdate();
+  }
+
+  void requestGraphics(playground::rendering::GraphicsSettings settings,
+                       bool persist = false) {
+    settings.validate();
+    _pendingGraphics = std::pair{std::move(settings), persist};
+    requestUpdate();
+  }
+
+  auto renderRuntimeState() const { return _renderRuntime.snapshot(); }
+
+  auto renderTelemetry() const { return _renderRuntime.telemetrySnapshot(); }
+
+  void requestRenderRuntime(playground::rendering::RenderRuntimePatch patch) {
+    if (patch.budgets)
+      patch.budgets->validate();
+    if (patch.pacing)
+      patch.pacing->validate();
+    if (!_pendingRuntimePatch)
+      _pendingRuntimePatch.emplace();
+    if (patch.budgets)
+      _pendingRuntimePatch->budgets = patch.budgets;
+    if (patch.pacing)
+      _pendingRuntimePatch->pacing = patch.pacing;
+    requestRepaint();
+  }
+
   playground::runtime::ActivationSink completions() {
     return {_activeApp->_completions.sink(), _activeApp->activationToken()};
   }
@@ -147,6 +213,7 @@ private:
   RuntimeCheckpoint checkpoint();
   void restore(const RuntimeCheckpoint &);
   void recoverRenderer(std::string reason);
+  void collectRendererTelemetry();
   void synchronizeRendererDomain();
   void cleanupApp(IApp &) noexcept;
 
@@ -165,4 +232,6 @@ private:
   void configureRenderer(playground::rendering::RendererPreferences,
                          playground::rendering::RendererRequirements);
   void saveWindowSession();
+  void advanceWindowTransition(
+      playground::platform::WindowTransition::TimePoint now);
 };

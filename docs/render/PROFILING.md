@@ -6,11 +6,17 @@ CPU frame phases and GPU intervals are separate measurements. CPU submission
 time includes host-side preparation and driver calls; it is not GPU execution
 time. `GPUTimingSample` records a completed command-buffer interval in
 milliseconds, its command label, central submission sequence and resource domain.
+Context also carries the originating `frameId` (zero for preparation outside
+an admitted frame). Participating scene views supply a stable `workloadId` and
+the `qualityRevision` used to prepare that work. Automatic quality ignores stale
+revisions; late completion cannot acknowledge a newer resolution decision.
 The sequence belongs to that domain: device recovery creates a new domain and
 may restart its submission counter. Optional completion latency measures
 host-observed submission-to-completion delay, not shader execution duration.
 
-`PerformanceMonitor` keeps bounded CPU and GPU histories. Missing GPU samples
+`RenderRuntime` keeps baseline CPU history (240 iterations) and completed GPU
+intervals (128 samples) independently of reporting. `PerformanceMonitor` consumes
+the same collected values when detailed reporting is enabled. Missing GPU samples
 remain missing: unsupported timing, an exhausted query ring and a result that is
 not ready do not produce zero-duration samples. Intervals can overlap; summing
 independent submissions is not necessarily a meaningful frame duration.
@@ -39,7 +45,11 @@ the reporting interval; raw bounded history and timing availability survive.
 GPU counts cover completed samples **received during** the reporting interval,
 not necessarily submissions from its CPU frames. A report is not a GPU frame
 total or a utilization percentage; command intervals may overlap or contain
-dependencies. Exact CPU/GPU frame correlation is outside this contract.
+dependencies. Raw GPU context identifies the originating admitted frame, view and
+quality revision; workload groups omit these identities so reporting does not
+create a group per frame or adjustment. CPU iteration
+measurements can include updates without an admitted frame. No display timestamp
+is inferred.
 
 At most 64 groups are retained per interval. Additional groups increment an
 omitted-sample counter without blocking rendering or merging unrelated work.
@@ -52,13 +62,14 @@ frame entries and GPU sample entries separately; their counts need not match.
 Enabling native profiling starts a fresh collection generation. Old queries
 remain alive until safely completed/canceled, but their results cannot enter the
 new collection. Disabling profiling clears buffered results. Recovery creates a
-new resource domain. Neither reporting nor telemetry collection waits for GPU
-completion, introduces timestamp queries beyond the existing command scopes, or
-changes rendering, frame pacing or VSync.
+new resource domain. Collection reads completed queries without waiting for GPU completion. Baseline
+GPU scopes cover paint, scene rendering/post-processing, custom offscreen passes
+and presentation composition. Detailed device collection can additionally time
+upload and other command scopes. Query exhaustion drops measurements, never
+blocks rendering. Reporting does not change pacing or VSync.
 
-The host observes `PerformanceMonitor::statisticsRevision()` and restarts native
-collection after a full statistics reset. This includes an off/on pair between
-rendered frames. Report-only resets leave the revision unchanged. The current
+The host does not restart native collection when reporting is toggled or reset.
+`statisticsRevision()` belongs only to the optional reporting session. The current
 collection status remains measured after reporting; a new interval with no
 completed results explicitly reports zero received samples instead of replaying
 the previous interval's measurements.
@@ -73,8 +84,9 @@ target and target is the acquired presentation image.
 
 ### Reading a report
 
-F10 toggles collection; Shift+F10 reports immediately; F11 switches the automatic
-report interval between 60 and 300 CPU frames. Each report starts with CPU phases,
+F10 toggles optional reporting and detailed UI measurement. While reporting is
+enabled, Shift+F10 reports immediately; F11 switches the automatic report interval
+between 60 and 300 CPU frames. Each report starts with CPU phases,
 then collection health and one row per GPU group, then UI work counters. GPU rows
 include independent execution-duration and observed-completion-latency statistics.
 `unspecified` extents and `unmeasured` latency mean absent metadata, not zero.
@@ -82,13 +94,13 @@ The raw histories remain available for consumers independently of the report.
 
 CPU render/present phases include preparation, submission and possible waiting;
 they are not substitutes for GPU execution durations. Compare workload rows at
-the same source/target size and device domain. No summed GPU-frame duration, FPS
-cap, idle-render suppression or utilization estimate is introduced by reporting.
+the same source/target size and device domain. Reporting introduces no summed GPU-frame duration or utilization estimate.
+Frame caps and admission belong independently to [RESOURCES.md](RESOURCES.md).
 
 Activity policy now independently permits whole-frame idle skipping; see
 [ACTIVITY.md](../platform/ACTIVITY.md). `Idle` reports wait count and accumulated
 milliseconds outside active CPU-frame totals. Reports remain active-frame-based;
-an idle window takes longer to reach 60 samples. Shift+F10 reports immediately.
+an idle window takes longer to reach 60 samples.
 
 These aggregates do not measure input-to-display latency. Diagnose perceived wake
 delay by separating event arrival/polling, dispatch/update, first-frame preparation,
@@ -186,7 +198,7 @@ The ordinary `gpu_timing` test injects a versioned native function table to test
 capacity, completion ordering, unavailable results, cancellation, stale tickets,
 counter wrap, failure quarantine, owner-thread checks and invalid metadata.
 It does not require a Vulkan device. Native timestamp execution belongs to the
-opt-in GPU test suite; capability absence must be distinguished from an invalid
+GPU test suite; capability absence must be distinguished from an invalid
 result on a capable device. Tests assert finite nonnegative durations and lifecycle
 behavior, not a wall-clock performance threshold. RenderDoc or vendor tools
 remain useful for detailed pipeline statistics beyond command-buffer intervals.

@@ -8,7 +8,9 @@ namespace playground::sdl {
 
 // Compiled shader formats are independent of runtime driver availability.
 SDL_GPUShaderFormat packagedShaderFormats() noexcept;
-std::vector<rendering::RendererCandidate> availableGPURenderers();
+// Returns the reason when no GPU candidate is available; clears it on success.
+std::vector<rendering::RendererCandidate>
+availableGPURenderers(std::string &unavailabilityReason);
 
 class GPURenderBackend final : public rendering::RenderBackend {
   struct Impl;
@@ -20,6 +22,8 @@ public:
   ~GPURenderBackend() override;
   rendering::ResourceDomainId resourceDomain() const noexcept override;
   std::uint64_t completedWork() override;
+  std::size_t pendingWork() const override;
+  void trimUnused() override;
   void invalidate() noexcept override;
   void setProfilingEnabled(bool enabled) override;
   bool supportsGPUTiming() const noexcept override;

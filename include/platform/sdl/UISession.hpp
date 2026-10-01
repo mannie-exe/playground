@@ -3,6 +3,7 @@
 #include <platform/Presentation.hpp>
 #include <platform/sdl/EventResult.hpp>
 #include <platform/sdl/SDLInput.hpp>
+#include <rendering/GraphicsSettings.hpp>
 #include <rendering/RenderBackend.hpp>
 #include <runtime/Activity.hpp>
 #include <ui/UIRoot.hpp>
@@ -17,6 +18,7 @@ enum class UISessionTiming { CallerDelta, Monotonic };
 // App-owned bridge. No transient AppContext is stored in a node or callback.
 class UISession {
   ui::UIRoot _root;
+  rendering::ResolvedGraphicsState _graphics;
   ui::LayoutEnvironment _environment;
   platform::WindowMetrics _metrics{};
   platform::ViewportMapping _mapping{};

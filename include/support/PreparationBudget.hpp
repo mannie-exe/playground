@@ -1,88 +1,49 @@
 #pragma once
 
-#include <cstddef>
-#include <memory>
-#include <mutex>
-#include <stdexcept>
-#include <utility>
+#include <rendering/ResourceLedger.hpp>
 
 namespace playground {
-// Admission accounting, not an allocator: dependency-internal allocations may
-// differ from estimates. Refusal is immediate; callers may explicitly retry.
+// CPU preparation estimates share the rendering ledger. Dependency-private
+// allocations may differ; a reservation is admission, not a capped allocator.
 class PreparationBudget {
-  struct State {
-    std::mutex mutex;
-    std::size_t limit, used{}, peak{};
-
-    explicit State(std::size_t bytes) : limit{bytes} {}
-  };
-
-  std::shared_ptr<State> _state;
+  std::shared_ptr<rendering::ResourceLedger> _ledger;
 
 public:
   struct Snapshot {
     std::size_t limit{}, used{}, peak{};
   };
 
-  class Lease {
-    std::shared_ptr<State> _state;
-    std::size_t _bytes{};
-    friend class PreparationBudget;
-
-    Lease(std::shared_ptr<State> state, std::size_t bytes)
-        : _state{std::move(state)}, _bytes{bytes} {}
-
-    void release() noexcept {
-      if (_state) {
-        std::lock_guard lock{_state->mutex};
-        _state->used -= _bytes;
-      }
-      _state.reset();
-    }
-
-  public:
-    ~Lease() { release(); }
-
-    Lease(const Lease &) = delete;
-    Lease &operator=(const Lease &) = delete;
-
-    Lease(Lease &&other) noexcept
-        : _state{std::move(other._state)}, _bytes{other._bytes} {}
-
-    Lease &operator=(Lease &&other) noexcept {
-      if (this != &other) {
-        release();
-        _state = std::move(other._state);
-        _bytes = other._bytes;
-      }
-      return *this;
-    }
-  };
+  using Lease = rendering::ResourceLedger::Token;
 
   explicit PreparationBudget(std::size_t bytes)
-      : _state{std::make_shared<State>(bytes)} {
-    if (!bytes)
-      throw std::invalid_argument("Preparation budget must be positive");
+      : _ledger{std::make_shared<rendering::ResourceLedger>(
+            rendering::ResourceBudgetProps{.cpuBytes = bytes,
+                                           .preparationBytes = bytes})} {}
+
+  explicit PreparationBudget(std::shared_ptr<rendering::ResourceLedger> ledger)
+      : _ledger{std::move(ledger)} {
+    if (!_ledger)
+      throw std::invalid_argument("Preparation budget requires a ledger");
   }
 
   Lease acquire(std::size_t bytes) const {
-    std::lock_guard lock{_state->mutex};
-    if (bytes > _state->limit - _state->used)
-      throw std::length_error("Preparation budget exhausted");
-    _state->used += bytes;
-    if (_state->used > _state->peak)
-      _state->peak = _state->used;
-    return {_state, bytes};
+    if (!bytes)
+      return {};
+    return _ledger->reserve(rendering::MemoryClass::CPU,
+                            rendering::ResourceKind::Preparation, bytes,
+                            "CPU resource preparation");
   }
 
   Snapshot snapshot() const {
-    std::lock_guard lock{_state->mutex};
-    return {_state->limit, _state->used, _state->peak};
+    const auto s = _ledger->snapshot();
+    const auto &u =
+        s.kinds[static_cast<std::size_t>(rendering::ResourceKind::Preparation)];
+    return {s.budgets.preparationBytes, u.bytes, u.peak};
   }
 };
 
 inline PreparationBudget &resourcePreparationBudget() {
-  static PreparationBudget budget{512 * 1024 * 1024};
+  static PreparationBudget budget{rendering::defaultResourceLedger()};
   return budget;
 }
 } // namespace playground

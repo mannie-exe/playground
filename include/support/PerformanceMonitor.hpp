@@ -24,10 +24,7 @@ struct PerformanceConfig {
 };
 
 // CPU durations only. A missing phase is not a zero-duration measurement.
-struct PerformanceSample {
-  std::array<double, 5> milliseconds{};
-  std::array<bool, 5> measured{};
-};
+using PerformanceSample = playground::rendering::CPUSample;
 
 struct PerformanceHistoryEntry {
   std::uint64_t frame{};
@@ -120,8 +117,7 @@ public:
 
   bool isEnabled() const { return _config.enabled; }
 
-  // Host restarts native collection after any full reset, even if two hotkey
-  // toggles occur between rendered frames. Report-only resets do not change it.
+  // Reporting revision only. Runtime/native collection is independent.
   std::uint64_t statisticsRevision() const noexcept {
     return _statisticsRevision;
   }
