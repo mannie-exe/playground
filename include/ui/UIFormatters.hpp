@@ -203,6 +203,12 @@ constexpr std::string_view toString(SemanticRole value) {
     return "Tooltip";
   case SemanticRole::Progress:
     return "Progress";
+  case SemanticRole::Meter:
+    return "Meter";
+  case SemanticRole::Toolbar:
+    return "Toolbar";
+  case SemanticRole::AlertDialog:
+    return "AlertDialog";
   case SemanticRole::Status:
     return "Status";
   }
@@ -233,6 +239,10 @@ constexpr std::string_view toString(EventType value) {
     return "FocusLost";
   case EventType::FocusGained:
     return "FocusGained";
+  case EventType::FocusWithinGained:
+    return "FocusWithinGained";
+  case EventType::FocusWithinLost:
+    return "FocusWithinLost";
   case EventType::TextInput:
     return "TextInput";
   case EventType::TextEditing:
@@ -279,6 +289,12 @@ constexpr std::string_view toString(Key value) {
     return "Home";
   case Key::End:
     return "End";
+  case Key::PageUp:
+    return "PageUp";
+  case Key::PageDown:
+    return "PageDown";
+  case Key::ContextMenu:
+    return "ContextMenu";
   case Key::Backspace:
     return "Backspace";
   case Key::Delete:

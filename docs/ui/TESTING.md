@@ -56,7 +56,7 @@ not overflow into an endpoint jump.
 | Component/CustomView/Spacer/Transform | `ui_component_variants`: replacement success/failure, implicit spacer growth, source-order paint/reverse-order hits, translated picking | Not a GPU/rotated-render test |
 | Visibility/input policy | `ui_component_variants`: all 3 visibility × 4 hit-test-policy combinations | Combination matrix uses a small overlay tree, not all ancestor/descendant structures |
 | Button | `ui_button_states`, `ui_containers`: primary/secondary click, wrong release, drag out/back, cancel, disable mid-press, Space/Enter/repeat | Not every multitouch interleaving |
-| Stepper | `ui_stepper`: keyboard/button activation, limit focus transfer, disabled/single-value range, saturating integer arithmetic, invalid patches and throwing notifications | Native reader announcement still requires interactive verification |
+| NumberStepper | `ui_number_stepper`: keyboard/button activation, limit focus transfer, disabled/single-value range, saturating adjustment, invalid patches and throwing notifications | Native reader announcement still requires interactive verification |
 | Unicode model | `ui_text_edit`, `ui_text_boundaries`: shared label/editor boundaries, combining/ZWJ/Indic clusters, bidi UTF-8 offsets, composition isolation, targeted deletion/undo, invalid UTF-8/NUL, capacity, readonly/password | Not every Unicode conformance corpus; segmentation follows the linked ICU version |
 | Plain editor | `ui_text_field`: macOS Option/Command navigation and deletion, real font shaping, wrapped bidi runs, offscreen painting, clipboard injection, password snapshots, invalid/valid numeric drafts | Native IME candidate windows and reader text-range behavior are manual checks |
 | Actions/semantics | `ui_accessibility`: derived disabled actions, modal restriction/restoration, stale identities, explicit neighbors and numeric rejection | Native OS callback concurrency is not simulated by these owner-thread tests |
@@ -198,3 +198,19 @@ Record the platform, configuration and selected tests when reporting a run.
 Keep the inventory aligned with source tests when contracts change. Use the
 [cost model](REFERENCE.md#cost-model) to choose meaningful scale cases; do not turn
 module tests into application benchmarks.
+
+## Control composition
+
+`ui_control_contracts` covers decimal editing, invalid drafts, custom validation,
+external-value conflicts, explicit form submission, keyed choices, command
+invocation, group policies, accordion bounds, meter/progress distinction, toolbar
+focus and bounded notifications. `settings_view` exercises shared draft editing,
+Apply/Save and future enum choices. `ui_number_stepper` covers readout layout,
+adjustment bounds and notification contracts. Native interaction and screen-reader
+acceptance remain separate from these deterministic checks.
+
+`ui_control_regressions` covers publication failure from text capacity/invalid
+codecs, dirty external refresh, Select label/help relationships, nonmodal edit
+dismissal, composite toolbar Tab traversal, specialization invariants, independent
+toast hover/focus pauses, event provenance, slider terminal states, meter threshold
+semantics and focus-within boundaries.

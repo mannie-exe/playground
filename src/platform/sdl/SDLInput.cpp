@@ -4,6 +4,12 @@ namespace playground::sdl {
 
 ui::Key toUIKey(SDL_Keycode value) {
   switch (value) {
+  case SDLK_PAGEUP:
+    return ui::Key::PageUp;
+  case SDLK_PAGEDOWN:
+    return ui::Key::PageDown;
+  case SDLK_APPLICATION:
+    return ui::Key::ContextMenu;
   case SDLK_HOME:
     return ui::Key::Home;
   case SDLK_END:
@@ -131,6 +137,8 @@ std::optional<ui::UIEvent> toUIEvent(const SDL_Event &event,
                                                    : ui::EventType::KeyUp;
     result.key = static_cast<int>(event.key.key);
     result.logicalKey = toUIKey(event.key.key);
+    if (event.key.key == SDLK_F10 && (event.key.mod & SDL_KMOD_SHIFT))
+      result.logicalKey = ui::Key::ContextMenu;
     result.repeat = event.key.repeat;
     result.shift = (event.key.mod & SDL_KMOD_SHIFT) != 0;
     result.control = (event.key.mod & SDL_KMOD_CTRL) != 0;

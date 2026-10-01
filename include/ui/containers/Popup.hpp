@@ -26,6 +26,7 @@ struct PopupProps {
   bool dismissOutside{true}, dismissOnEscape{true}, closeOnTab{true};
   bool autoFocus{true};
   std::optional<math::ColorRGBA8> backdrop;
+  std::optional<math::Point2> position;
   bool operator==(const PopupProps &) const = default;
 };
 

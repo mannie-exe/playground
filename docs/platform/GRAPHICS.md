@@ -115,6 +115,12 @@ and Resources tabs use the shared schema. Resource readouts show managed usage,
 ceilings, peaks, retirement, outstanding frames and quality/pressure state; these
 are not physical RAM/VRAM measurements.
 
+NumberStepper supplies direct numeric editing; keyed Select controls present
+enumerations. Form submission validates all numeric drafts, including inactive
+tabs, before cross-field validation and host publication. Invalid fields show
+inline errors and receive focus after their tab is revealed. Resource meters
+represent managed utilization, not task completion.
+
 Apply publishes the draft for this run. Save applies and persists it. Revert
 draft restores the last acknowledged applied value. Close discards unapplied
 edits; it does not undo applied settings. Status text distinguishes applied,
@@ -133,9 +139,9 @@ An empty factory disables the host settings view. Embedded sub-apps can reuse th
 component or call `AppContext::requestSettings()` to open the host view.
 
 Escape opens/closes the shared view. Ctrl/Cmd+Shift+M returns to the launcher;
-the view also has a Return to menu button. Escape is reserved by the playground
-host before application actions. The reusable UI library still supports local
-Escape dismissal for other hosts.
+the view also has a Return to menu button. Local composition, popup and editor
+cancellation precedes the playground host fallback. The reusable UI library
+supports local Escape dismissal for other hosts.
 
 While settings is visible, app input and simulation are paused, worker
 completions still drain, and only the settings UI is rendered. The host cancels

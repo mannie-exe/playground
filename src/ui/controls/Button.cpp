@@ -14,11 +14,13 @@ SemanticState Button::semanticState() const {
   return state;
 }
 
-ActionResult Button::performAction(const UIAction &action, ActionSource) {
+ActionResult Button::performAction(const UIAction &action,
+                                   ActionSource source) {
   if (!_props.enabled)
     return ActionResult::Unavailable;
   if (!std::holds_alternative<Activate>(action))
     return ActionResult::Unsupported;
+  _invoked.emit(source);
   _activated.emit();
   return ActionResult::Applied;
 }

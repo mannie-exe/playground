@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ui/Node.hpp>
+#include <ui/controls/Editing.hpp>
 
 namespace playground::ui {
 struct SliderProps {
@@ -11,6 +12,7 @@ struct SliderProps {
   std::string name;
   math::ColorRGBA8 track{65, 65, 65, 255}, thumb{230, 190, 70, 255};
   bool useTheme{true};
+  bool snapToStep{true};
   bool operator==(const SliderProps &) const = default;
 };
 
@@ -21,6 +23,7 @@ struct SliderPatch {
   Patch<std::string> name;
   Patch<math::ColorRGBA8> track, thumb;
   Patch<bool> useTheme;
+  Patch<bool> snapToStep;
 };
 
 class Slider final : public Node {
@@ -28,6 +31,8 @@ class Slider final : public Node {
   bool _hovered{};
   std::optional<std::uint64_t> _pointer;
   Signal<double> _changed;
+  Signal<double, ChangeContext> _edited;
+  Signal<ChangeContext> _finished;
 
 protected:
   layout::MeasureResult
@@ -58,6 +63,16 @@ public:
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
+  Connection
+  onValueEdited(support::MoveOnlyFunction<void(double, ChangeContext)> f) {
+    return _edited.connect(std::move(f));
+  }
+
+  Connection
+  onInteractionFinished(support::MoveOnlyFunction<void(ChangeContext)> f) {
+    return _finished.connect(std::move(f));
+  }
+
   Connection onValueChanged(support::MoveOnlyFunction<void(double)> callback) {
     return _changed.connect(std::move(callback));
   }
@@ -68,6 +83,7 @@ struct ProgressProps {
   std::string name;
   math::ColorRGBA8 track{50, 50, 50, 255}, fill{90, 190, 100, 255};
   bool useTheme{true};
+  bool indeterminate{};
 };
 
 class ProgressBar final : public Node {

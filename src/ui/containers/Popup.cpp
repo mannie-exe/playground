@@ -16,6 +16,8 @@ Popup::Popup(std::unique_ptr<Node> content, PopupProps props) {
 }
 
 void Popup::setPopupProps(PopupProps value) {
+  if (value.position && !math::isFinite(*value.position))
+    throw std::invalid_argument("Invalid popup position");
   if (!std::isfinite(value.gap) || value.gap < 0 ||
       !std::isfinite(value.viewportPadding) || value.viewportPadding < 0 ||
       !std::isfinite(value.maximumHeight) || value.maximumHeight <= 0 ||
@@ -47,7 +49,7 @@ void Popup::applyPopupPatch(const PopupPatch &p) {
        p.dismissOnEscape.appliedTo(_props.dismissOnEscape, d.dismissOnEscape),
        p.closeOnTab.appliedTo(_props.closeOnTab, d.closeOnTab),
        p.autoFocus.appliedTo(_props.autoFocus, d.autoFocus),
-       p.backdrop.appliedTo(_props.backdrop, d.backdrop)});
+       p.backdrop.appliedTo(_props.backdrop, d.backdrop), _props.position});
 }
 
 void Popup::setOpen(bool open) {
@@ -79,8 +81,9 @@ void Popup::present(ArrangeContext &context, math::Rect viewport,
                               std::min(viewport.w(), viewport.h()) / 2);
   const auto usable = math::inset(viewport, math::Insets::all(inset));
   const auto target =
-      anchor ? anchor->worldTransform().mapBounds({{}, anchor->bounds().size})
-             : usable;
+      _props.position ? math::rect(_props.position->x, _props.position->y, 0, 0)
+      : anchor ? anchor->worldTransform().mapBounds({{}, anchor->bounds().size})
+               : usable;
   const float width = _props.width == PopupWidth::MatchAnchor && anchor
                           ? std::min(target.w(), usable.w())
                           : usable.w();

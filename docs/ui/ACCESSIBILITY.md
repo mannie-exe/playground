@@ -1,5 +1,7 @@
 # Accessible interaction and plain text controls
 
+Control behavior and composition: [CONTROLS.md](CONTROLS.md).
+
 ## Appearance and transient surfaces
 
 Controls inherit a resolved semantic palette: surface, text, border, accent,
@@ -147,10 +149,11 @@ navigation uses explicit neighbors before deterministic geometry. Selection is
 not focus. Cancellation never activates a held control. Controls share range,
 selection and editing models, not duplicate accessibility state.
 
-The accepted scope includes buttons/toggles, checkbox/switch/radio, numeric
-stepper/slider/field, plain text field/area, list/select, disclosure/tabs,
-dialog/menu/tooltip, progress/status and labeled fields. Editable autocomplete,
-rich text, spreadsheets, docking and custom file browsers remain out of scope.
+The control catalog includes buttons/toggles, checkbox/switch/radio groups, numeric
+stepper/slider/field, plain text field/area, list/select, disclosure/accordion/tabs,
+dialog/menu/popover/tooltip, meter/progress/status/toasts, toolbars and forms.
+Combobox and Autocomplete are planned only; their contracts are in CONTROLS.md.
+Rich text, spreadsheets, docking and custom file browsers remain deferred.
 
 Disclosure expands in normal layout flow; Select opens a root-presented popup.
 Their visible labels and
@@ -160,8 +163,9 @@ focus, without emitting a value-change notification.
 Tabs retain their panels. Dialog supplies root-level presentation/modality/focus
 behavior; authors retain it alongside its logical owner. Tooltip supplies passive
 help semantics and explicit visibility; the author supplies its anchor and
-hover/focus timer. Menus
-are bounded single-level command lists, not desktop menu-bar replacements.
+hover/focus timer; TooltipTrigger supplies these when composed around an owner.
+MenuList invokes keyed commands independently of selection. DropdownMenu and
+ContextMenu supply presentation; nested menus remain deferred.
 
 ## Editing
 

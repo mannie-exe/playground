@@ -28,6 +28,7 @@ class Disclosure : public VStack {
   Button *_header{};
   Node *_body{};
   Signal<bool> _changed;
+  Signal<bool, ActionSource> _edited;
 
 public:
   Disclosure(std::unique_ptr<Node> label, std::unique_ptr<Node> body,
@@ -35,6 +36,8 @@ public:
              layout::BoxProps box = {});
 
   const ExpansionProps &expansionProps() const noexcept { return _props; }
+
+  Node &focusTarget() noexcept override { return *_header; }
 
   void setExpansionProps(ExpansionProps);
   void applyExpansionPatch(const ExpansionPatch &);
@@ -47,6 +50,11 @@ public:
   Connection onExpandedChanged(support::MoveOnlyFunction<void(bool)> f) {
     return _changed.connect(std::move(f));
   }
+
+  Connection
+  onExpandedEdited(support::MoveOnlyFunction<void(bool, ActionSource)> f) {
+    return _edited.connect(std::move(f));
+  }
 };
 
 class Select : public VStack {
@@ -58,6 +66,7 @@ class Select : public VStack {
   bool _expanded{};
   std::vector<Connection> _connections;
   Signal<std::string> _changed;
+  Signal<std::string, ActionSource> _edited;
 
 protected:
   void arrangeChildren(ArrangeContext &, math::Rect) override;
@@ -75,6 +84,8 @@ public:
   void setSelectionProps(SelectionProps);
   void applySelectionPatch(const SelectionPatch &);
 
+  Node &focusTarget() noexcept override { return *_trigger; }
+
   bool isExpanded() const noexcept { return _expanded; }
 
   void setExpanded(bool);
@@ -86,8 +97,14 @@ public:
   SemanticState semanticState() const override;
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
+  Connection
+  onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
     return _changed.connect(std::move(f));
+  }
+
+  Connection onSelectionEdited(
+      support::MoveOnlyFunction<void(std::string, ActionSource)> f) {
+    return _edited.connect(std::move(f));
   }
 };
 
@@ -98,6 +115,7 @@ struct TabItem {
 };
 
 class Tabs : public VStack {
+  CollectionNavigation _navigation;
   class Tab;
   SelectionProps _props;
 
@@ -111,6 +129,7 @@ class Tabs : public VStack {
   std::vector<Entry> _items;
   std::vector<Connection> _connections;
   Signal<std::string> _changed;
+  Signal<std::string, ActionSource> _edited;
 
 protected:
   void onDefaultEvent(UIEvent &) override;
@@ -128,8 +147,14 @@ public:
 
   ActionResult performAction(const UIAction &, ActionSource) override;
 
-  Connection onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
+  Connection
+  onSelectionChanged(support::MoveOnlyFunction<void(std::string)> f) {
     return _changed.connect(std::move(f));
+  }
+
+  Connection onSelectionEdited(
+      support::MoveOnlyFunction<void(std::string, ActionSource)> f) {
+    return _edited.connect(std::move(f));
   }
 };
 
@@ -138,12 +163,14 @@ struct DialogProps {
   bool modal{true};
   bool dismissOnEscape{true};
   std::string name, description;
+  std::optional<NodeId> initialFocus, returnFocus;
   bool operator==(const DialogProps &) const = default;
 };
 
 struct DialogPatch {
   Patch<bool> open, modal, dismissOnEscape;
   Patch<std::string> name, description;
+  Patch<std::optional<NodeId>> initialFocus, returnFocus;
 };
 
 class Dialog : public Popup {
@@ -159,6 +186,8 @@ class Dialog : public Popup {
 protected:
   void onDefaultEvent(UIEvent &) override;
   void paint(PaintContext &) const override;
+
+  virtual bool requiresModal() const noexcept { return false; }
 
 public:
   Dialog(std::unique_ptr<Node>, DialogProps props = {},
@@ -199,9 +228,11 @@ protected:
 public:
   Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
         std::unique_ptr<Node> description = {}, FieldProps props = {},
-        layout::BoxProps box = {});
+        layout::BoxProps box = {}, bool inlineControl = false);
 
   const FieldProps &fieldProps() const noexcept { return _props; }
+
+  Node &focusTarget() noexcept override { return _control->focusTarget(); }
 
   void setFieldProps(FieldProps);
   void applyFieldPatch(const FieldPatch &);

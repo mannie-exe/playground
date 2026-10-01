@@ -7,7 +7,6 @@
 #include <deque>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -64,6 +63,7 @@ class UIRoot {
   UIWorkStats _stats;
   InteractionProps _interaction;
   NodeId _modal;
+  std::optional<NodeId> _pendingFocus;
   std::vector<NodeId> _overlays;
   std::vector<std::uint64_t> _dismissedPointers;
   void layoutOverlays();
@@ -240,6 +240,8 @@ public:
     if (!_table->layoutDirty && _content->isArranged()) {
       Traversal traversal{*_table};
       layoutOverlays();
+      if (auto focus = std::exchange(_pendingFocus, {}))
+        requestFocus(*focus);
       return;
     }
     Traversal traversal{*_table};
@@ -270,6 +272,8 @@ public:
           parent->refreshOverflow();
       }
     layoutOverlays();
+    if (auto focus = std::exchange(_pendingFocus, {}))
+      requestFocus(*focus);
     if (_table->revision == revision) {
       clearDirty(*_content, DirtyFlags::Measure | DirtyFlags::Arrange);
       _table->layoutDirty = false;

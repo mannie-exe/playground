@@ -11,4 +11,4 @@ CompileFlags:
 
 Style:
   AngledHeaders:
-    - '(app|assets|demo|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui)/.*'
+    - '(app|assets|demo2d|demo3d|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui)/.*'

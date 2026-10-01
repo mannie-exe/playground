@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <limits>
 #include <memory>
 #include <stdexcept>
 
@@ -63,7 +62,7 @@ TextEditModel::TextEditModel(TextEditProps props, std::string value)
   setValue(std::move(value));
 }
 
-void TextEditModel::validate(std::string_view text) const {
+void TextEditModel::validateValue(std::string_view text) const {
   support::validateTextUTF8(text);
   if (text.size() > _props.maximumBytes)
     throw std::length_error("Text capacity exceeded");
@@ -86,7 +85,7 @@ void TextEditModel::setProps(TextEditProps props) {
 }
 
 void TextEditModel::setValue(std::string text) {
-  validate(text);
+  validateValue(text);
   _state = {std::move(text), {}};
   _undo.clear();
   _redo.clear();
@@ -105,7 +104,7 @@ void TextEditModel::setSelection(TextSelection selection) {
 }
 
 void TextEditModel::setComposition(std::string value, int start, int length) {
-  validate(value);
+  validateValue(value);
   if (_props.readOnly)
     return;
   std::vector<std::size_t> scalars{0};
@@ -152,7 +151,7 @@ bool TextEditModel::replace(std::string_view value) {
     throw std::length_error("Text capacity exceeded");
   std::string next = _state.text;
   next.replace(begin, end - begin, value);
-  validate(next);
+  validateValue(next);
   auto boundaries = textBoundaries(next, TextBoundary::Grapheme);
   const auto caret = *std::lower_bound(boundaries.begin(), boundaries.end(),
                                        begin + value.size());

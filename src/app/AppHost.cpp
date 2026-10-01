@@ -305,8 +305,17 @@ int AppHost::run() {
         if (const auto action = playground::sdl::toActionInput(event))
           playground::input::routeInputEvent(input, *action, true,
                                              [] { return false; });
-        if (!hostHandled)
-          _settingsUI.handleEvent(event);
+        if (!hostHandled) {
+          const auto result = _settingsUI.handleEvent(event);
+          if (result == EventResult::Ignored &&
+              event.type == SDL_EVENT_KEY_DOWN &&
+              _performance.handleHotkey(event.key))
+            _paintRequest.request();
+          if (result == EventResult::Ignored &&
+              event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+              event.key.scancode == SDL_SCANCODE_ESCAPE)
+            requestSettings(false);
+        }
         continue;
       }
       if (_activeApp) {
@@ -317,8 +326,19 @@ int AppHost::run() {
         if (action)
           playground::input::routeInputEvent(
               input, *action, hostHandled || !_inputFocused, [&] {
-                const bool handled =
+                bool handled =
                     _activeApp->handleEvent(ctx, event) != EventResult::Ignored;
+                if (!handled && event.type == SDL_EVENT_KEY_DOWN &&
+                    !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                  requestSettings(true);
+                  handled = true;
+                }
+                if (!handled && event.type == SDL_EVENT_KEY_DOWN &&
+                    _performance.handleHotkey(event.key)) {
+                  _paintRequest.request();
+                  handled = true;
+                }
                 input.setUIClaims(_activeApp->inputClaims());
                 return handled;
               });
@@ -560,10 +580,6 @@ void AppHost::synchronizeInputClaims(AppContext &ctx) {
 
 bool AppHost::handleHostEvent(const SDL_Event &event) {
   if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-    if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
-      requestSettings(!_pendingSettingsVisible.value_or(settingsVisible()));
-      return true;
-    }
     if (event.key.scancode == SDL_SCANCODE_M &&
         (event.key.mod & SDL_KMOD_SHIFT) &&
         (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
@@ -591,11 +607,6 @@ bool AppHost::handleHostEvent(const SDL_Event &event) {
   if (_activeApp && _activeApp->_simulation)
     _activeApp->_simulation->setPaused(_activeApp->_simulationPaused ||
                                        !_inputFocused || _settingsView);
-  if (event.type == SDL_EVENT_KEY_DOWN &&
-      _performance.handleHotkey(event.key)) {
-    _paintRequest.request();
-    return true;
-  }
 
   _session.handleEvent(event);
 

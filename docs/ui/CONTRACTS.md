@@ -1,5 +1,7 @@
 # UI interfaces and runtime contracts
 
+Control behavior and composition: [CONTROLS.md](CONTROLS.md).
+
 C++ remains the UI authoring language. Reconstructible views receive app-owned
 models, explicit props and resource bundles; runtime node IDs, callbacks and
 layout caches are not serialized descriptions. See
