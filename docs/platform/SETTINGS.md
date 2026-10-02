@@ -367,3 +367,8 @@ is refused until usage permits it. See [RESOURCES.md](../render/RESOURCES.md).
 Apply/Save behavior, inactive future features and automatic scene resolution.
 These preferences apply across sub-apps. Escape opens the host settings view;
 Ctrl/Cmd+Shift+M returns to the launcher.
+
+`graphics.motion` stores the shared UI motion preference (`system`, `full`,
+`reduced`, `none`). The General settings tab uses
+the existing Apply/Save transaction. System resolves the native desktop preference
+when available; changing it affects live UI playback, not simulation or timers.

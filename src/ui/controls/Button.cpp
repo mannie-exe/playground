@@ -51,14 +51,29 @@ void Button::cancel() noexcept {
   invalidatePaint();
 }
 
+math::ColorRGBA8 Button::backgroundColor() const {
+  return !isEffectivelyEnabled()
+             ? resolveColor(&ThemePalette::surface, _props.disabled)
+         : isPressed() ? resolveColor(&ThemePalette::pressed, _props.pressed)
+         : isHovered() ? resolveColor(&ThemePalette::hover, _props.hover)
+                       : resolveColor(&ThemePalette::elevated, _props.normal);
+}
+
+void Button::synchronizeBackground() {
+  const auto color = backgroundColor();
+  if (_background.authored() == color)
+    return;
+  if (services() && services()->motion && !theme().highContrast)
+    _feedback = services()->motion->transition(_background.binding(), color,
+                                               resolvedTheme().motion.feedback);
+  else
+    _background.set(color);
+}
+
 void Button::paint(PaintContext &context) const {
-  const auto color =
-      !isEffectivelyEnabled()
-          ? resolveColor(&ThemePalette::surface, _props.disabled)
-      : isPressed() ? resolveColor(&ThemePalette::pressed, _props.pressed)
-      : isHovered() ? resolveColor(&ThemePalette::hover, _props.hover)
-                    : resolveColor(&ThemePalette::elevated, _props.normal);
-  context.fill({{}, bounds().size}, color);
+  context.fill({{}, bounds().size}, services() && !theme().highContrast
+                                        ? _background.value()
+                                        : backgroundColor());
   if (!isEffectivelyEnabled() && theme().highContrast) {
     control_paint::disabledOutline(context, {{}, bounds().size}, theme(),
                                    themeMetrics());

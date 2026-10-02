@@ -183,7 +183,6 @@ void MinesweeperApp::synchronize(AppContext &ctx) {
 
 EventResult MinesweeperApp::handleEvent(AppContext &ctx,
                                         const SDL_Event &event) {
-  _session.update(0);
   synchronize(ctx);
   const auto result = _session.handleEvent(event);
   processActions(ctx);

@@ -137,11 +137,14 @@ void ControlStyle::validate() const {
 }
 
 void ThemeDefinition::validate() const {
+  motion.validate();
   metrics.validate();
   typography.validate();
 }
 
 void ThemeOverrides::validate() const {
+  if (motion)
+    motion->validate();
   if (metrics)
     metrics->validate();
   if (typography)
@@ -185,7 +188,7 @@ ResolvedTheme resolveTheme(const ThemeDefinition &definition,
     metrics.borderWidth = std::max(2.f, metrics.borderWidth);
     metrics.focusWidth = std::max(2.f, metrics.focusWidth);
   }
-  return {colors, metrics, definition.typography, forced};
+  return {colors, metrics, definition.typography, forced, definition.motion};
 }
 
 const ResolvedTheme &defaultResolvedTheme() {

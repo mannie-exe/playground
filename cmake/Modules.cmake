@@ -54,6 +54,7 @@ target_link_libraries(playground_text PRIVATE ICU::uc ICU::i18n ICU::data)
 playground_add_module(playground_ui_core
     src/ui/FontFamily.cpp
     src/ui/Theme.cpp
+    src/ui/Motion.cpp
     src/ui/Node.cpp
     src/ui/UIRoot.cpp
     src/ui/Overlays.cpp
@@ -68,6 +69,7 @@ playground_add_module(playground_ui_core
     src/ui/content/Scene2DView.cpp
     src/ui/containers/AnchorLayout.cpp
     src/ui/containers/Boundaries.cpp
+    src/ui/containers/Transitions.cpp
     src/ui/containers/Box.cpp
     src/ui/containers/Flow.cpp
     src/ui/containers/Grid.cpp

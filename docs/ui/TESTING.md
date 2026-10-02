@@ -275,3 +275,16 @@ Do not compare timings from different geometry, fonts or build configurations.
 These workloads do not automate OS title-bar dragging, IME, physical input,
 screen readers, or all app transitions. Existing frame admission/activity tests
 cover deferred/skipped submission and paint-time invalidation independently.
+
+## Motion and asynchronous content
+
+`ui_motion` uses explicit elapsed time for interpolation, replacement, delays,
+pause/seek, budgets, reduced motion, detach, inert input/semantics, presence and
+async publication. `ui_layout_workload` also compares animated opacity/translation
+against static reference pixels on software and GPU and verifies final idle state.
+Native host workloads exercise the session's demand/pacing path with app reveals.
+
+Run `build/debug/bin/playground_ui_host_workload software --motion` or replace
+`software` with `gpu`; add `--burst` for prequeued input. The motion mode caps
+presentation at 30 FPS and requires intermediate/final animation frames as well
+as final-input painting. Workload timings are observations, not CTest thresholds.

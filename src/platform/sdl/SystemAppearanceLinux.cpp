@@ -8,12 +8,13 @@
 namespace playground::sdl {
 namespace {
 struct PortalSettings {
+  const char *key;
   DBusConnection *connection{};
   DBusPendingCall *pending{};
   std::optional<bool> high;
   Uint64 nextRead{};
 
-  PortalSettings() {
+  explicit PortalSettings(const char *setting) : key{setting} {
     DBusError error;
     dbus_error_init(&error);
     connection = dbus_bus_get_private(DBUS_BUS_SESSION, &error);
@@ -68,7 +69,7 @@ struct PortalSettings {
         "org.freedesktop.portal.Settings", "Read");
     if (!request)
       return;
-    const char *group = "org.freedesktop.appearance", *key = "contrast";
+    const char *group = "org.freedesktop.appearance";
     if (dbus_message_append_args(request, DBUS_TYPE_STRING, &group,
                                  DBUS_TYPE_STRING, &key, DBUS_TYPE_INVALID))
       dbus_connection_send_with_reply(connection, request, &pending, 500);
@@ -78,7 +79,10 @@ struct PortalSettings {
 } // namespace
 
 void platformContrast(ui::SystemAppearance &value) {
-  static PortalSettings settings;
+  static PortalSettings settings{"contrast"};
+  static PortalSettings motion{"reduced-motion"};
+  motion.poll();
+  value.reducedMotion = motion.high;
   settings.poll();
   value.highContrast = settings.high;
 }

@@ -11,7 +11,8 @@ runtime::ActivityDemand UISession::activityDemand() {
     throw std::logic_error(
         "UI activity deadlines require monotonic session timing");
   runtime::ActivityDemand result{.update = _root.needsUpdate(),
-                                 .paint = _root.needsPaint()};
+                                 .paint = _root.needsPaint() ||
+                                          _root.motion().needsFrame()};
   if (auto delay = _root.nextUpdateDelay()) {
     const auto remaining =
         runtime::ActivityClock::time_point::max() - _lastUpdate;
@@ -67,6 +68,8 @@ void UISession::update(float seconds) {
 }
 
 EventResult UISession::handleEvent(const SDL_Event &event) {
+  if (_timing == UISessionTiming::Monotonic)
+    update(0);
   if (auto translated =
           toUIEvent(event, {static_cast<float>(_metrics.windowSize.x),
                             static_cast<float>(_metrics.windowSize.y)})) {
@@ -87,6 +90,9 @@ EventResult UISession::handleEvent(const SDL_Event &event) {
 
 void UISession::render(rendering::PaintContext &context,
                        scene::SceneRenderer *scenes) {
+  if (_timing == UISessionTiming::Monotonic)
+    update(0);
+  _root.motion().sample();
   rendering::PaintScope scope{context};
   context.clip({{},
                 {static_cast<float>(_metrics.windowSize.x),

@@ -1,7 +1,12 @@
+#include <algorithm>
+#include <cmath>
+
 #include <rendering/GraphicsSettings.hpp>
 
 namespace playground::rendering {
 void GraphicsSettings::validate() const {
+  if (static_cast<unsigned>(motion) > 3)
+    throw std::invalid_argument("Invalid motion preference");
   presentation.validate();
   renderer.validate();
   pacing.validate();
@@ -153,7 +158,14 @@ constexpr std::string_view qualityNames[]{"off", "low", "medium", "high",
 constexpr std::string_view aaNames[]{"none", "msaa-2x", "msaa-4x", "msaa-8x",
                                      "temporal"};
 constexpr std::string_view anisoNames[]{"1x", "2x", "4x", "8x", "16x"};
+constexpr std::string_view motionNames[]{"system", "full", "reduced", "none"};
 const GraphicsSetting schema[]{
+    {"motion", "UI motion", "", GraphicsGroup::Presentation,
+     SettingKind::Integer, 0, 3, 1, false, motionNames,
+     [](const GraphicsSettings &s) { return static_cast<double>(s.motion); },
+     [](GraphicsSettings &s, double v) {
+       s.motion = static_cast<runtime::MotionPreference>(v);
+     }},
     {"renderer", "Renderer preference", "", GraphicsGroup::Presentation,
      SettingKind::Integer, 0, 2, 1, false, rendererNames,
      [](const GraphicsSettings &s) {

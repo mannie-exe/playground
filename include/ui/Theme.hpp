@@ -9,6 +9,7 @@
 #include <math/Geometry2D.hpp>
 #include <support/FontHandle.hpp>
 #include <ui/FontFamily.hpp>
+#include <ui/Motion.hpp>
 
 class AssetRegistry;
 
@@ -134,6 +135,7 @@ struct ResolvedTheme {
   ThemeMetrics metrics;
   ThemeTypography typography;
   bool forcedColors{};
+  ThemeMotion motion;
   bool operator==(const ResolvedTheme &) const = default;
 };
 
@@ -141,6 +143,7 @@ struct ThemeDefinition {
   ThemePalette light, dark, lightHighContrast, darkHighContrast;
   ThemeMetrics metrics;
   ThemeTypography typography;
+  ThemeMotion motion;
   void validate() const;
   bool operator==(const ThemeDefinition &) const = default;
 };
@@ -150,11 +153,13 @@ struct ThemeOverrides {
   std::optional<ThemeMetrics> metrics;
   std::optional<ThemeTypography> typography;
   std::optional<ControlMetrics> stepper;
+  std::optional<ThemeMotion> motion;
   void validate() const;
   bool operator==(const ThemeOverrides &) const = default;
 };
 
 struct SystemAppearance {
+  std::optional<bool> reducedMotion;
   std::optional<bool> dark;
   std::optional<bool> highContrast;
   std::optional<ThemePalette> contrastPalette;

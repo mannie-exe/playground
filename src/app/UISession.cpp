@@ -12,6 +12,9 @@ void UISession::synchronize(AppContext &ctx) {
   _graphics = ctx.graphicsState();
   auto &services = ctx.windowServices();
   _root.setInteractionProps(ctx.viewPolicy().interaction);
+  _root.motion().setPreference(
+      _graphics.requested.motion,
+      systemAppearance().reducedMotion.value_or(false));
   _root.setAppearance(ctx.viewPolicy().colorScheme,
                       ctx.viewPolicy().userContrast, systemAppearance());
   if (_windowServices != &services) {
@@ -27,6 +30,17 @@ void UISession::synchronize(AppContext &ctx) {
   }
   synchronize(ctx.windowMetrics(), ctx.presentation().viewport,
               &ctx.performance());
+  if (auto *content = _root.content(); content && content->id() != _revealed) {
+    if (_timing == UISessionTiming::Monotonic)
+      update(0);
+    _revealed = content->id();
+    _reveal = _root.motion().play(
+        ui::motion::opacity(content->handle()),
+        ui::Keyframes<float>{{{0, 0.f},
+                              {1, std::get<float>(content->motionValue(
+                                      ui::MotionProperty::Opacity))}}},
+        _root.resolvedTheme().motion.reveal);
+  }
   services.setMode(_root.interactionProps().accessibility);
   services.pump();
   services.publish(_root, _mapping);

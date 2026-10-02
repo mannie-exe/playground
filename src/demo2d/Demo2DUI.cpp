@@ -9,6 +9,7 @@
 #include <layout/Breakpoints.hpp>
 #include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Flow.hpp>
+#include <ui/containers/Transitions.hpp>
 #include <ui/content/Vector.hpp>
 #include <ui/controls/ChoiceStepper.hpp>
 #include <ui/controls/Composite.hpp>
@@ -328,6 +329,16 @@ public:
           report("Select: " + v);
         }));
     column->append(std::move(select));
+
+    auto motionPanel = std::make_unique<ui::Presence>(
+        label("Motion retains this panel while fading. Hide/show can reverse "
+              "mid-flight; reduced-motion preferences apply."));
+    auto *presence = motionPanel.get();
+    auto motionToggle = button("Toggle animated panel");
+    _connections.push_back(motionToggle->onActivate(
+        [presence] { presence->setShown(!presence->shown()); }));
+    column->append(std::move(motionToggle));
+    column->append(std::move(motionPanel));
 
     column->append(std::make_unique<ui::Disclosure>(
         label("Expand disclosure"),

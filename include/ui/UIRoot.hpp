@@ -46,6 +46,7 @@ public:
 
 class UIRoot {
   Scheduler _scheduler;
+  MotionEngine _motion;
   ThemeDefinition _themeDefinition{defaultThemeDefinition()};
   ColorSchemePreference _themeScheme{ColorSchemePreference::Light};
   ContrastPreference _themeContrast{ContrastPreference::Normal};
@@ -144,6 +145,10 @@ public:
   UIRoot(const UIRoot &) = delete;
   UIRoot &operator=(const UIRoot &) = delete;
 
+  MotionEngine &motion() noexcept { return _motion; }
+
+  const MotionEngine &motion() const noexcept { return _motion; }
+
   Node *content() const noexcept { return _content.get(); }
 
   Node *resolve(NodeId id) const noexcept { return _table->resolve(id); }
@@ -195,7 +200,9 @@ public:
   }
 
   std::optional<double> nextUpdateDelay() {
-    return _services.scheduler->nextDelay();
+    auto timer = _services.scheduler->nextDelay();
+    auto motion = _motion.nextDelay();
+    return timer && motion ? std::min(*timer, *motion) : timer ? timer : motion;
   }
 
   void setWakeCallback(std::function<void()> callback) {

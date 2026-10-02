@@ -18,6 +18,8 @@ enum class UISessionTiming { CallerDelta, Monotonic };
 // App-owned bridge. No transient AppContext is stored in a node or callback.
 class UISession {
   ui::UIRoot _root;
+  ui::NodeId _revealed;
+  ui::AnimationHandle _reveal;
   rendering::ResolvedGraphicsState _graphics;
   ui::LayoutEnvironment _environment;
   platform::WindowMetrics _metrics{};

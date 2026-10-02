@@ -28,6 +28,8 @@ function(playground_add_test name)
     set_property(GLOBAL APPEND PROPERTY playground_test_targets ${target})
 endfunction()
 
+playground_add_test(ui_motion SOURCE ui/motion.cpp MODULE ui LABELS unit animation async ownership failure LIBRARIES playground_ui_core playground_runtime)
+
 set(sdl_libraries playground_sdl)
 playground_add_test(host_smoke SOURCE runtime/host_smoke.cpp MODULE runtime
     LABELS integration settings window LIBRARIES playground_app Threads::Threads TIMEOUT 20)

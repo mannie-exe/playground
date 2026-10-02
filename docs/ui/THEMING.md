@@ -173,3 +173,8 @@ invalid metrics, reparenting and live changes while editing. Check paired text a
 surface contrast for built-in palettes. Rendering tests cover state markers,
 scrollbars and artwork exceptions. Test enlarged text for layout and clipping;
 interactive assistive-technology checks supplement automated semantic tests.
+
+## Motion
+
+`ThemeMotion` supplies Feedback, Reveal and Dismiss timing. Shared motion
+preferences apply independently of color/contrast. See [MOTION.md](MOTION.md).

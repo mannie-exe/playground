@@ -26,6 +26,10 @@ struct ButtonPatch {
 
 class Button : public Box {
   ButtonProps _props;
+  MotionValue<math::ColorRGBA8> _background{{}, [this] { invalidatePaint(); }};
+  AnimationHandle _feedback;
+  math::ColorRGBA8 backgroundColor() const;
+  void synchronizeBackground();
   Signal<> _activated;
   Signal<ActionSource> _invoked;
 
@@ -41,7 +45,17 @@ protected:
   void paint(PaintContext &context) const override;
   void paintSubtree(PaintContext &context) const override;
 
+  void onAttach(UIServices &) override { _background.set(backgroundColor()); }
+
+  void onPropsChanged(const ChangeSet &) override { synchronizeBackground(); }
+
+  void onThemeChanged() noexcept override {
+    _feedback.cancel();
+    _background.set(services() ? backgroundColor() : theme().elevated);
+  }
+
   void onDetach() noexcept override {
+    _feedback.cancel();
     cancel();
     _hovered = false;
   }
