@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
 #include <math/Geometry2D.hpp>
 #include <scene/Scene3D.hpp>
 
@@ -73,6 +77,70 @@ public:
   void setProps(FreeCameraProps);
   void advance(FreeCameraIntent, double seconds);
   CameraProps camera(CameraProps lens = {}) const;
+};
+
+using CameraId = std::uint64_t;
+
+struct CameraSource {
+  CameraProps camera;
+  int priority{};
+  bool enabled{true};
+};
+
+// Values are owned; IDs are unique across directors and are never reused.
+class CameraDirector {
+  struct Entry {
+    CameraId id;
+    CameraSource source;
+  };
+
+  std::vector<Entry> _sources;
+  std::optional<CameraId> _active;
+  std::optional<CameraProps> _fallback;
+  CameraProps _camera, _from, _to;
+  double _duration, _elapsed{};
+  bool _transitioning{};
+
+  void resolve(bool refreshActive = false);
+  void transition(CameraProps);
+
+public:
+  explicit CameraDirector(CameraProps initial = {},
+                          double transitionSeconds = 0.3);
+  CameraDirector(const CameraDirector &) = delete;
+  CameraDirector &operator=(const CameraDirector &) = delete;
+  CameraDirector(CameraDirector &&) = delete;
+  CameraDirector &operator=(CameraDirector &&) = delete;
+
+  CameraId add(CameraSource);
+  void update(CameraId, CameraSource);
+  void remove(CameraId);
+  void setFallback(std::optional<CameraProps>);
+  void advance(double seconds);
+
+  const CameraProps &camera() const noexcept { return _camera; }
+
+  std::optional<CameraId> active() const noexcept { return _active; }
+
+  bool transitioning() const noexcept { return _transitioning; }
+};
+
+struct CameraPathKey {
+  double seconds{};
+  CameraProps camera;
+};
+
+// Immutable loop, with zero velocity at every authored key and the loop seam.
+class CameraPath {
+  double _duration;
+  std::vector<CameraPathKey> _keys;
+
+public:
+  CameraPath(double durationSeconds, std::vector<CameraPathKey> keys);
+
+  double durationSeconds() const noexcept { return _duration; }
+
+  CameraProps sample(double elapsedSeconds) const;
 };
 
 // Model poses, not renderer state. Publish once per completed simulation tick.
