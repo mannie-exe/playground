@@ -1,7 +1,11 @@
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <iterator>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <utility>
 
 #include <scene/Controllers.hpp>
 
@@ -131,6 +135,231 @@ CameraProps FreeCameraController::camera(CameraProps lens) const {
   lens.up = {0, 1, 0};
   lens.view(1);
   return lens;
+}
+
+namespace {
+void validateCamera(const CameraProps &camera) {
+  if (!std::isfinite(camera.verticalFov) || camera.verticalFov <= 0 ||
+      camera.verticalFov >= std::numbers::pi_v<float>)
+    throw std::invalid_argument("Invalid camera FOV");
+  const auto view = camera.view(1);
+  if (!math::isFinite(view.view) || !math::isFinite(view.projection))
+    throw std::invalid_argument("Nonfinite camera matrices");
+}
+
+math::Quaternion orientation(const CameraProps &camera) {
+  const auto z = math::normalized(camera.target - camera.eye);
+  const auto x = math::normalized(math::cross(math::normalized(camera.up), z));
+  const auto y = math::cross(z, x);
+  // Basis columns form the camera's world rotation, inverse of its view basis.
+  const float m[3][3]{{x.x, y.x, z.x}, {x.y, y.y, z.y}, {x.z, y.z, z.z}};
+  const float trace = m[0][0] + m[1][1] + m[2][2];
+  math::Quaternion q;
+  if (trace > 0) {
+    const float scale = 2 * std::sqrt(trace + 1);
+    q = {(m[2][1] - m[1][2]) / scale, (m[0][2] - m[2][0]) / scale,
+         (m[1][0] - m[0][1]) / scale, scale / 4};
+  } else {
+    int i = m[1][1] > m[0][0] ? 1 : 0;
+    if (m[2][2] > m[i][i])
+      i = 2;
+    const int j = (i + 1) % 3, k = (j + 1) % 3;
+    const float scale = 2 * std::sqrt(1 + m[i][i] - m[j][j] - m[k][k]);
+    float xyz[3]{};
+    xyz[i] = scale / 4;
+    xyz[j] = (m[j][i] + m[i][j]) / scale;
+    xyz[k] = (m[k][i] + m[i][k]) / scale;
+    q = {xyz[0], xyz[1], xyz[2], (m[k][j] - m[j][k]) / scale};
+  }
+  return math::normalizedRotation(q);
+}
+
+math::Quaternion slerp(math::Quaternion a, math::Quaternion b, double t) {
+  double cosine = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  if (cosine < 0) {
+    b = {-b.x, -b.y, -b.z, -b.w};
+    cosine = -cosine;
+  }
+  double left = 1 - t, right = t;
+  if (cosine < 0.9995) {
+    const double angle = std::acos(std::clamp(cosine, 0.0, 1.0));
+    left = std::sin((1 - t) * angle) / std::sin(angle);
+    right = std::sin(t * angle) / std::sin(angle);
+  }
+  return math::normalizedRotation(
+      {static_cast<float>(a.x * left + b.x * right),
+       static_cast<float>(a.y * left + b.y * right),
+       static_cast<float>(a.z * left + b.z * right),
+       static_cast<float>(a.w * left + b.w * right)});
+}
+
+bool sameProjection(const CameraProps &a, const CameraProps &b) {
+  return a.orthographicHeight.has_value() == b.orthographicHeight.has_value();
+}
+
+CameraProps blend(const CameraProps &a, const CameraProps &b, double alpha) {
+  if (alpha >= 1)
+    return b;
+  if (alpha <= 0 || !sameProjection(a, b))
+    return a;
+  const double t = alpha * alpha * (3 - 2 * alpha);
+  auto mix = [t](float x, float y) {
+    return static_cast<float>(
+        std::lerp(static_cast<double>(x), static_cast<double>(y), t));
+  };
+  CameraProps result = a;
+  result.eye = {mix(a.eye.x, b.eye.x), mix(a.eye.y, b.eye.y),
+                mix(a.eye.z, b.eye.z)};
+  const auto rotation =
+      math::rotation(slerp(orientation(a), orientation(b), t));
+  const auto forward = math::transformDirection(rotation, {0, 0, 1});
+  auto distance = [](const CameraProps &c) {
+    return std::hypot(static_cast<double>(c.target.x) - c.eye.x,
+                      static_cast<double>(c.target.y) - c.eye.y,
+                      static_cast<double>(c.target.z) - c.eye.z);
+  };
+  const double focus = std::lerp(distance(a), distance(b), t);
+  result.target = {static_cast<float>(result.eye.x + forward.x * focus),
+                   static_cast<float>(result.eye.y + forward.y * focus),
+                   static_cast<float>(result.eye.z + forward.z * focus)};
+  result.up = math::transformDirection(rotation, {0, 1, 0});
+  result.verticalFov = mix(a.verticalFov, b.verticalFov);
+  result.nearPlane = mix(a.nearPlane, b.nearPlane);
+  result.farPlane = mix(a.farPlane, b.farPlane);
+  if (a.orthographicHeight)
+    result.orthographicHeight =
+        mix(*a.orthographicHeight, *b.orthographicHeight);
+  validateCamera(result);
+  return result;
+}
+
+CameraId nextCameraId() {
+  static std::atomic<CameraId> next{1};
+  auto id = next.load(std::memory_order_relaxed);
+  do {
+    if (id == std::numeric_limits<CameraId>::max())
+      throw std::overflow_error("Camera identity exhausted");
+  } while (!next.compare_exchange_weak(id, id + 1, std::memory_order_relaxed));
+  return id;
+}
+} // namespace
+
+CameraDirector::CameraDirector(CameraProps initial, double transitionSeconds)
+    : _camera(initial), _from(initial), _to(initial),
+      _duration(transitionSeconds) {
+  validateCamera(initial);
+  if (!std::isfinite(_duration) || _duration < 0)
+    throw std::invalid_argument("Invalid camera transition duration");
+}
+
+void CameraDirector::transition(CameraProps target) {
+  _from = _camera;
+  _to = target;
+  _elapsed = 0;
+  _transitioning = _duration > 0 && sameProjection(_from, _to);
+  if (!_transitioning)
+    _camera = target;
+}
+
+void CameraDirector::resolve(bool refreshActive) {
+  const Entry *winner = nullptr;
+  for (const auto &entry : _sources) {
+    if (!entry.source.enabled)
+      continue;
+    if (!winner || entry.source.priority > winner->source.priority ||
+        (entry.source.priority == winner->source.priority &&
+         (entry.id == _active ||
+          (winner->id != _active && entry.id < winner->id))))
+      winner = &entry;
+  }
+  const auto next = winner ? std::optional{winner->id} : std::nullopt;
+  if (next == _active && !refreshActive)
+    return;
+  _active = next;
+  if (winner)
+    transition(winner->source.camera);
+  else if (_fallback)
+    transition(*_fallback);
+  else
+    _transitioning = false;
+}
+
+CameraId CameraDirector::add(CameraSource source) {
+  validateCamera(source.camera);
+  const auto id = nextCameraId();
+  _sources.push_back({id, source});
+  resolve();
+  return id;
+}
+
+void CameraDirector::update(CameraId id, CameraSource source) {
+  const auto entry = std::find_if(_sources.begin(), _sources.end(),
+                                  [id](const Entry &e) { return e.id == id; });
+  if (entry == _sources.end())
+    throw std::invalid_argument("Stale or foreign camera ID");
+  validateCamera(source.camera);
+  entry->source = source;
+  resolve(_active == id);
+}
+
+void CameraDirector::remove(CameraId id) {
+  const auto entry = std::find_if(_sources.begin(), _sources.end(),
+                                  [id](const Entry &e) { return e.id == id; });
+  if (entry == _sources.end())
+    throw std::invalid_argument("Stale or foreign camera ID");
+  _sources.erase(entry);
+  resolve();
+}
+
+void CameraDirector::setFallback(std::optional<CameraProps> camera) {
+  if (camera)
+    validateCamera(*camera);
+  _fallback = camera;
+  if (!_active)
+    resolve(true);
+}
+
+void CameraDirector::advance(double seconds) {
+  if (!std::isfinite(seconds) || seconds < 0)
+    throw std::invalid_argument("Invalid camera elapsed time");
+  if (!_transitioning)
+    return;
+  const double elapsed = _elapsed + std::min(seconds, _duration - _elapsed);
+  const auto camera = blend(_from, _to, elapsed / _duration);
+  _camera = camera;
+  _elapsed = elapsed;
+  _transitioning = elapsed < _duration;
+}
+
+CameraPath::CameraPath(double durationSeconds, std::vector<CameraPathKey> keys)
+    : _duration(durationSeconds), _keys(std::move(keys)) {
+  if (!std::isfinite(_duration) || _duration <= 0 || _keys.size() < 2 ||
+      _keys.front().seconds != 0)
+    throw std::invalid_argument("Invalid camera path duration or keys");
+  double previous = -1;
+  for (const auto &key : _keys) {
+    if (!std::isfinite(key.seconds) || key.seconds <= previous ||
+        key.seconds >= _duration)
+      throw std::invalid_argument("Camera path keys must increase within loop");
+    validateCamera(key.camera);
+    previous = key.seconds;
+  }
+}
+
+CameraProps CameraPath::sample(double elapsedSeconds) const {
+  if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0)
+    throw std::invalid_argument("Invalid camera path elapsed time");
+  const double time = std::fmod(elapsedSeconds, _duration);
+  const auto next =
+      std::upper_bound(_keys.begin(), _keys.end(), time,
+                       [](double seconds, const CameraPathKey &key) {
+                         return seconds < key.seconds;
+                       });
+  const auto &from = *std::prev(next);
+  const auto &to = next == _keys.end() ? _keys.front() : *next;
+  const double end = next == _keys.end() ? _duration : to.seconds;
+  return blend(from.camera, to.camera,
+               (time - from.seconds) / (end - from.seconds));
 }
 
 namespace {
