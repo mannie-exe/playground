@@ -4,6 +4,7 @@
 
 #include <menu/Config.hpp>
 #include <menu/MenuUI.hpp>
+#include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/controls/Button.hpp>
 
@@ -23,7 +24,15 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
                             .paragraphAlignment = layout::Align::Center,
                             .contentAlignment = layout::Alignment::center(),
                             .textRole = ui::TextRole::Display}));
+  std::string_view previousGroup;
   for (const auto &entry : entries) {
+    if (entry.group != previousGroup) {
+      column->append(std::make_unique<ui::Text>(
+          assets, ui::TextProps{.value = std::string{entry.group},
+                                .font = font,
+                                .textRole = ui::TextRole::Heading}));
+      previousGroup = entry.group;
+    }
     auto label = std::make_unique<ui::Text>(
         assets, ui::TextProps{.value = std::format("{}  {}", entry.shortcut,
                                                    toString(entry.app)),
@@ -44,7 +53,7 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
       assets,
       ui::TextProps{
           .value =
-              "1-5: launch | Tab: focus | Enter: open\nEsc: settings | Q: quit",
+              "1-7: launch | Tab: focus | Enter: open\nEsc: settings | Q: quit",
           .font = font,
           .wrap = ui::TextWrap::AvailableInlineSize,
           .paragraphAlignment = layout::Align::Center,
@@ -55,7 +64,8 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
                             .textRole = ui::TextRole::Body});
   _status = status.get();
   column->append(std::move(status));
-  setChild(std::move(column));
+  setChild(std::make_unique<ui::ScrollView>(
+      std::move(column), ui::ScrollProps{.sizing = ui::ScrollSizing::Content}));
   setSemanticProps(
       {.role = ui::SemanticRole::Group, .name = "Application launcher"});
 }

@@ -64,6 +64,9 @@ using ModelHandle = std::shared_ptr<const ModelAsset>;
 
 struct ModelImportProps {
   float unitsPerMeter{1};
+  // Explicit preview policy; geometry and unknown required extensions still
+  // fail.
+  bool allowMaterialFallback{};
   std::optional<std::size_t> sceneIndex;
   std::size_t maxDocumentBytes{16 * 1024 * 1024};
   std::size_t maxResourceBytes{128 * 1024 * 1024};

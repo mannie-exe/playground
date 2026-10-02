@@ -65,7 +65,7 @@ playground_add_test(mesh_preparation SOURCE rendering/mesh_preparation.cpp MODUL
 playground_add_test(ktx_texture SOURCE rendering/ktx_texture.cpp MODULE rendering LABELS integration texture failure LIBRARIES playground_sdl ktx_read)
 target_compile_definitions(playground_ktx_texture_tests PRIVATE KTX_TEST_IMAGES="${ktx_SOURCE_DIR}/tests/testimages")
 playground_add_test(animation SOURCE rendering/animation.cpp MODULE rendering LABELS unit scene animation failure LIBRARIES playground_scene)
-playground_add_test(material_assets SOURCE rendering/material_assets.cpp MODULE rendering LABELS integration sdl assets LIBRARIES playground_sdl TIMEOUT 120)
+playground_add_test(material_assets SOURCE rendering/material_assets.cpp MODULE rendering LABELS integration sdl assets LIBRARIES playground_app TIMEOUT 300)
 target_compile_definitions(playground_material_assets_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 if(PLAYGROUND_GPU)
     playground_add_test(gpu_materials SOURCE rendering/gpu_materials.cpp MODULE rendering LABELS hardware gpu material LIBRARIES playground_sdl TIMEOUT 120)

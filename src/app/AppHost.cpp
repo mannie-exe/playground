@@ -570,6 +570,11 @@ void AppHost::registerDefaultApps() {
   _registry.add(playground::demo3d::Demo3DApp::staticInfo(), [] {
     return std::make_unique<playground::demo3d::Demo3DApp>();
   });
+  for (auto kind : {playground::demo3d::DemoKind::Bistro,
+                    playground::demo3d::DemoKind::Chess})
+    _registry.add(playground::demo3d::Demo3DApp::staticInfo(kind), [kind] {
+      return std::make_unique<playground::demo3d::Demo3DApp>(kind);
+    });
   _registry.add(MinesweeperApp::staticInfo(),
                 [] { return std::make_unique<MinesweeperApp>(); });
   _registry.add(RockPaperScissorsApp::staticInfo(),

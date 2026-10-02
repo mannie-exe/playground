@@ -14,6 +14,9 @@ not a license grant; unknown provenance must be resolved before distribution.
 | `fonts/jurriaan_3d-dark.ttf`, `jurriaan_3d-ribbed.ttf`, `jurriaan_3d-shaded.ttf` | Retained study font variants | Source/license not recorded; not loaded by current catalogs |
 | `minesweeper/images/bomb.svg`, `flag.svg` | Minesweeper vector icons | Original source/license not recorded; current SVGs contain fill and size attributes |
 | `minesweeper/images/bomb.png`, `flag.png` | Retained raster study variants | Source/license not recorded; not loaded by current catalogs |
+| `demo3d/FlightHelmet.glb`, `SciFiHelmet.glb` | Material Test helmet fixtures | CC0; [provenance](demo3d/README.md) |
+| `demoscene/bistro/Bistro.glb` | Scene: Bistro exterior | CC-BY 4.0; [source and conversion](demoscene/bistro/README.md) |
+| `demoscene/chess/ABeautifulGame.glb` | Scene: Chess | CC-BY 4.0; [provenance](demoscene/chess/README.md) |
 | `demo3d/BoomBox.glb`, `Smoke30Frames.png`, `studio_small_09_1k.hdr` | Textured PBR prop, smoke flipbook and environment (`demo3d.*`) | CC0; authors, sources, hashes and license texts in [Demo 3D provenance](demo3d/README.md) |
 
 For new content record: logical ID(s), source URL or authoring file, creator,

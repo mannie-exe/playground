@@ -314,12 +314,32 @@ ModelHandle importGLTF(std::span<const std::byte> document,
             data->animations_count <= props.maxAnimationClips &&
             !data->skins_count,
         "Excessive nodes or skinning is unsupported");
+  std::vector<std::string> warnings;
   for (std::size_t i = 0; i < data->extensions_required_count; ++i) {
     const std::string_view extension{data->extensions_required[i]};
-    check(extension == "KHR_materials_unlit" ||
-              extension == "KHR_texture_transform" ||
-              extension == "KHR_texture_basisu",
-          "Unsupported required glTF extension");
+    const bool supported = extension == "KHR_materials_unlit" ||
+                           extension == "KHR_texture_transform" ||
+                           extension == "KHR_texture_basisu";
+    const bool materialFallback =
+        extension == "KHR_materials_clearcoat" ||
+        extension == "KHR_materials_transmission" ||
+        extension == "KHR_materials_volume" ||
+        extension == "KHR_materials_ior" ||
+        extension == "KHR_materials_specular" ||
+        extension == "KHR_materials_sheen" ||
+        extension == "KHR_materials_emissive_strength" ||
+        extension == "KHR_materials_iridescence" ||
+        extension == "KHR_materials_diffuse_transmission" ||
+        extension == "KHR_materials_anisotropy" ||
+        extension == "KHR_materials_dispersion" ||
+        extension == "KHR_materials_pbrSpecularGlossiness";
+    if (!supported) {
+      check(props.allowMaterialFallback && materialFallback,
+            "Unsupported required glTF extension");
+      warnings.emplace_back(
+          "Required material extension " + std::string{extension} +
+          " ignored by explicit core-material preview policy");
+    }
   }
   std::size_t totalBytes{};
   auto account = [&](std::size_t bytes) {
@@ -357,7 +377,6 @@ ModelHandle importGLTF(std::span<const std::byte> document,
   validateAccessors(*data, props);
   check(cgltf_validate(data.get()) == cgltf_result_success,
         "Invalid glTF structure");
-  std::vector<std::string> warnings;
   std::unordered_map<const cgltf_material *, MaterialProps> materials;
   std::map<std::pair<const cgltf_image *, rendering::TextureRole>,
            rendering::TextureHandle>

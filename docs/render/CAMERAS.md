@@ -4,7 +4,7 @@ Camera behavior is application/runtime state, not renderer behavior. These
 contracts cover games, editing tools, multimedia presentations and ordinary 2D
 pan/zoom views. They do not require a gameplay scene tree or a physics engine.
 
-## Implemented boundaries
+## Controller boundaries
 
 | Contract | Meaning |
 |---|---|
@@ -12,6 +12,7 @@ pan/zoom views. They do not require a gameplay scene tree or a physics engine.
 | `CameraProps` | 3D eye/target/up and perspective or orthographic lens settings |
 | `SceneViewport` | Resolved content bounds, aspect, pixel size and projection/picking mapping |
 | `OrbitController` | Explicit angular/distance deltas, pitch/distance constraints, resolved CameraProps |
+| `FreeCameraController` | Explicit local movement/look intent, world-up constraints and resolved CameraProps |
 | `MovementController` | Kinematic direction and units-per-second advancement, no collision solver |
 | `PoseHistory` | Fixed-step previous/current poses and interpolated presentation sampling |
 | `InputClaims` | UI ownership checked before application/controller input |
@@ -49,9 +50,9 @@ history/damping instead of interpolating across discontinuities.
 ## Extension design, not yet implemented
 
 The intended composition is intent -> controller/rig -> viewport-local director
--> resolved camera -> renderer. Add a second concrete controller before fixing a
-generic rig hierarchy. A rig owns target identity, behavior, lens configuration
-and smoothing state. A director owns selection/transition state, with explicit
+-> resolved camera -> renderer. Orbit and free-camera controllers establish
+independent consumers before a generic rig hierarchy is introduced. A rig owns
+target identity, behavior, lens configuration and smoothing state. A director owns selection/transition state, with explicit
 priority ties, interruption behavior and a fallback if a target or rig disappears.
 Use validated object identities; do not retain borrowed pointers across removal.
 
@@ -66,10 +67,11 @@ pointer, viewport and activation owner; release capture/relative mode on gesture
 end, cancellation, teardown or failure. UI pointer ownership is not OS relative
 mouse mode. Do not enable relative mode globally simply because a 3D view exists.
 
-Keyboard-step orbit remains Demo 3D's current interaction. Pointer orbit, follow,
-camera blending, collision arms and a director are not added by these contracts.
-Pure controller/interpolation tests validate the existing arithmetic; interactive
-pointer lifecycle and transition tests belong with their eventual implementations.
+Material Test uses keyboard-step orbit. Bistro and Chess use free-camera intent
+with rate-based movement/look and scene reset. Pointer orbit, follow, camera
+blending, collision arms and a director remain future work. Controller tests cover
+finite inputs, pole limits, diagonal speed and time subdivision; pointer lifecycle
+and transition tests belong with their eventual implementations.
 
 ## References
 
@@ -77,3 +79,18 @@ pointer lifecycle and transition tests belong with their eventual implementation
 separates behavior selection from output cameras;
 [follow modes](https://phantom-camera.dev/follow-modes/overview) distinguish
 following/framing policies. These inform the boundary, not a Godot dependency.
+
+## Named shots and workloads
+
+A CameraShot contains a stable authored name, pose and lens. A viewport-local
+CameraDirector selects eligible rigs by explicit priority; ties retain the active
+rig, otherwise use stable registration order. Removing the selected rig resolves
+a declared fallback or retains the last valid camera. Retargeting starts from the
+currently displayed pose. Follow and look-at targets resolve independently and
+invalid targets never leave dangling pointers. These director/transition features
+remain future work alongside pointer orbit and follow behavior.
+
+The [repeatable scene workload](DEMOS.md#repeatable-camera-workloads-future) is
+future work. Its camera samples must depend on explicit elapsed time and recorded
+inputs, not frame count. Interactive and recorded intent share controller math;
+benchmarks do not require a global active camera or a second playback renderer.

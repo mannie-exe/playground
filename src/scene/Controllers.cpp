@@ -82,6 +82,57 @@ CameraProps OrbitController::camera(CameraProps lens) const {
   return lens;
 }
 
+FreeCameraController::FreeCameraController(FreeCameraProps props) {
+  setProps(props);
+}
+
+void FreeCameraController::setProps(FreeCameraProps props) {
+  if (!math::isFinite(props.position) || !std::isfinite(props.yaw) ||
+      !std::isfinite(props.pitch) || !std::isfinite(props.unitsPerSecond) ||
+      props.unitsPerSecond < 0 || !std::isfinite(props.maximumPitch) ||
+      props.maximumPitch <= 0 ||
+      props.maximumPitch >= std::numbers::pi_v<float> / 2 ||
+      std::abs(props.pitch) > props.maximumPitch)
+    throw std::invalid_argument("Invalid free camera props");
+  props.yaw = std::remainder(props.yaw, 2 * std::numbers::pi_v<float>);
+  _props = props;
+}
+
+void FreeCameraController::advance(FreeCameraIntent intent, double seconds) {
+  if (!math::isFinite(intent.movement) || !std::isfinite(intent.radians.x) ||
+      !std::isfinite(intent.radians.y) || !std::isfinite(seconds) ||
+      seconds < 0)
+    throw std::invalid_argument("Invalid free camera intent");
+  auto next = _props;
+  next.yaw = static_cast<float>(std::remainder(
+      static_cast<double>(next.yaw) + intent.radians.x, 2 * std::numbers::pi));
+  next.pitch = static_cast<float>(
+      std::clamp(static_cast<double>(next.pitch) + intent.radians.y,
+                 -static_cast<double>(next.maximumPitch),
+                 static_cast<double>(next.maximumPitch)));
+  const math::Vec3f forward{std::sin(next.yaw) * std::cos(next.pitch),
+                            std::sin(next.pitch),
+                            std::cos(next.yaw) * std::cos(next.pitch)};
+  const math::Vec3f right{std::cos(next.yaw), 0, -std::sin(next.yaw)};
+  next.position = MovementController{{next.unitsPerSecond}}.advance(
+      next.position,
+      {right * intent.movement.x + math::Vec3f{0, 1, 0} * intent.movement.y +
+       forward * intent.movement.z},
+      seconds);
+  setProps(next);
+}
+
+CameraProps FreeCameraController::camera(CameraProps lens) const {
+  lens.eye = _props.position;
+  lens.target =
+      lens.eye + math::Vec3f{std::sin(_props.yaw) * std::cos(_props.pitch),
+                             std::sin(_props.pitch),
+                             std::cos(_props.yaw) * std::cos(_props.pitch)};
+  lens.up = {0, 1, 0};
+  lens.view(1);
+  return lens;
+}
+
 namespace {
 math::Transform3D checked(math::Transform3D pose) {
   pose.matrix();
