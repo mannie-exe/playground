@@ -92,6 +92,8 @@ Select, ChoiceStepper and Tabs expose onSelectionEdited(key, source);
 Disclosure and Accordion expose onExpandedEdited(value, source). Legacy
 onSelectionChanged/onExpandedChanged callbacks remain available without provenance.
 CheckboxGroup remains multiple-selection through every property update.
+ToggleGroup and CheckboxGroup use wrapping Flow layout with shared themed gaps;
+arrow keys retain logical item order across rows.
 
 ## Fields and forms
 

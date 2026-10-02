@@ -5,6 +5,7 @@
 #include <ui/UIRoot.hpp>
 #include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Box.hpp>
+#include <ui/containers/Flow.hpp>
 #include <ui/containers/Popup.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/controls/Button.hpp>
@@ -182,6 +183,24 @@ int main() {
     authored.setControlStyle({.gap = 7});
     test::require(authored.effectiveProps().gap == 7,
                   "explicit control gap takes priority over stack gap");
+    ui::Flow flow;
+    flow.setControlLayout(ui::ControlLayout::Group);
+    test::require(flow.effectiveProps().itemGap == flow.themeMetrics().gap &&
+                      flow.effectiveProps().lineGap == flow.themeMetrics().gap,
+                  "flow inherits shared spacing on both axes");
+    flow.setProps({.itemGap = 0, .lineGap = 13});
+    test::require(flow.effectiveProps().itemGap == 0 &&
+                      flow.effectiveProps().lineGap == 13,
+                  "authored flow spacing overrides theme including zero");
+    flow.applyPatch({.itemGap = Patch<std::optional<float>>::reset()});
+    test::require(flow.effectiveProps().itemGap == flow.themeMetrics().gap &&
+                      flow.effectiveProps().lineGap == 13,
+                  "flow gap resets independently");
+    flow.setControlStyle({.gap = 7});
+    test::require(flow.effectiveProps().itemGap == 7 &&
+                      flow.effectiveProps().lineGap == 7,
+                  "control spacing overrides both flow axes");
+
     ui::Popup popup{std::make_unique<ui::Box>()};
     popup.setThemeOverrides({.metrics = definition.metrics});
     test::require(!popup.popupProps().gap &&

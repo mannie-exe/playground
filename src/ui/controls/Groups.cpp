@@ -5,7 +5,8 @@
 namespace playground::ui {
 ToggleGroup::ToggleGroup(std::vector<ChoiceItem> items, ToggleGroupProps props,
                          bool checkboxes, layout::BoxProps box)
-    : HStack{{}, box}, _checkboxes{checkboxes} {
+    : Flow{{.childrenAlignment = layout::CrossAlignment::Center}, box},
+      _checkboxes{checkboxes} {
   setControlLayout(ControlLayout::Group);
   std::set<std::string> keys;
   for (auto &item : items) {
@@ -112,7 +113,7 @@ void ToggleGroup::onDefaultEvent(UIEvent &e) {
       key = _items[i].key;
   if (auto next = _navigation.navigate(
           _items, key, e, services() ? services()->scheduler->now() : 0,
-          {layout::Axis::Horizontal, true, layoutDirection()})) {
+          {effectiveProps().mainAxis, true, layoutDirection()})) {
     for (std::size_t i = 0; i < _items.size(); ++i)
       if (_items[i].key == next)
         _buttons[i]->requestFocus();

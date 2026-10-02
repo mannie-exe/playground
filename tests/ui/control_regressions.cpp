@@ -49,6 +49,56 @@ protected:
 
 int main() {
   return test::run([] {
+    {
+      ui::UIRoot root;
+      auto field = std::make_unique<ui::Field>(content(), content(), content());
+      auto *node = field.get();
+      root.setContent(std::move(field));
+      root.flushLayout({300, 200});
+      const auto &children = node->children();
+      test::require(
+          children[1]->bounds().y() > children[0]->bounds().bottom() &&
+              children[2]->bounds().y() > children[1]->bounds().bottom(),
+          "field separates label, control and supporting text");
+      auto theme = ui::defaultThemeDefinition();
+      theme.metrics.fieldGap = 11;
+      root.setThemeDefinition(theme);
+      root.flushLayout({300, 200});
+      test::require(
+          children[1]->bounds().y() - children[0]->bounds().bottom() == 11,
+          "field spacing follows live theme updates");
+      node->setControlStyle({.gap = 0});
+      root.flushLayout({300, 200});
+      test::require(children[1]->bounds().y() == children[0]->bounds().bottom(),
+                    "field spacing has an explicit zero override");
+    }
+    {
+      ui::UIRoot root;
+      auto group = std::make_unique<ui::CheckboxGroup>(choices());
+      auto *node = group.get();
+      root.setContent(std::move(group));
+      root.flushLayout({120, 300});
+      const auto &children = node->children();
+      test::require(children[1]->bounds().y() >= children[0]->bounds().bottom(),
+                    "choice group wraps whole controls at narrow widths");
+      children[0]->requestFocus();
+      key(root, ui::Key::Right);
+      test::require(children[1]->hasFocus(),
+                    "wrapped group retains sequential navigation");
+      auto theme = ui::defaultThemeDefinition();
+      theme.metrics.gap = 17;
+      root.setThemeDefinition(theme);
+      root.flushLayout({400, 300});
+      test::require(children[1]->bounds().x() - children[0]->bounds().right() ==
+                        17,
+                    "wrapped group uses live theme spacing");
+      node->setControlStyle({.gap = 0});
+      root.flushLayout({400, 300});
+      test::require(children[1]->bounds().x() == children[0]->bounds().right(),
+                    "wrapped group accepts explicit zero spacing");
+      test::require(children[1]->bounds().y() == children[0]->bounds().y(),
+                    "choice group returns to one row with sufficient width");
+    }
     TTFGuard ttf;
     AssetRegistry assets;
     auto font = assets.getFont({.path = std::string{PLAYGROUND_SOURCE_DIR} +

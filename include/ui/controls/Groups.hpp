@@ -1,6 +1,7 @@
 #pragma once
 #include <set>
 
+#include <ui/containers/Flow.hpp>
 #include <ui/controls/Composite.hpp>
 #include <ui/controls/Navigation.hpp>
 
@@ -11,7 +12,7 @@ struct ToggleGroupProps {
   std::string name;
 };
 
-class ToggleGroup : public HStack {
+class ToggleGroup : public Flow {
   ToggleGroupProps _props;
   const bool _checkboxes;
   std::vector<NavigationItem> _items;

@@ -84,7 +84,9 @@ struct ThemeTypography {
 
 struct ThemeMetrics {
   ControlMetrics stepper;
-  float controlHeight{}, buttonPadding{}, padding{10}, gap{8}, sectionGap{16};
+  float controlHeight{40}, buttonPadding{10}, padding{10}, gap{8},
+      sectionGap{16};
+  float fieldGap{6};
   float borderWidth{1}, focusWidth{2}, indicatorStroke{2}, emphasisWidth{3},
       disabledDash{4};
   float indicatorSize{20}, switchWidth{38}, switchHeight{22}, indicatorGap{10};
@@ -112,6 +114,7 @@ enum class ControlLayout {
   StepperCenter,
   StepperRow,
   FieldRow,
+  FieldStack,
   Group,
   Settings,
   Section,

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string_view>
@@ -58,6 +59,54 @@ std::vector<unsigned char> pixels(ui::UIRoot &root, math::Size2 size) {
   return result;
 }
 
+void screenshots(const std::filesystem::path &directory, AssetRegistry &assets,
+                 sdl::AssetResources &resources) {
+  std::filesystem::create_directories(directory);
+  for (const float width : {960.f, 408.f})
+    for (const float scale : {1.f, 1.5f})
+      for (const bool dark : {false, true}) {
+        ui::UIRoot root;
+        auto theme = ui::defaultThemeDefinition();
+        app::configureThemeFonts(theme.typography, resources);
+        theme.typography.textScale = scale;
+        root.setThemeDefinition(theme);
+        root.setAppearance(dark ? ui::ColorSchemePreference::Dark
+                                : ui::ColorSchemePreference::Light,
+                           ui::ContrastPreference::Normal, {});
+        auto content = demo2d::makeDemo2DUI(
+            assets,
+            demo2d::acquireResources(resources, demo2d::config::textSize), {});
+        auto *tree = content.get();
+        root.setContent(std::move(content));
+        const math::Size2 size{width, 760};
+        root.flushLayout(size);
+        auto *scroll = findScroll(*tree);
+        test::require(scroll != nullptr, "gallery has overflowing controls");
+        const float limit =
+            scroll->contentExtent().height - scroll->viewportExtent().height;
+        const int pages =
+            int(std::ceil(limit / scroll->viewportExtent().height));
+        for (int page = 0; page <= pages; ++page) {
+          scroll->setOffset(
+              {0, std::min(limit, page * scroll->viewportExtent().height)});
+          root.flushLayout(size);
+          auto data = pixels(root, size);
+          SDLResource<SDL_Surface, SDL_DestroySurface> surface{
+              SDL_CreateSurfaceFrom(int(width), 760, SDL_PIXELFORMAT_RGBA32,
+                                    data.data(), int(width) * 4)};
+          const auto path =
+              directory /
+              ("demo2d-" + std::to_string(int(width)) + "-" +
+               std::to_string(int(scale * 100)) +
+               (dark ? "-dark-" : "-light-") + std::to_string(page) + ".bmp");
+          test::require(surface &&
+                            SDL_SaveBMP(surface.get(), path.string().c_str()),
+                        "save gallery screenshot");
+          std::cout << path.string() << '\n';
+        }
+      }
+}
+
 double pixelError(const std::vector<unsigned char> &a,
                   const std::vector<unsigned char> &b, bool gpu) {
   test::require(a.size() == b.size(), "reference pixel dimensions agree");
@@ -82,19 +131,28 @@ double elapsed(Clock::time_point start) {
 
 int main(int argc, char **argv) {
   bool verify{}, full{}, gpu{};
+  std::filesystem::path captureDirectory;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg{argv[i]};
     if (arg == "--gpu")
       gpu = true;
+    else if (arg == "--screenshots" && i + 1 < argc)
+      captureDirectory = argv[++i];
     else if (arg == "--verify")
       verify = true;
     else if (arg == "--full-layout")
       full = true;
     else {
       std::cerr
-          << "Usage: ui_layout_workload [--verify] [--full-layout] [--gpu]\n";
+          << "Usage: ui_layout_workload [--verify] [--full-layout] [--gpu]\n"
+          << "       ui_layout_workload --screenshots DIRECTORY (software)\n";
       return 2;
     }
+  }
+  if (!captureDirectory.empty() && (gpu || verify || full)) {
+    std::cerr
+        << "Screenshot mode uses software rendering without timing checks\n";
+    return 2;
   }
   bool unsupported{};
   const auto result = test::run([&] {
@@ -152,6 +210,10 @@ int main(int argc, char **argv) {
     demo2d::registerAssets(*catalog);
     catalog->freeze();
     sdl::AssetResources resources{catalog, assets};
+    if (!captureDirectory.empty()) {
+      screenshots(captureDirectory, assets, resources);
+      return;
+    }
     auto font = resources.font(app::fontAsset, {.style = {.size = 18}});
     std::cout << "scene,width,repeat,full_layout,first_layout_ms,median_ms,p95_"
                  "ms,max_"

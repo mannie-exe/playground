@@ -6,8 +6,7 @@ namespace playground::ui {
 
 struct FlowPatch {
   Patch<layout::Axis> mainAxis;
-  Patch<float> itemGap;
-  Patch<float> lineGap;
+  Patch<std::optional<float>> itemGap, lineGap;
   Patch<layout::Distribution> distribution;
   Patch<layout::CrossAlignment> childrenAlignment;
 };
@@ -29,6 +28,14 @@ public:
   }
 
   const layout::FlowProps &props() const noexcept { return _props; }
+
+  layout::FlowProps effectiveProps() const noexcept {
+    auto value = _props;
+    const auto gap = resolvedControlStyle().gap.value_or(0);
+    value.itemGap = controlStyle().gap.value_or(_props.itemGap.value_or(gap));
+    value.lineGap = controlStyle().gap.value_or(_props.lineGap.value_or(gap));
+    return value;
+  }
 
   void setProps(layout::FlowProps props);
   void applyPatch(const FlowPatch &patch);
