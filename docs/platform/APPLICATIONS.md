@@ -186,7 +186,8 @@ app permission surface. App work uses activation-scoped `completions()` instead.
 Both queues wake the normal scheduler and close with their owner; callbacks run
 at the update boundary, never on producer threads.
 
-`IApp::onActivityInterrupted` is a nonthrowing notification for Settings and focus
+`IApp::onActivityInterrupted` carries an `AppInterruption` reason and is a
+nonthrowing notification for Settings and focus
 loss. Exclusive interaction and uninterrupted measurements release/invalidate
 there. Scene benchmarks use activation-local `AppLaunchProps::benchmarkSeconds`:
 zero is infinite, absence selects the app default. Ordinary apps reject it.
