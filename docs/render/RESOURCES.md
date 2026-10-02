@@ -155,3 +155,10 @@ Resource counters distinguish cache hits/misses, native uploads and bytes,
 evictions, required active bytes and refused plans. They do not claim physical
 VRAM residency. Camera motion, exposure and smoke animation change rendered
 output without changing immutable mesh/texture identity.
+
+Explicit `trimUnused` reclaims all unpinned scene cache entries; ordinary frame
+planning uses idle retention targets. Active view pins and in-flight submission
+ownership survive both operations. Targets are admitted before material planning,
+so the missing-resource probe sees their committed GPU bytes. This probe is an
+early capacity check, not an allocation guarantee or a reservation carried across
+individual native creations.

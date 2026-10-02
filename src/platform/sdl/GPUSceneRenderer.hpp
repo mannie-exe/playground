@@ -61,7 +61,7 @@ class GPUSceneRenderer final : public scene::SceneRenderer {
   bool pinned(const TextureKey &) const;
   bool pinned(const MeshKey &) const;
   void plan(const scene::SceneRenderProps &, std::span<const scene::MeshDraw>);
-  void trim();
+  void trim(bool reclaim = false);
   PaintDevice &_device;
   Shader _vertex, _fragment;
   std::array<Pipeline, 9> _pipelines;
@@ -91,7 +91,7 @@ public:
 
   void trimUnused() {
     pruneResources();
-    trim();
+    trim(true);
     _uploads.trim();
   }
 

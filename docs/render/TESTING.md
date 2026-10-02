@@ -36,3 +36,48 @@ Small deterministic regressions run through CTest. Real-asset sustained runs are
 explicit developer workloads with bounded duration and machine-readable output;
 wall-time results are not portable pass/fail assertions. Generated reports,
 profiles and screenshots remain outside version control.
+
+## Commands
+
+Build deterministic checks and explicit native workloads:
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel 6
+ctest --preset debug
+```
+
+A target is the executable or group that CMake should build. The normal build
+includes the following workload executable; to build only it:
+
+```sh
+cmake --build --preset debug --target playground_scene_host_workload --parallel 6
+./build/debug/bin/playground_scene_host_workload material 5
+./build/debug/bin/playground_scene_host_workload bistro 5
+./build/debug/bin/playground_scene_host_workload chess 5
+./build/debug/bin/playground_scene_host_workload camera
+./build/debug/bin/playground_scene_host_workload benchmark 5
+./build/debug/bin/playground_scene_host_workload benchmark 15
+./build/debug/bin/playground_scene_host_workload benchmark 0
+```
+
+Material/Bistro/Chess workloads allow 30 seconds for preparation before measuring;
+scene workloads inject held look intent to exercise camera redraws. Camera mode
+checks native lock/unlock, relative motion, Settings, focus cancellation and app
+exit. Keep that window focused; focus enforcement is part of the contract.
+Benchmark mode uses the launcher's full-loop warm-up and emits `BenchmarkJSON`.
+Zero duration runs until quit. Interruptions produce invalid results, not a score.
+Each invocation uses temporary settings and leaves user settings untouched.
+
+Replace `debug` with `release` in configure/build commands and executable paths
+for optimized measurements. Do not run competing builds or GPU tests during a
+measurement. Vulkan/MoltenVK and a native desktop are required. Hardware unit
+checks skip with code 77 only when the Vulkan backend is unavailable; explicit
+workload launch failures are errors. Outputs may be redirected under ignored
+`build/`; no generated measurement files are source artifacts.
+
+Percentiles use at most the latest 65,536 phase samples; counts, totals and maxima
+cover the whole run. Managed memory peaks cover the host process since startup,
+not physical residency or per-scene allocation deltas. CPU iterations without a
+render retain absent render/present phases. GPU intervals are admitted by their
+originating frame IDs, not completion arrival time.

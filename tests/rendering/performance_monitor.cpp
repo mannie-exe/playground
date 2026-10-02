@@ -64,11 +64,13 @@ int main() {
         SDL_LogOutputFunction previous{};
         void *userdata{};
         std::string message;
+        unsigned calls{};
         LogCapture() {
           SDL_GetLogOutputFunction(&previous, &userdata);
           SDL_SetLogOutputFunction(
               [](void *self, int, SDL_LogPriority, const char *message) {
                 static_cast<LogCapture *>(self)->message = message;
+                ++static_cast<LogCapture *>(self)->calls;
               },
               this);
         }
@@ -79,6 +81,24 @@ int main() {
           captured.message.contains("present unmeasured") &&
               captured.message.contains("total samples=3 avg=2.000ms"),
           "summary distinguishes missing phases from measured durations");
+      PerformanceMonitor elapsed{{.enabled = true}};
+      elapsed.resetReportInterval();
+      elapsed.reportIfDue(100);
+      elapsed.recordFrame(sample);
+      const auto calls = captured.calls;
+      elapsed.reportIfDue(100.5);
+      playground::test::require(captured.calls == calls,
+                                "deadline waits without counting frames");
+      elapsed.reportIfDue(104);
+      elapsed.reportIfDue(104.1);
+      playground::test::require(
+          captured.calls == calls + 1,
+          "late deadline emits one report without catch-up burst");
+      elapsed.recordFrame(sample);
+      elapsed.setWorkload("Bistro");
+      playground::test::require(
+          captured.calls == calls + 2 && !elapsed.snapshotReport().cpuFrames,
+          "workload transition closes the old CPU interval");
     }
     playground::test::require(monitor.history().size() == 2 &&
                                   monitor.history().back().frame == 3,
