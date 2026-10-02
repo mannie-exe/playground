@@ -89,7 +89,11 @@ int main() {
                         editor->draftDirty(),
                     "theme reflow preserves focus and numeric draft");
       definition.typography
-          .families[static_cast<unsigned>(ui::FontFamily::Interface)] = font;
+          .families[static_cast<unsigned>(ui::FontFamily::Display)] =
+          std::make_shared<const ui::FontFamilyDefinition>(
+              ui::FontFamilyDefinition{
+                  "test",
+                  {{"test.regular", std::string{font->getPath()}, {}, {}}}});
       root.setThemeDefinition(definition);
       label->applyPatch({.font = Patch<FontHandle>::reset()});
       root.flushLayout({600, 400});

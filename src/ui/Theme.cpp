@@ -55,6 +55,8 @@ const ThemePalette &defaultTheme() {
 }
 
 void ThemeTypography::validate() const {
+  for (const auto &style : styles)
+    style.face.validate();
   if (!std::isfinite(textScale) || textScale <= 0 || textScale > 8)
     throw std::invalid_argument("Invalid theme text scale");
   for (const auto &style : styles)

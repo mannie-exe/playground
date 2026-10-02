@@ -1,6 +1,7 @@
 #include <utility>
 
 #include <app/AppContext.hpp>
+#include <app/Assets.hpp>
 #include <platform/sdl/SystemAppearance.hpp>
 #include <platform/sdl/UISession.hpp>
 #include <platform/sdl/WindowServices.hpp>
@@ -14,6 +15,9 @@ void UISession::synchronize(AppContext &ctx) {
   _root.setAppearance(ctx.viewPolicy().colorScheme,
                       ctx.viewPolicy().userContrast, systemAppearance());
   if (_windowServices != &services) {
+    auto definition = _root.themeDefinition();
+    app::configureThemeFonts(definition.typography, ctx.resources());
+    _root.setThemeDefinition(std::move(definition));
     _root.setWakeCallback(ctx.wakeCallback());
     services.setWakeCallback(ctx.wakeCallback());
     auto attachment = services.attach(_root);

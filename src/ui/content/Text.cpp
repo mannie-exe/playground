@@ -14,7 +14,8 @@ FontHandle Text::resolvedFont() const {
   const auto &typography = resolvedTheme().typography;
   if (!_themeFont || !_fontTypography || *_fontTypography != typography) {
     _themeFont =
-        resolveThemeFont(typography, _props.textRole, _props.font, &_assets);
+        resolveThemeFont(typography, _props.textRole, _props.font, &_assets,
+                         _props.fontFamily, _props.fontSelection);
     _fontTypography = typography;
   }
   return _themeFont;
@@ -31,6 +32,11 @@ void Text::onThemeChanged() noexcept {
 }
 
 void Text::validate(const TextProps &props) {
+  if (props.fontSelection)
+    props.fontSelection->validate();
+  if (props.fontFamily && (*props.fontFamily < FontFamily::Interface ||
+                           *props.fontFamily >= FontFamily::Count))
+    throw std::invalid_argument("Invalid font family");
   if ((props.textRole && (*props.textRole < TextRole::Display ||
                           *props.textRole >= TextRole::Count)) ||
       props.ink < TextInk::Primary || props.ink > TextInk::OnAccent ||
@@ -52,7 +58,7 @@ void Text::validate(const TextProps &props) {
   if (props.flow.writingMode != WritingMode::HorizontalTb &&
       props.method == TextMethod::LCD)
     throw std::invalid_argument("LCD subpixel rendering is horizontal-only");
-  if (!props.font && !props.textRole)
+  if (!props.font && !props.textRole && !props.fontFamily)
     throw std::invalid_argument("Text requires a font handle");
   if ((props.method != TextMethod::Blended &&
        props.method != TextMethod::Solid &&
@@ -447,7 +453,9 @@ void Text::setProps(TextProps value) {
     return;
   const bool geometry =
       value.value != _props.value || value.font != _props.font ||
-      value.wrap != _props.wrap || value.textRole != _props.textRole ||
+      value.fontSelection != _props.fontSelection ||
+      value.fontFamily != _props.fontFamily || value.wrap != _props.wrap ||
+      value.textRole != _props.textRole ||
       value.paragraphAlignment != _props.paragraphAlignment ||
       value.fontFit != _props.fontFit ||
       value.minFontSize != _props.minFontSize ||
@@ -499,7 +507,9 @@ void Text::applyPatch(const TextPatch &p) {
             p.flow.appliedTo(_props.flow, d.flow),
             p.colorTreatment.appliedTo(_props.colorTreatment, d.colorTreatment),
             p.textRole.appliedTo(_props.textRole, d.textRole),
-            p.ink.appliedTo(_props.ink, d.ink)});
+            p.ink.appliedTo(_props.ink, d.ink),
+            p.fontFamily.appliedTo(_props.fontFamily, d.fontFamily),
+            p.fontSelection.appliedTo(_props.fontSelection, d.fontSelection)});
 }
 
 } // namespace playground::ui

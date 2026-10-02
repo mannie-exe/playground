@@ -6,6 +6,7 @@
 #include <support/AssetRegistry.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
+#include <ui/containers/Box.hpp>
 #include <ui/controls/TextField.hpp>
 
 using namespace playground;
@@ -18,6 +19,71 @@ int main() {
         assets.getFont({.path = std::string{PLAYGROUND_SOURCE_DIR} +
                                 "/assets/fonts/LBRITE.TTF",
                         .style = {.size = 20}});
+    unsigned themeFailures{};
+    themeFailures += test::run([&] {
+      ui::UIRoot themed;
+      auto field = std::make_unique<ui::TextField>(
+          ui::TextFieldProps{.font = font}, "abc");
+      auto *editor = field.get();
+      themed.setContent(std::move(field));
+      themed.flushLayout({200, 50});
+      auto before = editor->textInputState().caret;
+      auto definition = themed.themeDefinition();
+      definition.metrics.inputPadding += 8;
+      themed.setThemeDefinition(definition);
+      themed.flushLayout({216, 66});
+      auto after = editor->textInputState().caret;
+      test::require(after.x() == before.x() + 8 && after.y() == before.y() + 8,
+                    "coordinated padding and bounds changes move cached caret");
+      const auto runs = editor->semanticState().textRuns;
+      test::require(!runs.empty() && runs.front().bounds.x() == 12,
+                    "accessible text follows updated input inset");
+    });
+    themeFailures += test::run([&] {
+      ui::UIRoot themed;
+      class Parent : public ui::Box {
+      public:
+        bool enabled{true};
+        bool isInteractionEnabled() const noexcept override { return enabled; }
+      };
+      auto parent = std::make_unique<Parent>();
+      auto *container = parent.get();
+      auto field =
+          std::make_unique<ui::TextField>(ui::TextFieldProps{.font = font});
+      auto *editor = field.get();
+      parent->setChild(std::move(field));
+      themed.setContent(std::move(parent));
+      auto palette = ui::resolveTheme(ui::ColorSchemePreference::Light,
+                                      ui::ContrastPreference::High, {});
+      palette.text = palette.mutedText = palette.border = {0, 0, 0, 255};
+      palette.elevated = {255, 255, 255, 255};
+      themed.setTheme(palette);
+      themed.flushLayout({200, 50});
+      auto image = createManagedSurface(200, 50);
+      sdl::SurfacePainter painter{*image};
+      const auto borderPixel = [&] {
+        Uint8 r{}, g{}, b{}, a{};
+        test::require(SDL_ReadSurfacePixel(image.get(), 6, 0, &r, &g, &b, &a),
+                      "read border pixel");
+        return r;
+      };
+      themed.render(painter);
+      test::require(borderPixel() == 0, "enabled field has solid border");
+      auto props = editor->props();
+      props.enabled = false;
+      editor->setProps(props);
+      themed.render(painter);
+      test::require(
+          borderPixel() == 255,
+          "disabled field has a visible gap even with coincident inks");
+      props.enabled = true;
+      editor->setProps(props);
+      container->enabled = false;
+      themed.render(painter);
+      test::require(borderPixel() == 255,
+                    "inherited disabled state retains field marker");
+    });
+    test::require(themeFailures == 0, "field theme regressions");
     ui::UIRoot root;
     auto field = std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = font, .name = "Name"}, "office a\xCC\x81");
@@ -88,10 +154,10 @@ int main() {
     const auto press = [&](ui::Key key, bool option, bool command,
                            bool shift = false) {
       ui::UIEvent event{.type = ui::EventType::KeyDown,
-                         .logicalKey = key,
-                         .shift = shift,
-                         .alt = option,
-                         .command = command};
+                        .logicalKey = key,
+                        .shift = shift,
+                        .alt = option,
+                        .command = command};
       root.dispatch(event);
     };
     press(ui::Key::Left, true, false);
@@ -183,7 +249,8 @@ int main() {
     multiline->setProps(readOnly);
     press(ui::Key::Backspace, false, true);
     test::require(multiline->model().value() == "one two\nthree four" &&
-                      multiline->model().selection() == ui::TextSelection{18, 18},
+                      multiline->model().selection() ==
+                          ui::TextSelection{18, 18},
                   "read-only Command-Backspace preserves text and caret");
 #endif
     auto number = std::make_unique<ui::NumberField>(

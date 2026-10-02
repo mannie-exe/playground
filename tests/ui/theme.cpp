@@ -6,6 +6,7 @@
 #include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Box.hpp>
 #include <ui/containers/Popup.hpp>
+#include <ui/containers/Stack.hpp>
 #include <ui/controls/Button.hpp>
 #include <ui/controls/NumberStepper.hpp>
 
@@ -165,6 +166,22 @@ int main() {
     steppers.flushLayout({400, 100});
     test::require(row->children().front()->bounds().w() == 75,
                   "theme change remeasures existing composite children");
+    ui::VStack authored{layout::StackProps{.gap = 23}};
+    authored.setControlLayout(ui::ControlLayout::Group);
+    test::require(authored.effectiveProps().gap == 23,
+                  "authored stack gap overrides theme recipe");
+    authored.setProps({.gap = 0});
+    test::require(authored.effectiveProps().gap == 0,
+                  "explicit zero stack gap overrides theme recipe");
+    authored.applyPatch({.gap = Patch<std::optional<float>>::reset()});
+    test::require(authored.effectiveProps().gap == authored.themeMetrics().gap,
+                  "reset stack gap resumes theme recipe");
+    authored.applyPatch({.gap = Patch<std::optional<float>>::set(19)});
+    test::require(authored.effectiveProps().gap == 19,
+                  "stack gap patch overrides theme recipe");
+    authored.setControlStyle({.gap = 7});
+    test::require(authored.effectiveProps().gap == 7,
+                  "explicit control gap takes priority over stack gap");
     ui::Popup popup{std::make_unique<ui::Box>()};
     popup.setThemeOverrides({.metrics = definition.metrics});
     test::require(!popup.popupProps().gap &&

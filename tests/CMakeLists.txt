@@ -179,5 +179,9 @@ target_compile_definitions(playground_ui_control_contracts_tests PRIVATE PLAYGRO
 playground_add_test(ui_control_regressions SOURCE ui/control_regressions.cpp MODULE ui LABELS integration input failure LIBRARIES playground_sdl)
 target_compile_definitions(playground_ui_control_regressions_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+
+playground_add_test(ui_font_family SOURCE ui/font_family.cpp MODULE ui LABELS integration text assets failure LIBRARIES playground_sdl)
+target_compile_definitions(playground_ui_font_family_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 get_property(all_tests GLOBAL PROPERTY playground_test_targets)
 add_custom_target(playground_tests DEPENDS ${all_tests})

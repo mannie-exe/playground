@@ -213,7 +213,8 @@ qualify Box::setContentProps/applyPatch rather than accidentally passing ButtonP
 
 Inspect with isKeep/isSet/isReset/value/visit; appliedTo(current, baseline)
 resolves an operation. appliedTo(current) rejects Reset.
-Required Rectangle fill, Image image, Text font and Vector source reject Reset.
+Required Rectangle fill, Image image and Vector source reject Reset. Text permits
+resetting its fallback font when a theme role or family supplies the resource.
 Common-group Reset uses the common struct baseline, **not** the object's
 constructor arguments or derived control's overrides. Reapply a preset explicitly.
 
@@ -364,7 +365,7 @@ attaches replacement before removing old content; takeChild empties it.
 Use setContentAlignment or BoxContentPatch; BoxPlacementPatch edits the relation.
 
 [Stack.hpp](../../include/ui/containers/Stack.hpp): Stack takes Axis; HStack/VStack
-choose it. StackProps/StackPatch: gap=0, distribution=Start,
+choose it. StackProps/StackPatch: optional gap (control recipe or 0), distribution=Start,
 childrenAlignment=CrossAlignment::Start. StackPlacementPatch mirrors placement.
 Intrinsic main size sums outer children + gaps; cross size is their maximum.
 Positive space uses grow weights, negative space shrink × initial basis, freezing
@@ -445,9 +446,10 @@ and optional BoxProps. TextPatch mirrors its fields:
 
 | Field | Default / meaning |
 |---|---|
-| value / font | empty UTF-8 string / optional fallback FontHandle; required without a textRole |
+| value / font | empty UTF-8 string / optional fallback FontHandle; required without a textRole or fontFamily |
 | foreground / background | optional overrides of semantic ink / surface |
 | textRole / ink | absent / Primary; role selects theme typography, ink selects semantic color |
+| fontFamily / fontSelection | absent; override family, weight, slant and optical design independently of role size |
 | colorTreatment | Adaptive; PreserveArtwork keeps authored content colors |
 | method | Blended; also Solid, Shaded, LCD |
 | wrap | None; AvailableInlineSize wraps to inner width horizontally, inner height vertically |

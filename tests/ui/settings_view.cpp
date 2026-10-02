@@ -1,3 +1,4 @@
+#include <app/Assets.hpp>
 #include <app/TTFGuard.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
@@ -11,7 +12,15 @@ int main() {
     auto font = assets.getFont({.path = std::string{PLAYGROUND_SOURCE_DIR} +
                                         "/assets/fonts/LBRITE.TTF",
                                 .style = {.size = 18}});
+    auto catalog = std::make_shared<assets::AssetCatalog>(
+        std::filesystem::path{PLAYGROUND_SOURCE_DIR} / "assets");
+    app::registerAssets(*catalog);
+    catalog->freeze();
+    sdl::AssetResources resources{catalog, assets};
     ui::UIRoot root;
+    auto definition = ui::defaultThemeDefinition();
+    app::configureThemeFonts(definition.typography, resources);
+    root.setThemeDefinition(definition);
     unsigned applied{}, saved{}, closed{}, menu{};
     rendering::GraphicsSettings result;
     auto view = ui::makeSettingsView(assets, font, {},
@@ -90,7 +99,6 @@ int main() {
     activate("Return to menu");
     test::require(closed == 1 && menu == 1,
                   "navigation provided by host callbacks");
-    auto definition = ui::defaultThemeDefinition();
     definition.typography.textScale = 1.5f;
     root.setThemeDefinition(definition);
     root.flushLayout({900, 720});

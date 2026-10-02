@@ -2,8 +2,8 @@
 #include <chrono>
 #include <memory>
 
-#include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_log.h>
+#include <SDL3/SDL_scancode.h>
 
 #include <app/Assets.hpp>
 #include <demo3d/Demo3DApp.hpp>
@@ -69,9 +69,10 @@ AppInfo Demo3DApp::staticInfo() {
 void Demo3DApp::onEnter(AppContext &ctx) {
   _ui.root().setContent(std::make_unique<ui::Text>(
       ctx.assets(),
-      ui::TextProps{.value = "Preparing textures and environment...",
-                    .font = ctx.resources().font(app::fontAsset,
-                                                 {.style = {.size = 20}})}));
+      ui::TextProps{
+          .value = "Preparing textures and environment...",
+          .font = ctx.resources().font(app::fontAsset, {.style = {.size = 20}}),
+          .textRole = ui::TextRole::Body}));
   auto promise = std::make_shared<std::promise<Resources>>();
   _pending = promise->get_future();
   auto catalog = ctx.resources().catalogHandle();
@@ -133,7 +134,8 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
           .value = "Arrows: orbit | W/S: zoom | Q/E: exposure | L: "
                    "direct light | Space: smoke pause | Esc: settings",
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 16}}),
-          .wrap = ui::TextWrap::AvailableInlineSize}));
+          .wrap = ui::TextWrap::AvailableInlineSize,
+          .textRole = ui::TextRole::Caption}));
   ui::SceneViewProps props{
       .scene = _scene, .camera = _camera.camera(), .preferredSize = {900, 650}};
   props.lighting.diffuseEnvironment = _resources.environment.diffuse;
@@ -195,7 +197,8 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
     try {
       createView(ctx, _pending.get());
     } catch (const std::exception &e) {
-      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Material preparation failed: %s", e.what());
+      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                  "Material preparation failed: %s", e.what());
       _view = nullptr;
       _scene.reset();
       _resources = {};
@@ -204,7 +207,9 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
           ui::TextProps{.value = std::string{"Material preparation failed: "} +
                                  e.what(),
                         .font = ctx.resources().font(app::fontAsset),
-                        .wrap = ui::TextWrap::AvailableInlineSize}));
+                        .wrap = ui::TextWrap::AvailableInlineSize,
+                        .textRole = ui::TextRole::Body,
+                        .ink = ui::TextInk::Error}));
     }
     _task.reset();
   }

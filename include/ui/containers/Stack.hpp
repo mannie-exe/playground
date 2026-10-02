@@ -5,7 +5,7 @@
 namespace playground::ui {
 
 struct StackPatch {
-  Patch<float> gap;
+  Patch<std::optional<float>> gap;
   Patch<layout::Distribution> distribution;
   Patch<layout::CrossAlignment> childrenAlignment;
 };
@@ -53,8 +53,8 @@ public:
 
   layout::StackProps effectiveProps() const noexcept {
     auto value = _props;
-    if (auto gap = resolvedControlStyle().gap)
-      value.gap = *gap;
+    value.gap = controlStyle().gap.value_or(
+        _props.gap.value_or(resolvedControlStyle().gap.value_or(0)));
     return value;
   }
 
