@@ -21,6 +21,7 @@ enum class AppId {
   Snake,
   Bistro,
   Chess,
+  BistroBenchmark,
 };
 
 enum class AppCommandType {
@@ -56,6 +57,11 @@ struct AppInfo {
   playground::rendering::RendererRequirements rendererRequirements;
 };
 
+struct AppLaunchProps {
+  // Zero selects an unbounded benchmark; absent uses the app default.
+  std::optional<double> benchmarkSeconds;
+};
+
 struct PendingAppCommand {
   AppCommandType type{AppCommandType::None};
   AppId target{AppId::Menu};
@@ -64,6 +70,7 @@ struct PendingAppCommand {
   std::optional<playground::platform::PresentationProps> presentation;
   std::optional<playground::platform::SettingsDocument> settings;
   bool persist{};
+  AppLaunchProps launch;
 };
 
 constexpr std::string_view toString(AppId appId) {
@@ -84,6 +91,8 @@ constexpr std::string_view toString(AppId appId) {
     return "Scene: Bistro";
   case AppId::Chess:
     return "Scene: Chess";
+  case AppId::BistroBenchmark:
+    return "Bistro Benchmark";
   default:
     return "Unknown";
   }
@@ -143,6 +152,8 @@ constexpr std::string_view appKey(AppId id) {
     return "scene-bistro";
   case AppId::Chess:
     return "scene-chess";
+  case AppId::BistroBenchmark:
+    return "benchmark-bistro";
   }
   throw std::invalid_argument("Unknown app identity");
 }

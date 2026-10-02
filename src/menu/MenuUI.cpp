@@ -10,7 +10,7 @@
 
 namespace playground::menu {
 MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
-               std::function<void(AppId)> launch)
+               std::function<void(AppId, AppLaunchProps)> launch)
     : Box{{.padding = math::Insets::all(padding)},
           {.contentAlignment = layout::Alignment::center()}} {
   setPaintStyle({.themeBackground = true});
@@ -26,6 +26,41 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
                             .textRole = ui::TextRole::Display}));
   std::string_view previousGroup;
   for (const auto &entry : entries) {
+    if (entry.app == AppId::Minesweeper) {
+      column->append(std::make_unique<ui::Text>(
+          assets, ui::TextProps{.value = "Benchmark",
+                                .font = font,
+                                .textRole = ui::TextRole::Heading}));
+      column->append(std::make_unique<ui::Text>(
+          assets, ui::TextProps{.value = "Bistro",
+                                .font = font,
+                                .textRole = ui::TextRole::Label}));
+      auto row = std::make_unique<ui::HStack>(layout::StackProps{.gap = 4});
+      for (const auto &[label, seconds] :
+           std::array{std::pair{"5s", 5.}, std::pair{"15s", 15.},
+                      std::pair{"Infinite", 0.}}) {
+        auto text = std::make_unique<ui::Text>(
+            assets,
+            ui::TextProps{.value = label,
+                          .font = font,
+                          .contentAlignment = layout::Alignment::center(),
+                          .textRole = ui::TextRole::Label});
+        auto button = std::make_unique<ui::Button>(
+            std::move(text), ui::ButtonProps{},
+            layout::BoxProps{
+                .width = layout::SizeRule::fixed((contentWidth - 8) / 3),
+                .minHeight = buttonHeight});
+        button->setControlLayout(ui::ControlLayout::Choice);
+        button->setSemanticProps(
+            {.role = ui::SemanticRole::Button,
+             .name = std::string{"Bistro benchmark "} + label});
+        _connections.push_back(button->onActivate([launch, seconds] {
+          launch(AppId::BistroBenchmark, {.benchmarkSeconds = seconds});
+        }));
+        row->append(std::move(button), {.grow = 1});
+      }
+      column->append(std::move(row));
+    }
     if (entry.group != previousGroup) {
       column->append(std::make_unique<ui::Text>(
           assets, ui::TextProps{.value = std::string{entry.group},
@@ -46,7 +81,7 @@ MenuUI::MenuUI(AssetRegistry &assets, FontHandle font, FontHandle titleFont,
     button->setSemanticProps({.role = ui::SemanticRole::Button,
                               .name = std::string{toString(entry.app)}});
     _connections.push_back(
-        button->onActivate([launch, app = entry.app] { launch(app); }));
+        button->onActivate([launch, app = entry.app] { launch(app, {}); }));
     column->append(std::move(button));
   }
   column->append(std::make_unique<ui::Text>(

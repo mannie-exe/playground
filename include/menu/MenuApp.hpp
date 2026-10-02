@@ -10,6 +10,7 @@ class MenuApp final : public IApp {
   playground::sdl::UISession _ui{playground::sdl::UISessionTiming::Monotonic};
   playground::menu::MenuUI *_view{};
   std::optional<AppId> _pending;
+  AppLaunchProps _launch;
 
   void synchronize(AppContext &);
   void launchPending(AppContext &);

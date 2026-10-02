@@ -57,9 +57,9 @@ playground::runtime::Executor &AppContext::workers() { return _host.workers(); }
 
 PerformanceMonitor &AppContext::performance() { return _host.performance(); }
 
-void AppContext::requestSwitch(AppId appId) {
-  _host.request(
-      PendingAppCommand{.type = AppCommandType::SwitchTo, .target = appId});
+void AppContext::requestSwitch(AppId appId, AppLaunchProps launch) {
+  _host.request(PendingAppCommand{
+      .type = AppCommandType::SwitchTo, .target = appId, .launch = launch});
 }
 
 void AppContext::requestMenu() {
