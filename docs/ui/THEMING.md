@@ -1,10 +1,14 @@
 # Themes and control presentation
 
 ThemeDefinition owns four palettes (light, dark, light high contrast, dark high
-contrast), ThemeMetrics and ThemeTypography. The built-in definition supplies
-complete defaults. ColorSchemePreference and ContrastPreference independently
+contrast), ThemeMetrics, ThemeTypography and ThemeMotion. The built-in definition
+supplies complete defaults. ColorSchemePreference and ContrastPreference independently
 select an appearance; System follows platform preferences. A native contrast
-palette selects forced colors, distinct from increased contrast.
+palette selects forced colors, distinct from increased contrast. General settings
+expose independent scheme, contrast, motion and text-scale preferences through the
+shared [settings transaction](../platform/SETTINGS.md#shared-graphics-and-settings-view).
+Explicit user contrast Normal overrides native high contrast; System restores it.
+Text scale changes theme typography without replacing fonts or rebuilding controls.
 
 UIRoot::setThemeDefinition publishes a validated definition. setAppearance updates
 preferences without replacing the definition. resolvedTheme() exposes the effective

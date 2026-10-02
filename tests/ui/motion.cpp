@@ -21,6 +21,16 @@ std::unique_ptr<Node> box() { return std::make_unique<Box>(); }
 
 int main() {
   int result = test::run([] {
+    UIServices themedServices;
+    themedServices.theme.motion.feedback.duration = 2;
+    UIRoot themedRoot{themedServices};
+    MotionValue<float> themedValue{0};
+    auto themedAnimation = themedRoot.motion().transition(
+        themedValue.binding(), 1.f, MotionRole::Feedback);
+    themedRoot.update(1);
+    themedRoot.motion().sample();
+    close(themedValue.value(), .5f,
+          "constructor theme supplies motion role timing");
     MotionEngine engine;
     MotionValue<float> value{0};
     unsigned notifications = 0;
@@ -184,6 +194,17 @@ int main() {
         engine.transition(other.binding(true), 12.f, {.duration = 1});
     test::require(spatial.status() == AnimationStatus::Completed,
                   "reduced spatial motion settles");
+    engine.setPreference(MotionPreference::Full, true);
+    auto forcedFull =
+        engine.transition(other.binding(true), 14.f, {.duration = 1});
+    test::require(forcedFull.status() == AnimationStatus::Running,
+                  "explicit full motion overrides native reduced preference");
+    engine.setPreference(MotionPreference::System, false);
+    test::require(forcedFull.status() == AnimationStatus::Running,
+                  "returning to system full preserves live playback");
+    engine.setPreference(MotionPreference::System, true);
+    test::require(forcedFull.status() == AnimationStatus::Completed,
+                  "native reduced change settles existing playback");
     engine.dispatchCompletions();
 
     MotionEngine guarded;

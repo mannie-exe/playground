@@ -836,6 +836,10 @@ void AppHost::applyGraphics(playground::rendering::GraphicsSettings value,
         presentation.renderer = value.renderer;
         _session.setPresentation(presentation);
         _session.applyPresentation();
+        auto policy = _session.viewPolicy();
+        policy.colorScheme = value.colorScheme;
+        policy.userContrast = value.contrast;
+        _session.setViewPolicy(policy);
         _settings.setUser(std::move(document), persist);
       },
       [&] { restore(previous); });
@@ -868,6 +872,8 @@ void AppHost::showSettings(bool visible) {
     _settingsWindow.reset();
     saved.presentation.render = _quality.state().requested.presentation;
     saved.presentation.renderer = _quality.state().requested.renderer;
+    saved.view.colorScheme = _session.viewPolicy().colorScheme;
+    saved.view.userContrast = _session.viewPolicy().userContrast;
     _session.restoreWindow(saved);
   } else {
     auto view = _settingsViewFactory(

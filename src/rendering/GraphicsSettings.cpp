@@ -5,6 +5,10 @@
 
 namespace playground::rendering {
 void GraphicsSettings::validate() const {
+  if (static_cast<unsigned>(colorScheme) > 2 ||
+      static_cast<unsigned>(contrast) > 2 || !std::isfinite(textScale) ||
+      textScale < .5f || textScale > 3)
+    throw std::invalid_argument("Invalid UI appearance preference");
   if (static_cast<unsigned>(motion) > 3)
     throw std::invalid_argument("Invalid motion preference");
   presentation.validate();
@@ -159,7 +163,37 @@ constexpr std::string_view aaNames[]{"none", "msaa-2x", "msaa-4x", "msaa-8x",
                                      "temporal"};
 constexpr std::string_view anisoNames[]{"1x", "2x", "4x", "8x", "16x"};
 constexpr std::string_view motionNames[]{"system", "full", "reduced", "none"};
+constexpr std::string_view schemeNames[]{"system", "light", "dark"};
+constexpr std::string_view contrastNames[]{"system", "normal", "high"};
 const GraphicsSetting schema[]{
+    {"color_scheme", "Color scheme", "", GraphicsGroup::Presentation,
+     SettingKind::Integer, 0, 2, 1, false, schemeNames,
+     [](const GraphicsSettings &s) {
+       return static_cast<double>(s.colorScheme);
+     },
+     [](GraphicsSettings &s, double v) {
+       s.colorScheme = static_cast<runtime::ColorSchemePreference>(v);
+     }},
+    {"contrast", "Contrast", "", GraphicsGroup::Presentation,
+     SettingKind::Integer, 0, 2, 1, false, contrastNames,
+     [](const GraphicsSettings &s) { return static_cast<double>(s.contrast); },
+     [](GraphicsSettings &s, double v) {
+       s.contrast = static_cast<runtime::ContrastPreference>(v);
+     }},
+    {"text_scale",
+     "Text size",
+     "%",
+     GraphicsGroup::Presentation,
+     SettingKind::Number,
+     50,
+     300,
+     10,
+     false,
+     {},
+     [](const GraphicsSettings &s) { return 100.0 * s.textScale; },
+     [](GraphicsSettings &s, double v) {
+       s.textScale = static_cast<float>(v / 100);
+     }},
     {"motion", "UI motion", "", GraphicsGroup::Presentation,
      SettingKind::Integer, 0, 3, 1, false, motionNames,
      [](const GraphicsSettings &s) { return static_cast<double>(s.motion); },

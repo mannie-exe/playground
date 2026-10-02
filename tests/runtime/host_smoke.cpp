@@ -66,22 +66,51 @@ int main() {
               {
                 auto graphics = host.graphicsState().requested;
                 graphics.threeD.shadows = rendering::QualityLevel::Ultra;
+                graphics.colorScheme = ui::ColorSchemePreference::Dark;
+                graphics.contrast = ui::ContrastPreference::Normal;
+                graphics.motion = runtime::MotionPreference::None;
+                graphics.textScale = 1.5f;
                 host.requestGraphics(graphics, true);
               }
               ++stage;
               break;
-            case 2:
+            case 2: {
               if (host.graphicsState().requested.threeD.shadows !=
                   rendering::QualityLevel::Ultra)
                 return;
+              if (settings->resolvedTheme().typography.textScale != 1.5f)
+                return;
+              test::require(
+                  host.viewPolicy().colorScheme ==
+                          ui::ColorSchemePreference::Dark &&
+                      host.viewPolicy().userContrast ==
+                          ui::ContrastPreference::Normal &&
+                      !settings->theme().highContrast &&
+                      settings->theme().surface ==
+                          ui::resolveTheme(ui::ColorSchemePreference::Dark,
+                                           ui::ContrastPreference::Normal, {})
+                              .surface,
+                  "live settings publish scheme, contrast and text size");
+              platform::DirectoryStore disk{user.path(), false};
+              const auto persisted =
+                  platform::parseSettings(*disk.read("settings.toml"));
+              test::require(
+                  persisted.graphics == host.userSettings().graphics,
+                  "saved appearance matches applied settings on disk");
               test::require(host.userSettings().graphics.has_value(),
                             "settings persist to isolated user storage");
               host.requestSettings(false);
               ++stage;
               break;
+            }
             case 3:
               if (host.settingsVisible())
                 return;
+              test::require(host.viewPolicy().colorScheme ==
+                                    ui::ColorSchemePreference::Dark &&
+                                host.viewPolicy().userContrast ==
+                                    ui::ContrastPreference::Normal,
+                            "closing settings retains applied appearance");
               test::require(host.windowState().actualSize == original,
                             "closing settings restores app geometry");
               test::require(host.renderRuntimeState().submitted > 0,

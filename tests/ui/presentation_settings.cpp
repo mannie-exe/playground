@@ -26,6 +26,10 @@ int main() {
   return test::run([] {
     platform::SettingsDocument graphicsDocument;
     graphicsDocument.graphics = rendering::GraphicsSettings{};
+    graphicsDocument.graphics->colorScheme = ui::ColorSchemePreference::Dark;
+    graphicsDocument.graphics->contrast = ui::ContrastPreference::Normal;
+    graphicsDocument.graphics->motion = runtime::MotionPreference::Reduced;
+    graphicsDocument.graphics->textScale = 1.5f;
     graphicsDocument.graphics->threeD.antialiasing =
         rendering::Antialiasing::Temporal;
     graphicsDocument.graphics->threeD.textures = rendering::QualityLevel::Ultra;
@@ -66,6 +70,34 @@ int main() {
         firstApp.render == secondApp.render &&
             firstApp.render.resolutionScale == .75f,
         "shared graphics overrides legacy per-app rendering preferences");
+    test::require(appPolicy.colorScheme == ui::ColorSchemePreference::Dark &&
+                      appPolicy.userContrast == ui::ContrastPreference::Normal,
+                  "shared appearance reaches every app policy");
+    for (const char *invalid :
+         {"color_scheme='blue'", "contrast='off'", "motion='fast'",
+          "text_scale=49", "text_scale=301", "text_scale=nan"})
+      test::rejects(
+          [&] {
+            platform::parseSettings(
+                std::string{"schema_version=5\n[graphics]\n"} + invalid);
+          },
+          "invalid shared appearance rejected");
+    const auto migratedAppearance = platform::parseSettings(
+        "schema_version=5\n[defaults]\ncolor_scheme='dark'\ncontrast='high'\n"
+        "[graphics]\nmotion='none'\n");
+    test::require(migratedAppearance.graphics->colorScheme ==
+                          ui::ColorSchemePreference::Dark &&
+                      migratedAppearance.graphics->contrast ==
+                          ui::ContrastPreference::High,
+                  "older graphics sections preserve legacy shared appearance");
+    const auto explicitAppearance = platform::parseSettings(
+        "schema_version=5\n[defaults]\ncolor_scheme='dark'\ncontrast='high'\n"
+        "[graphics]\ncolor_scheme='system'\ncontrast='normal'\n");
+    test::require(explicitAppearance.graphics->colorScheme ==
+                          ui::ColorSchemePreference::System &&
+                      explicitAppearance.graphics->contrast ==
+                          ui::ContrastPreference::Normal,
+                  "explicit shared appearance wins over legacy defaults");
     auto migratedProject = graphicsStore.snapshot();
     migratedProject.project = graphicsDocument;
     migratedProject.user = {};
@@ -76,6 +108,12 @@ int main() {
         graphicsStore.graphics().presentation.resolutionScale == .6f &&
             !graphicsStore.graphics().presentation.vsync,
         "new project defaults preserve legacy shared user preferences");
+    test::require(graphicsStore.graphics().contrast ==
+                      ui::ContrastPreference::System,
+                  "shared project contrast cannot suppress native preference");
+    graphicsStore.resolve("one", firstApp, appPolicy);
+    test::require(appPolicy.userContrast == ui::ContrastPreference::System,
+                  "project contrast remains system in resolved app policy");
     graphicsStore.setUser(graphicsDocument, false);
     graphicsUser.failWrite = true;
     auto failedGraphics = graphicsDocument;

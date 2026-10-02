@@ -215,7 +215,9 @@ module tests into application benchmarks.
 external-value conflicts, explicit form submission, keyed choices, command
 invocation, group policies, accordion bounds, meter/progress distinction, toolbar
 focus and bounded notifications. `settings_view` exercises shared draft editing,
-Apply/Save and future enum choices. `ui_number_stepper` covers readout layout,
+Apply/Save/Revert, General appearance/text-size drafts and future enum choices.
+`host_smoke` verifies live scheme, contrast and text size, persistence, and
+appearance retention when closing settings. `ui_number_stepper` covers readout layout,
 adjustment bounds and notification contracts. Native interaction and screen-reader
 acceptance remain separate from these deterministic checks.
 
@@ -279,7 +281,8 @@ cover deferred/skipped submission and paint-time invalidation independently.
 ## Motion and asynchronous content
 
 `ui_motion` uses explicit elapsed time for interpolation, replacement, delays,
-pause/seek, budgets, reduced motion, detach, inert input/semantics, presence and
+pause/seek, budgets, theme initialization, OS/user motion overrides, detach,
+inert input/semantics, presence and
 async publication. `ui_layout_workload` also compares animated opacity/translation
 against static reference pixels on software and GPU and verifies final idle state.
 Native host workloads exercise the session's demand/pacing path with app reveals.

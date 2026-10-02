@@ -2,8 +2,8 @@
 
 ## Ownership and resolution
 
-`GraphicsSettings` describes playground-wide presentation, 2D, 3D, automatic
-quality and managed-resource preferences. Applications share one host-owned value;
+`GraphicsSettings` describes playground-wide UI appearance, presentation, 2D, 3D,
+automatic quality and managed-resource preferences. Applications share one host-owned value;
 changing apps does not replace it. App-authored window sizing, layout, camera,
 lighting, exposure and tone mapping remain application/content responsibilities.
 Quality never changes simulation speed or accessibility/layout scale. Renderer
@@ -20,8 +20,11 @@ Settings documents use schema version 5 with an optional `[graphics]` section.
 Enumeration values use stable string choices (for example `linear`, `high`,
 `msaa-4x`); scales are percentages and memory ceilings are MiB.
 One user graphics value replaces the project graphics value; omitted fields in a
-present graphics section use compiled defaults. This is a complete preference
-object, not a patch over the project object. Without a project graphics section, legacy project `[defaults]` render fields
+present graphics section use compiled defaults, except legacy appearance defaults
+are retained when the new appearance keys are absent; see
+[SETTINGS.md](SETTINGS.md#shared-graphics-and-settings-view). This is a complete
+preference object, not a patch over the project object. Without a project graphics
+section, legacy project `[defaults]` render fields
 provide its presentation baseline. When the user graphics section is absent,
 legacy user-wide render preferences still override the project baseline. Legacy
 per-app render overrides do not override shared graphics. Versions 1–4 remain

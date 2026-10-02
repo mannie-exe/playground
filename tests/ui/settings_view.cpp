@@ -50,6 +50,26 @@ int main() {
                     "settings action applied");
       root.flushLayout({900, 720});
     };
+    for (const auto &[name, choice] : {std::pair{"Color scheme", "dark"},
+                                       {"Contrast", "normal"},
+                                       {"UI motion", "reduced"}})
+      test::require(root.performAction(find(name), ui::SelectItem{choice},
+                                       ui::ActionSource::Assistive) ==
+                        ui::ActionResult::Applied,
+                    "General appearance choice is editable");
+    root.performAction(find("Text size"), ui::SetValue{150},
+                       ui::ActionSource::Assistive);
+    test::require(
+        settings->draft().colorScheme == ui::ColorSchemePreference::Dark &&
+            settings->draft().contrast == ui::ContrastPreference::Normal &&
+            settings->draft().motion == runtime::MotionPreference::Reduced &&
+            settings->draft().textScale == 1.5f && applied == 0,
+        "appearance and text scale remain drafts until Apply");
+    activate("Revert draft");
+    test::require(
+        !settings->dirty() &&
+            settings->draft() == rendering::GraphicsSettings{},
+        "Revert restores all General preferences without publication");
     root.performAction(find("Whole-frame resolution"), ui::SetValue{75},
                        ui::ActionSource::Assistive);
     test::require(settings->dirty() && applied == 0 &&

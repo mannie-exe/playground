@@ -111,6 +111,12 @@ void SettingsView::build() {
     auto column = std::make_unique<VStack>(layout::StackProps{
         .childrenAlignment = layout::CrossAlignment::Stretch});
     column->setControlLayout(ControlLayout::Group);
+    if (group == 0)
+      column->append(text(
+          "System follows your OS appearance and motion preferences. Explicit "
+          "choices apply only to Playground. Text size scales UI text; it does "
+          "not lower rendering resolution.",
+          TextRole::Body));
     if (group == 1)
       column->append(
           text("Raster scale applies to layers that opt in. Ordinary UI and "

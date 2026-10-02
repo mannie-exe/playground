@@ -7,6 +7,7 @@
 
 #include <math/Color.hpp>
 #include <math/Geometry2D.hpp>
+#include <runtime/AppearancePreference.hpp>
 #include <support/FontHandle.hpp>
 #include <ui/FontFamily.hpp>
 #include <ui/Motion.hpp>
@@ -14,8 +15,8 @@
 class AssetRegistry;
 
 namespace playground::ui {
-enum class ColorSchemePreference { System, Light, Dark };
-enum class ContrastPreference { System, Normal, High };
+using runtime::ColorSchemePreference;
+using runtime::ContrastPreference;
 
 struct ControlMetrics {
   float minimumHeight{40}, buttonWidth{40}, gap{8};

@@ -8,6 +8,10 @@ follow_system_scale = true
 
 # Shared by all applications. Scales below are percentages; memory is MiB.
 [graphics]
+color_scheme = "system"
+contrast = "system"
+motion = "system"
+text_scale = 100
 renderer = "auto"
 gpu_driver = "auto"
 renderer_fallback = true
