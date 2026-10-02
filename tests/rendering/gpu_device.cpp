@@ -701,7 +701,7 @@ int main(int argc, char **argv) {
         test::require(boundedScene.meshResidentBytes() == meshBytes * 2,
                       "active draw resources exceed idle retention safely");
         boundedScene.trimUnused();
-        test::require(boundedScene.meshResidentBytes() == meshBytes &&
+        test::require(boundedScene.meshResidentBytes() == 0 &&
                           readPixel(limited, *boundedImage, 4, 4)[0] > .99f,
                       "idle eviction preserves in-flight prepared geometry");
       }

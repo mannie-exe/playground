@@ -126,7 +126,8 @@ std::shared_ptr<GPUTextureData>
 GPUSceneRenderer::texture(const rendering::TextureHandle &source,
                           bool ignoreAlpha) {
   const TextureKey key{
-      source, ignoreAlpha && source->role() == rendering::TextureRole::Color};
+      source, ignoreAlpha && source->role() == rendering::TextureRole::Color &&
+                  !source->opaque()};
   if (auto it = _textures.find(key); it != _textures.end()) {
     ++_work.textureHits;
     it->second.lastUse = ++_clock;
@@ -279,7 +280,7 @@ bool GPUSceneRenderer::pinned(const MeshKey &key) const {
   return false;
 }
 
-void GPUSceneRenderer::trim() {
+void GPUSceneRenderer::trim(bool reclaim) {
   const auto evict = [&](auto &entries, std::size_t &bytes,
                          std::size_t target) {
     std::size_t idle{};
@@ -301,8 +302,9 @@ void GPUSceneRenderer::trim() {
     }
   };
   evict(_textures, _textureBytes,
-        _device.device->limits().maxMaterialResidentBytes);
-  evict(_meshes, _residentBytes, _device.device->limits().maxMeshResidentBytes);
+        reclaim ? 0 : _device.device->limits().maxMaterialResidentBytes);
+  evict(_meshes, _residentBytes,
+        reclaim ? 0 : _device.device->limits().maxMeshResidentBytes);
 }
 
 void GPUSceneRenderer::plan(const scene::SceneRenderProps &view,
@@ -311,8 +313,9 @@ void GPUSceneRenderer::plan(const scene::SceneRenderProps &view,
   const auto texture = [&](const rendering::TextureHandle &t,
                            bool opaque = false) {
     if (t)
-      next.textures.insert(
-          {t, opaque && t->role() == rendering::TextureRole::Color});
+      next.textures.insert({t, opaque &&
+                                   t->role() == rendering::TextureRole::Color &&
+                                   !t->opaque()});
   };
   for (const auto &d : draws) {
     next.meshes.insert(d.mesh);
@@ -353,13 +356,28 @@ void GPUSceneRenderer::plan(const scene::SceneRenderProps &view,
         unsigned(size.y) > limits.maxTextureDimension ||
         source->bytes() > limits.maxMaterialTextureBytes)
       throw std::length_error("Scene material exceeds allocation policy");
+    std::size_t transfer{};
+    for (const auto &level : source->levels()) {
+      if (transfer > std::numeric_limits<Uint32>::max() - 15)
+        throw std::length_error(
+            "Scene texture transfer exceeds native capacity");
+      transfer = (transfer + 15) & ~std::size_t{15};
+      if (level.texels.data().size() >
+          std::numeric_limits<Uint32>::max() - transfer)
+        throw std::length_error(
+            "Scene texture transfer exceeds native capacity");
+      transfer += level.texels.data().size();
+    }
+    limits.validateUpload(transfer, "Scene texture upload plan");
     add(source->bytes(), !_textures.contains(key));
   }
   for (const auto &key : _currentPlan.meshes) {
     const auto source = key.lock();
-    add(source->data().vertices.size() * sizeof(scene::Vertex3D) +
-            source->data().indices.size() * sizeof(std::uint32_t),
-        !_meshes.contains(key));
+    const auto bytes =
+        source->data().vertices.size() * sizeof(scene::Vertex3D) +
+        source->data().indices.size() * sizeof(std::uint32_t);
+    _device.device->limits().validateUpload(bytes, "Scene mesh upload plan");
+    add(bytes, !_meshes.contains(key));
   }
   _work.workingSetBytes = required;
   try {

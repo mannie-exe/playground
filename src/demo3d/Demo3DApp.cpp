@@ -295,9 +295,11 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
           .wrap = ui::TextWrap::AvailableInlineSize,
           .textRole = ui::TextRole::Caption});
   _caption = caption.get();
-  if (_kind == DemoKind::Benchmark)
+  if (_kind == DemoKind::Benchmark) {
+    _caption->setBoxProps({.height = layout::SizeRule::fixed(64)});
     _caption->applyPatch({.value = Patch<std::string>::set(
                               "Bistro benchmark: preparing resources")});
+  }
   root->append(std::move(caption));
   ui::SceneViewProps props{.scene = _scene,
                            .camera = _director.camera(),
@@ -509,6 +511,9 @@ void Demo3DApp::restartBenchmark(AppContext &ctx) {
   _seenCPU = ctx.renderRuntimeState().cpuSamples;
   _seenGPU.clear();
   _benchmarkReported = false;
+  _caption->setBoxProps({.height = layout::SizeRule::fixed(64)});
+  _measuredSubmitted = ctx.renderRuntimeState().submitted;
+  _finalSubmitted = 0;
   _benchmarkWork = ctx.renderRuntimeState().sceneWork;
   _director.update(_pathCamera,
                    {.camera = benchmarkPath().sample(0), .priority = 10});
@@ -665,6 +670,16 @@ void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
   }
   message += "}}";
   SDL_Log("%s", message.c_str());
+  if (final) {
+    _caption->setBoxProps({});
+    _caption->applyPatch(
+        {.value = Patch<std::string>::set(std::format(
+             "Bistro benchmark: {} | CPU render p50 {:.2f}ms / p95 {:.2f}ms | "
+             "GPU scene {:.2f}ms ({} samples) | uploads {} | R: restart",
+             runtime::toString(_benchmark.phase()), cpu.percentile(.5),
+             cpu.percentile(.95), gpu.count ? gpu.total / gpu.count : 0,
+             gpu.count, state.sceneWork.uploads - _benchmarkWork.uploads))});
+  }
 }
 
 void Demo3DApp::render(AppContext &ctx, rendering::RenderFrame &frame) {
