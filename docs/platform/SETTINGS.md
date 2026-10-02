@@ -27,12 +27,13 @@ or PATH change is required. Install prepares runtime files. Running directly fro
 the build tree need not find `project.toml`; absent files retain compiled defaults.
 The project root is not treated as a writable preferences directory.
 
-Settings readers accept integer schema versions 1 through 5; writers emit version 5.
+Settings readers accept integer schema versions 1 through 6; writers emit version 6.
 Version 1 settings retain their defaults and are upgraded on the next explicit
 save. Renderer and interaction preference fields are additive and accepted by this
 reader in older documents; older readers reject unknown fields. Version 3 adds
 accessibility/navigation preferences; version 4 adds appearance; version 5 adds
-shared graphics and runtime policy. See [GRAPHICS.md](GRAPHICS.md).
+shared graphics and runtime policy; version 6 adds shared audio preferences.
+See [GRAPHICS.md](GRAPHICS.md) and [audio settings](#shared-audio).
 Session readers accept versions 1 and 2; writers emit version 2. Version 1 requires
 normal-window size, position and display name. Version 2 keeps size and display
 name required but makes position optional: compositor-managed placement may not
@@ -82,7 +83,7 @@ scheme/contrast use light/normal fallbacks. No OS setting is modified.
 Both project and user files use this shape; every field inside the tables is optional:
 
 ```toml
-schema_version = 5
+schema_version = 6
 
 [defaults]
 accessibility = "auto"
@@ -364,7 +365,7 @@ is refused until usage permits it. See [RESOURCES.md](../render/RESOURCES.md).
 
 ## Shared graphics and settings view
 
-[GRAPHICS.md](GRAPHICS.md) defines schema version 5 shared graphics, draft
+[GRAPHICS.md](GRAPHICS.md) defines shared graphics, draft
 Apply/Save behavior, inactive future features and automatic scene resolution.
 These preferences apply across sub-apps. Escape opens the host settings view;
 Ctrl/Cmd+Shift+M returns to the launcher.
@@ -394,4 +395,35 @@ keys in an older graphics section inherit that document's legacy `[defaults]`
 values; absent values use System. Project contrast cannot suppress OS contrast:
 only user preferences can override it. General displays shared preferences rather
 than legacy per-app exceptions. Saving General adopts the shared values for every
-app. Existing settings documents remain schema version 5.
+app. Saving preserves unrelated shared audio preferences.
+
+## Shared audio
+
+`AudioSettings` is host-wide, independent of the active app and graphics backend.
+Resolve compiled defaults, project `[audio]`, then user `[audio]`. A present section
+is a complete preference object with compiled defaults for missing fields; an
+absent section inherits the previous layer. Older documents without audio retain
+that behavior and migrate only on explicit save. Session files contain no audio.
+
+| Key in `[audio]` | Values / default | Meaning |
+|---|---|---|
+| `master_volume`, `ui_volume`, `effects_volume`, `music_volume` | Integer 0–100; 100 | Linear bus gain percentages, composed with Master |
+| `master_muted`, `ui_muted`, `effects_muted`, `music_muted` | Boolean; false | Silence output without erasing the stored gain |
+| `output_device` | `system` or adapter preference key; `system` | Resolve a device at runtime; never serialize an SDL device ID |
+| `background` | `continue` / `mute` / `pause`; `continue` | App-owned audio policy when unfocused; host UI cues remain independent |
+
+`SettingsStore::audio()` returns requested preferences. `AppContext::requestAudio`
+queues a validated replacement with the same runtime-only/persist choice as
+shared graphics. `audioState()` exposes requested/effective device and recovery
+status. A missing preferred device falls back to the system device with a visible
+status while retaining the preference; no device means silent Unavailable state.
+An explicit failed device switch preserves the previous working device and
+published settings. Native recovery does not rewrite user preferences.
+
+The shared Settings view has an Audio tab. Volume/mute draft edits preview with
+ramps; Revert or closing an unapplied draft restores applied values. Device and
+background policy changes wait for Apply. Save applies and persists atomically;
+failed validation, switching or persistence preserves the applied preferences.
+Background mute keeps voice clocks advancing; pause retains bounded stream data
+and suspends decode until resume. Neither changes online session time. Scoped
+pause policy while Settings is open follows the [audio contract](../audio/README.md).

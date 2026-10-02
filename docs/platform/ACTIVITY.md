@@ -4,7 +4,7 @@ Applications declare update and paint policy separately. Continuous behavior is
 the compatibility default; an on-demand app must declare scheduled work, visual
 changes and queued completions. An unchanged UI does not imply a paused game.
 
-The host processes events and ready completions, runs requested/due updates,
+The host processes events, ready services and completions, runs requested/due updates,
 settles UI work, and renders a complete frame only when demanded. It waits for an
 SDL event or the earliest deadline when no immediate work remains. Timer deadlines
 use monotonic time; UI scheduler delays are translated at the session boundary.
@@ -18,6 +18,7 @@ Simulation keeps its independent bounded catch-up/pause contract.
 | `IApp::activityProps()` | Opt-in cadence; Menu, Demo 2D and Minesweeper use on-demand UI cadence |
 | `runtime::ActivityDemand` / `IApp::activityDemand()` | Current update/paint demand and optional absolute steady-clock `wakeAt` |
 | `AppContext::requestUpdate/requestRepaint` | Owner-thread model work or window presentation invalidation |
+| `runtime::ServicePump` / `ServiceDemand` | Bounded service processing and deadlines independent of local simulation or painting |
 | `UISession::activityDemand()` | Pending root work, paint invalidation and the next UI scheduler deadline |
 | `CompletionQueue::setWakeCallback` | Notify after publishing work; failure does not retract an accepted completion |
 | `sdl::EventWake` | Lifetime-safe weak posting endpoint, coalesced private SDL event, no raw host pointer |
@@ -81,7 +82,7 @@ when minimized, or implement regional repaint. Those need their own contracts.
 
 `RenderRuntime` checks the optional frame-rate deadline and outstanding-frame
 credits before expensive painting. Its wake deadline joins input, application,
-window-transition and GPU-completion deadlines; it does not sleep inside the
+window-transition, service and GPU-completion deadlines; it does not sleep inside the
 render callback. A cap limits demanded frames but does not create demand.
 Missed presentation deadlines do not accumulate catch-up frames.
 
@@ -101,9 +102,9 @@ See [runtime resources](../render/RESOURCES.md).
 ## Host settings presentation
 
 The shared settings view replaces application painting and input while open.
-Application simulation and variable updates pause; worker completions and native
-window transitions continue. Held actions, pointer gestures and composition are
-canceled at the boundary. Settings UI demand and 500 ms meter refreshes drive
+Local application simulation and variable updates pause; scoped service work,
+session authority, worker completions and native window transitions continue. Held actions, pointer gestures and composition are canceled at the
+boundary. Settings UI demand, 500 ms meter refreshes and service deadlines drive
 its activity; closing rebases app elapsed time and restores its window policy
 without replacing the renderer. See [GRAPHICS.md](GRAPHICS.md).
 

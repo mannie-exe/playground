@@ -2,8 +2,8 @@
 
 This is the original learning outline, not an implementation-status checklist.
 Names and unchecked items below are conceptual exercises, not requirements to
-duplicate existing modules. Current contracts live in [ui/REFERENCE.md](ui/REFERENCE.md),
-[ui/CONTRACTS.md](ui/CONTRACTS.md), and [render/GPU.md](render/GPU.md).
+duplicate existing modules. Use the [documentation index](README.md) for target
+contracts and explicitly future capabilities.
 
 This document describes baseline structs, processes, algorithms, and references for building small cross-platform C/C++ programs using SDL3, SDL_GPU, SDL audio, optional SDL_image, optional SDL_net, and CMake/CPM.
 

@@ -25,8 +25,10 @@ Software and SDL GPU/Vulkan are the supported implementations.
 Auto means Vulkan when eligible, otherwise software if requirements permit it.
 Direct3D12 and Metal are not selectable implementations. HLSL remains the authored
 shader language; SPIR-V is the packaged hardware format. DXC is a compiler, not
-a requirement to use Direct3D. macOS/iOS hardware support needs a separately
-validated Vulkan portability path; it is not implied by this policy.
+a requirement to use Direct3D. GPU-enabled macOS builds bundle MoltenVK for the
+Vulkan portability path; see [build/install requirements](../../CONTRIBUTING.md#macos).
+iOS is not a supported target. Hardware availability still requires a compatible
+device and successful runtime creation.
 
 3D is compiled with the project but optional at runtime. Required capabilities
 are prepared before activating an application; optional 3D pipelines remain lazy.

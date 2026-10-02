@@ -7,6 +7,39 @@ applications. AppHost supplies boundaries; each app owns its model and controlle
 Update and presentation cadence are independent of simulation timing. See
 [ACTIVITY.md](ACTIVITY.md) for explicit app demand, UI deadlines, completion wakes,
 full-frame idle skipping and pending presentation acknowledgement.
+[Session services](NETWORKING.md#scheduling-and-host-services) process work
+independently of local presentation pause.
+
+## Service processing
+
+AppHost owns a runtime ServicePump. App activation creates a ServiceScope for
+content acquisition, audio control and network/session work. Services publish
+immutable results from workers and mutate owned state only at their declared
+owner boundary. Device audio mixing and socket I/O do not execute in UI update.
+
+| API | Contract |
+|---|---|
+| ServiceScope | Activation-owned registrations and cancellation; destruction removes demand and rejects late publication |
+| ServiceDemand | Pending work and absolute monotonic wake deadline; no deadline invented by a query |
+| ServiceWorkBudget | Per-pump work/byte/message limits; exhaustion preserves pending demand |
+| ServicePump::demand | Combine service deadlines with application, window and rendering demand |
+| ServicePump::advance | Process ready bounded work before simulation/presentation, including while Settings is open |
+| AppContext::services | Borrow active scope for owner-thread registration; workers retain only safe posting endpoints |
+
+Registration specifies a handler, demand source and work limits; a service cannot
+recursively pump or mutate registration during traversal. Changes publish at a
+safe boundary. Fair rotation prevents one busy service from starving another.
+Completion notifications do not own the only result copy; saturation preserves
+durable outcomes. Terminal failures are delivered once with service/instance
+identity. Closing a scope cancels pending work and invalidates publication before
+resource destruction; it does not forcibly interrupt a native decoder.
+
+Keep local simulation, authority/session ticks, UI monotonic time, audio sample
+time and presentation time distinct. Settings/focus pause local app input and
+simulation according to local policy; network authority and service processing
+continue. An online model advances through its AuthorityRunner, not the paused
+local SimulationClock. Headless hosting uses the same service/domain contracts
+without the desktop IApp/SDL window adapter.
 
 ## Input
 
@@ -79,8 +112,8 @@ and keyboard/mouse removal cancel their matching actions.
 
 Apps opt into `IApp::simulationTiming()` returning `SimulationTimingProps`; the
 default is frame updates only. The policy is captured during activation.
-The host routes events, drains owner-thread completions, runs bounded fixed ticks,
-updates frame-based UI, then renders. Commands and app replacement run only after
+The host routes events, pumps ready services and owner-thread completions, runs
+bounded local fixed ticks, updates frame-based UI, then renders. Commands and app replacement run only after
 callbacks return. A fixed tick receives tick number, fixed delta and input snapshot.
 UIRoot retains its own completion/timer delivery during UI update. Model work that
 must publish before simulation should use the app activation sink, not a UI queue.
@@ -201,3 +234,8 @@ delivery, deferred removal and controller arithmetic. App behavior is additional
 build-checked; ordinary tests do not open windows or modify desktop settings.
 The focused cases are `input_actions`, `sdl_actions`, `simulation_clock`,
 `activation_lifetime`, `controllers`, and the rollback cases in `host_transitions`.
+
+Service tests use fake time to verify deadline aggregation, fairness under queue
+pressure, wake-after-publication and one terminal result per request. Exercise
+Settings, focus loss, app replacement and shutdown with active services; local
+simulation may pause without stopping authority ticks or losing retained results.

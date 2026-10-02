@@ -19,8 +19,8 @@ Retry creates a new generation. Optional `TransitionHost` reveal is independent
 of data correctness. Animation preferences never prevent publication.
 
 These boundaries model explicit loading state, not React concurrent rendering or
-implicit suspension. Disk UI loading, automatic resource discovery and a UI editor
-remain outside scope.
+implicit suspension. Disk UI loading and an editor remain [planned](DOCUMENTS.md);
+automatic resource discovery is not part of this API.
 
 Call `AsyncView::refresh()` after starting/retrying a request on a settled view.
 While pending, the view polls the durable slot every 16 ms through the UI scheduler;
