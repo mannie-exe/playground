@@ -18,7 +18,7 @@
 
 struct PerformanceConfig {
   bool enabled{false};
-  std::uint32_t reportEveryFrames{60};
+  double reportEverySeconds{1};
   std::uint32_t historySize{240};
   bool logSummary{true};
 };
@@ -36,6 +36,8 @@ struct PerformanceHistoryEntry {
 
 class PerformanceMonitor {
   PerformanceConfig _config;
+  double _reportAt{};
+  std::string _workload{"host"};
   std::array<DurationStats, 5> _stats;
   std::array<std::uint64_t, 5> _starts{};
   std::array<bool, 5> _active{};
@@ -169,6 +171,8 @@ public:
   PerformanceReport snapshotReport() const;
   void resetReportInterval() noexcept;
   void report();
+  void reportIfDue(double monotonicSeconds);
+  void setWorkload(std::string name);
 
   void resetStatistics();
 

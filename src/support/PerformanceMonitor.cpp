@@ -28,12 +28,14 @@ const char *PerformanceMonitor::name(FramePhase phase) {
 void PerformanceMonitor::setConfig(PerformanceConfig config) {
   if (config.historySize > maximumHistorySize)
     throw std::invalid_argument("Performance history exceeds entry limit");
-  config.reportEveryFrames =
-      config.reportEveryFrames == 0 ? 1 : config.reportEveryFrames;
+  if (!std::isfinite(config.reportEverySeconds) ||
+      config.reportEverySeconds <= 0)
+    throw std::invalid_argument("Performance report interval must be positive");
   _gpuGroups.reserve(maximumGPUGroups);
   if (_config.enabled != config.enabled)
     resetStatistics();
   _config = config;
+  _reportAt = double(SDL_GetTicksNS()) / 1e9 + _config.reportEverySeconds;
   while (_history.size() > _config.historySize)
     _history.pop_front();
   while (_gpuHistory.size() > _config.historySize)
@@ -45,6 +47,7 @@ void PerformanceMonitor::setEnabled(bool enabled) {
     return;
   resetStatistics();
   _config.enabled = enabled;
+  _reportAt = double(SDL_GetTicksNS()) / 1e9 + _config.reportEverySeconds;
 }
 
 void PerformanceMonitor::end(FramePhase phase) {
@@ -94,8 +97,7 @@ void PerformanceMonitor::recordFrame(const PerformanceSample &sample) {
   _uiWork.clear();
   _gpuSampleReceived = false;
   ++_framesSinceReport;
-  if (_config.logSummary && _framesSinceReport >= _config.reportEveryFrames)
-    report();
+  reportIfDue(double(SDL_GetTicksNS()) / 1e9);
 }
 
 PerformanceReport PerformanceMonitor::snapshotReport() const {
@@ -120,6 +122,7 @@ void PerformanceMonitor::resetReportInterval() noexcept {
   _queryDrops = 0;
   _bufferDiscards = 0;
   _framesSinceReport = 0;
+  _reportAt = 0;
 }
 
 void PerformanceMonitor::resetStatistics() {
@@ -144,7 +147,8 @@ void PerformanceMonitor::report() {
 
   const auto summary = snapshotReport();
   std::string message{
-      std::format("Performance | CPU frames={}", summary.cpuFrames)};
+      std::format("Performance | workload={} | CPU iterations={}", _workload,
+                  summary.cpuFrames)};
   for (const FramePhase phase :
        {FramePhase::Poll, FramePhase::Update, FramePhase::Render,
         FramePhase::Present, FramePhase::Total}) {
@@ -153,9 +157,10 @@ void PerformanceMonitor::report() {
       message += std::format(" | {} unmeasured", name(phase));
       continue;
     }
-    message += std::format(
-        " | {} avg={:.3f}ms min={:.3f}ms max={:.3f}ms", name(phase),
-        *stats.average(), stats.minimumMilliseconds, stats.maximumMilliseconds);
+    message +=
+        std::format(" | {} samples={} avg={:.3f}ms min={:.3f}ms max={:.3f}ms",
+                    name(phase), stats.count, *stats.average(),
+                    stats.minimumMilliseconds, stats.maximumMilliseconds);
   }
   const char *status = "unsupported";
   switch (summary.gpuTiming) {
@@ -188,12 +193,14 @@ void PerformanceMonitor::report() {
   for (const auto &group : summary.gpu) {
     message += std::format(
         "\n  {} | domain={} generation={} | source={} target={} | samples={} | "
-        "duration avg={:.3f}ms min={:.3f}ms max={:.3f}ms",
+        "duration avg={:.3f}ms min={:.3f}ms max={:.3f}ms | workload={} "
+        "quality={}",
         group.key.label, group.key.domain.value, group.key.collectionGeneration,
         extent(group.key.context.sourcePixels),
         extent(group.key.context.targetPixels), group.duration.count,
         *group.duration.average(), group.duration.minimumMilliseconds,
-        group.duration.maximumMilliseconds);
+        group.duration.maximumMilliseconds, group.key.context.workloadId,
+        group.key.context.qualityRevision);
     if (group.completionLatency.count)
       message += std::format(" | completion latency samples={} avg={:.3f}ms "
                              "min={:.3f}ms max={:.3f}ms",
@@ -223,6 +230,14 @@ void PerformanceMonitor::report() {
                   summary.paint.quads, summary.paint.drawCalls,
                   summary.paint.streamedBytes, summary.paint.rectangularQuads,
                   summary.paint.generalQuads, summary.paint.presentationQuads);
+  const auto &scene = summary.paint.scene;
+  message += std::format("\nScene | texture hits={} misses={} | mesh hits={} "
+                         "misses={} | uploads={} bytes={} evictions={} "
+                         "refused={} working set={} | prepare={:.3f}ms",
+                         scene.textureHits, scene.textureMisses, scene.meshHits,
+                         scene.meshMisses, scene.uploads, scene.uploadBytes,
+                         scene.evictions, scene.refusedPlans,
+                         scene.workingSetBytes, scene.preparationMilliseconds);
   message +=
       std::format("\nIdle | waits={} total={:.3f}ms (excluded from CPU frames)",
                   summary.idleWait.count, summary.idleWait.totalMilliseconds);
@@ -268,8 +283,8 @@ void PerformanceMonitor::recordGPU(
     throw std::invalid_argument("Invalid GPU performance sample");
   GPUGroupKey key{sample.domain, sample.collectionGeneration, sample.label,
                   sample.context};
-  key.context.workloadId = key.context.qualityRevision = 0;
-  key.context.frameId = 0; // grouping is by workload, correlation stays in raw samples
+  key.context.frameId =
+      0; // grouping is by workload, correlation stays in raw samples
   auto it = std::ranges::find(_gpuGroups, key, &GPUGroupReport::key);
   const bool omitted =
       it == _gpuGroups.end() && _gpuGroups.size() == maximumGPUGroups;
@@ -329,7 +344,8 @@ bool PerformanceMonitor::handleHotkey(const SDL_KeyboardEvent &key) {
     if (isEnabled())
       report();
     else
-      SDL_Log("Performance reporting is disabled; runtime telemetry remains active");
+      SDL_Log("Performance reporting is disabled; runtime telemetry remains "
+              "active");
     return true;
   }
 
@@ -341,12 +357,37 @@ bool PerformanceMonitor::handleHotkey(const SDL_KeyboardEvent &key) {
 
   if (key.key == SDLK_F11) {
     auto config = _config;
-    config.reportEveryFrames = _config.reportEveryFrames == 60 ? 300 : 60;
+    config.reportEverySeconds = _config.reportEverySeconds == 1 ? 5 : 1;
     setConfig(config);
-    SDL_Log("Performance summary interval: %u frames",
-            _config.reportEveryFrames);
+    SDL_Log("Performance summary interval: %.0f seconds",
+            _config.reportEverySeconds);
     return true;
   }
 
   return false;
+}
+
+void PerformanceMonitor::reportIfDue(double seconds) {
+  if (!std::isfinite(seconds) || seconds < 0)
+    throw std::invalid_argument("Invalid report clock");
+  if (!_config.enabled || !_config.logSummary)
+    return;
+  if (!_reportAt) {
+    _reportAt = seconds + _config.reportEverySeconds;
+    return;
+  }
+  if (seconds >= _reportAt) {
+    if (_framesSinceReport || _gpuSamplesReceived || _idleWait.count)
+      report();
+    _reportAt = seconds + _config.reportEverySeconds;
+  }
+}
+
+void PerformanceMonitor::setWorkload(std::string name) {
+  if (name == _workload)
+    return;
+  if (_config.enabled && _config.logSummary && _framesSinceReport)
+    report();
+  resetReportInterval();
+  _workload = std::move(name);
 }
