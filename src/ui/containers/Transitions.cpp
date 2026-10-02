@@ -81,62 +81,83 @@ void TransitionHost::replace(ItemKey key, std::unique_ptr<Node> child,
   if (current() && key == _key)
     return;
   auto *outgoing = current();
-  const auto outgoingOpacity =
+  auto previousKey = _key;
+  const bool previousInert = outgoing && outgoing->inert();
+  const float authoredOpacity = outgoing ? outgoing->paintStyle().opacity : 1.f;
+  const float outgoingOpacity =
       outgoing ? std::get<float>(outgoing->motionValue(MotionProperty::Opacity))
                : 1.f;
+  NodeId previousFocus;
+  if (outgoing) {
+    const auto findFocus = [&](auto &&self, Node &node) -> void {
+      if (node.hasFocus())
+        previousFocus = node.id();
+      for (auto &child : node.children())
+        self(self, *child);
+    };
+    findFocus(findFocus, *outgoing);
+  }
   // Attach first: a failing candidate leaves existing content intact.
   appendChild(std::move(child));
-  _key = std::move(key);
-  ++_generation;
-  _enter.cancel();
-  _exit.cancel();
-  if (outgoing)
-    outgoing->setMotionValue(MotionProperty::Opacity, outgoingOpacity);
-  while (children().size() > 2)
-    takeChildAt(0);
-  if (children().size() > 1)
-    children().front()->setInert(true);
   auto *s = services();
-  if (focusIncoming && s && s->focusAfterLayout)
-    s->focusAfterLayout(current()->focusTarget().id());
-  if (!s || !s->motion) {
-    while (children().size() > 1)
-      takeChildAt(0);
-    return;
-  }
   try {
-    auto spec = resolvedTheme().motion.reveal;
-    _enter = s->motion->play(
-        motion::opacity(current()->handle()),
-        Keyframes<float>{{{0, 0.f},
-                          {1, std::get<float>(current()->motionValue(
-                                  MotionProperty::Opacity))}}},
-        spec);
-    if (children().size() > 1) {
-      auto self = handle<TransitionHost>();
-      const auto generation = _generation;
-      _exit = s->motion->transition(
-          motion::opacity(children().front()->handle()), 0.f,
-          resolvedTheme().motion.dismiss,
-          [self, generation](AnimationStatus status) {
-            if (status != AnimationStatus::Completed)
-              return;
-            if (auto *node = self.get();
-                node && node->_generation == generation) {
-              node->services()->defer([self, generation] {
-                if (auto *n = self.get(); n && n->_generation == generation &&
-                                          n->children().size() > 1)
-                  n->takeChildAt(0);
-              });
-            }
-          });
-    }
-  } catch (...) {
+    _key = std::move(key);
+    ++_generation;
     _enter.cancel();
     _exit.cancel();
+    if (outgoing)
+      outgoing->setMotionValue(MotionProperty::Opacity, outgoingOpacity);
+    while (children().size() > 2)
+      takeChildAt(0);
+    if (outgoing)
+      outgoing->setInert(true);
+    if (!s || !s->motion) {
+      while (children().size() > 1)
+        takeChildAt(0);
+    } else {
+      _enter = s->motion->play(
+          motion::opacity(current()->handle()),
+          Keyframes<float>{{{0, 0.f},
+                            {1, std::get<float>(current()->motionValue(
+                                    MotionProperty::Opacity))}}},
+          resolvedTheme().motion.reveal);
+      if (outgoing) {
+        auto self = handle<TransitionHost>();
+        const auto generation = _generation;
+        _exit = s->motion->transition(
+            motion::opacity(outgoing->handle()), 0.f,
+            resolvedTheme().motion.dismiss,
+            [self, generation](AnimationStatus status) {
+              if (status != AnimationStatus::Completed)
+                return;
+              if (auto *node = self.get();
+                  node && node->_generation == generation) {
+                node->services()->defer([self, generation] {
+                  if (auto *n = self.get(); n && n->_generation == generation &&
+                                            n->children().size() > 1)
+                    n->takeChildAt(0);
+                });
+              }
+            });
+      }
+    }
+  } catch (...) {
+    ++_generation;
+    _enter.cancel();
+    _exit.cancel();
+    takeChildAt(children().size() - 1);
     while (children().size() > 1)
       takeChildAt(0);
+    _key.swap(previousKey);
+    if (outgoing) {
+      outgoing->setMotionValue(MotionProperty::Opacity, authoredOpacity);
+      outgoing->setInert(previousInert);
+    }
+    if (previousFocus != NodeId{} && s && s->focusAfterLayout)
+      s->focusAfterLayout(previousFocus);
     throw;
   }
+  if (focusIncoming && s && s->focusAfterLayout)
+    s->focusAfterLayout(current()->focusTarget().id());
 }
 } // namespace playground::ui

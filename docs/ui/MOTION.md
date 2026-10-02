@@ -31,7 +31,12 @@ transition therefore reveals its destination on cancellation. Retargeting starts
 from the displayed value. Direct property writes replace active effects, including
 writes of the existing authored value through the property-specific setter.
 
-One playback owns a property at a time. Move-only `AnimationHandle` cancels on
+One playback owns a property at a time. Replacing/writing one property retires
+only that property's tracks; unrelated tracks keep their original clock. A
+partially interrupted timeline remains Running/Paused until its remaining tracks
+finish, then reports Replaced (or TargetGone if any target disappeared). Explicit
+cancel reports Cancelled. Destroying/reassigning the timeline handle cancels
+all of its remaining tracks. Move-only `AnimationHandle` cancels on
 destruction and supports pause, resume, seek, finish, cancel and status. Outcomes
 are Completed, Cancelled, Replaced and TargetGone. Detached nodes invalidate their
 bindings. Custom value invalidation callbacks only mark paint dirty; they must
@@ -75,7 +80,10 @@ after exit. Rapid replacement discards an obsolete outgoing tree.
 Outgoing content is inert: it remains painted but cannot receive input, focus or
 accessibility actions. Inertness is separate from authored enabled/visibility.
 Captured gestures are cancelled; callers explicitly choose focus transfer. Failed
-candidate construction or attachment preserves usable existing content.
+candidate construction, attachment or animation admission preserves usable
+existing content. Admission rollback restores its key, authored opacity, local
+inert state and scheduled focus; interrupted prior animations settle rather than
+resume. Cancelled pointer gestures are not recreated.
 
 ## Extension boundaries
 

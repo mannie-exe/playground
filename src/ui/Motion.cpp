@@ -85,6 +85,7 @@ struct MotionPlayback {
   std::vector<Track> tracks;
   double elapsed{}, duration{};
   AnimationStatus status{AnimationStatus::Running};
+  std::optional<AnimationStatus> interruption;
   std::function<void(AnimationStatus)> done;
   bool notified{};
   bool transition{};
@@ -126,7 +127,9 @@ static void stop(MotionPlayback &p, AnimationStatus status) {
     }
     throw std::logic_error("Cannot stop motion during sampling");
   }
-  p.status = status;
+  p.status = status == AnimationStatus::Completed && p.interruption
+                 ? *p.interruption
+                 : status;
   auto tracks = std::move(p.tracks);
   std::exception_ptr error;
   for (auto &t : tracks)
@@ -165,18 +168,49 @@ static MotionDatum interpolate(const MotionDatum &a, const MotionDatum &b,
       a);
 }
 
-static bool valid(MotionPlayback &p) {
-  for (auto &t : p.tracks) {
-    if (!t.target.alive()) {
-      stop(p, AnimationStatus::TargetGone);
+template <typename Predicate>
+static void removeTracks(MotionPlayback &p, Predicate matches,
+                         AnimationStatus reason) {
+  bool removed = false;
+  std::exception_ptr error;
+  std::erase_if(p.tracks, [&](auto &track) {
+    if (!matches(track))
       return false;
+    removed = true;
+    try {
+      if (track.target.alive() && track.target.revision() == track.revision)
+        track.target.clear();
+    } catch (...) {
+      if (!error)
+        error = std::current_exception();
     }
-    if (t.target.revision() != t.revision) {
-      stop(p, AnimationStatus::Replaced);
-      return false;
-    }
+    return true;
+  });
+  if (removed) {
+    if (!p.interruption || reason == AnimationStatus::TargetGone)
+      p.interruption = reason;
+    p.duration = 0;
+    for (const auto &track : p.tracks)
+      p.duration =
+          std::max(p.duration, track.spec.at + track.spec.motion.end());
+    if (p.tracks.empty() || p.elapsed >= p.duration)
+      stop(p, AnimationStatus::Completed);
   }
-  return true;
+  if (error)
+    std::rethrow_exception(error);
+}
+
+static bool valid(MotionPlayback &p) {
+  removeTracks(
+      p, [](const auto &track) { return !track.target.alive(); },
+      AnimationStatus::TargetGone);
+  removeTracks(
+      p,
+      [](const auto &track) {
+        return track.target.revision() != track.revision;
+      },
+      AnimationStatus::Replaced);
+  return active(p);
 }
 
 static void sample(MotionPlayback &p) {
@@ -401,26 +435,29 @@ AnimationHandle MotionEngine::start(const TimelineSpec &spec,
     std::vector<detail::Track>{}.swap(old->tracks);
     return true;
   });
-  const auto conflicts = [&](const auto &old) {
-    for (const auto &a : old.tracks)
-      for (const auto &b : p->tracks)
-        if (a.target.identity == b.target.identity &&
-            a.target.property == b.target.property)
-          return true;
+  const auto conflicts = [&](const auto &track) {
+    for (const auto &replacement : p->tracks)
+      if (track.target.identity == replacement.target.identity &&
+          track.target.property == replacement.target.property)
+        return true;
     return false;
   };
   auto usage = stats();
   std::size_t pending = 0;
   for (const auto &old : _core->playbacks) {
-    if (!detail::active(*old))
+    if (!detail::active(*old)) {
       ++pending;
-    else if (conflicts(*old)) {
-      usage.tracks -= old->tracks.size();
-      for (const auto &track : old->tracks)
-        usage.keyframes -= track.spec.values.size();
-      if (old->done)
-        ++pending;
+      continue;
     }
+    std::size_t replaced = 0;
+    for (const auto &track : old->tracks)
+      if (conflicts(track)) {
+        ++replaced;
+        --usage.tracks;
+        usage.keyframes -= track.spec.values.size();
+      }
+    if (replaced == old->tracks.size() && old->done)
+      ++pending;
   }
   if (pending > _core->limits.tracks)
     throw std::length_error("Pending motion limit exceeded");
@@ -429,8 +466,8 @@ AnimationHandle MotionEngine::start(const TimelineSpec &spec,
     throw std::length_error("Motion admission limit exceeded");
   _core->playbacks.reserve(_core->playbacks.size() + 1);
   for (auto &old : _core->playbacks)
-    if (detail::active(*old) && conflicts(*old))
-      detail::stop(*old, AnimationStatus::Replaced);
+    if (detail::active(*old))
+      detail::removeTracks(*old, conflicts, AnimationStatus::Replaced);
   try {
     for (auto &t : p->tracks) {
       if (transition)
@@ -479,6 +516,7 @@ void MotionEngine::dispatchCompletions() {
     throw std::logic_error("Cannot dispatch completions during sampling");
   // Snapshot completion ownership before callbacks can append playback.
   std::vector<std::shared_ptr<detail::MotionPlayback>> completed;
+  completed.reserve(_core->playbacks.size());
   for (auto &p : _core->playbacks)
     if (!detail::active(*p) && !p->notified) {
       p->notified = true;
