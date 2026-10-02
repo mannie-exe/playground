@@ -13,8 +13,9 @@ documented fallback rather than masquerading as detected normal contrast.
 
 `Theme.hpp` owns these values; `AppViewPolicy::colorScheme` is the app baseline.
 Settings schema 4 adds `color_scheme` and `contrast`. `SettingsStore` honors
-contrast overrides only from the user document. UISession resolves the palette
-from policy and native observation, then calls `UIRoot::setTheme`. Unknown scheme
+contrast overrides only from the user document. UISession calls
+`UIRoot::setAppearance` with policy and native observation; the installed
+ThemeDefinition remains authoritative for application styling. Unknown scheme
 falls back to light; unknown contrast to normal. Observation runs on the owner
 thread, at most four polls/second (Linux portal requests at most once/second).
 Windows reads high-contrast status and system colors; macOS reads Increase
@@ -24,10 +25,12 @@ portal is unknown, not proof that contrast is disabled.
 `Node::setTheme(optional<ThemePalette>)` supplies an inherited local palette;
 clearing it resumes inheritance. A root high-contrast palette takes precedence
 over local palette overrides. Text, Button, TextField, Slider and ProgressBar use
-the palette by default; `useTheme=false` explicitly preserves authored colors
-for artwork/game content. Theme changes invalidate prepared text and cached
-layers, not authored fonts or app models. UI roots remain transparent unless
-`PaintStyle::themeBackground` is enabled; an explicit background color wins.
+the palette by default. Only content nodes expose
+`ColorTreatment::PreserveArtwork`; it preserves their authored colors without
+changing surrounding control chrome. Theme changes invalidate prepared paint;
+metric/typography changes also reflow layout, preserving app and editor models. UI roots remain transparent unless
+`PaintStyle::themeBackground` is enabled or a background is authored. Explicit
+background and border colors adapt under high contrast. See [theming](THEMING.md).
 
 Popup content remains owned by its originating component. Root overlay presentation
 escapes ancestor scroll clips but stays within the UI viewport. It does not

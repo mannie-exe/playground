@@ -14,8 +14,7 @@ namespace {
 ActionButtonProps actionStyle() {
   return {.button = {.normal = mineConfig::buttonBaseColor,
                      .hover = mineConfig::buttonHoverColor,
-                     .pressed = mineConfig::buttonActiveColor,
-                     .useTheme = false},
+                     .pressed = mineConfig::buttonActiveColor},
           .labelColor = mineConfig::actionLabelColor};
 }
 
@@ -31,8 +30,7 @@ MinesweeperUIProps gameProps(const MinesweeperBoardProps &board) {
                    .labelColors = mineConfig::cellLabelColors,
                    .button = actionStyle().button},
           .actionButton = actionStyle(),
-          .flagCounter = {.button = {.disabled = mineConfig::buttonBaseColor,
-                                     .useTheme = false},
+          .flagCounter = {.button = {.disabled = mineConfig::buttonBaseColor},
                           .iconColor = mineConfig::flagCounterIconColor,
                           .labelColor = mineConfig::flagCounterLabelColor},
           .layout = {.padding = mineConfig::outerPadding,

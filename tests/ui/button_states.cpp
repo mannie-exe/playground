@@ -95,10 +95,22 @@ int main() {
         "nonfinite focus width rejected");
     test::require(b->buttonProps() == original,
                   "invalid focus props preserve state");
-    b->applyButtonPatch({.focusWidth = Patch<float>::set(0)});
+    b->applyButtonPatch({.focusWidth = Patch<std::optional<float>>::set(0)});
     painter.colors.clear();
     root.render(painter);
-    test::require(painter.colors.size() == 5,
-                  "zero width opts out of focus border");
+    test::require(painter.colors.size() == 9,
+                  "cosmetic zero cannot remove keyboard focus indicator");
+    root.setAppearance(ui::ColorSchemePreference::Dark,
+                       ui::ContrastPreference::High, {});
+    root.flushLayout({100, 40});
+    root.requestFocus({});
+    painter.colors.clear();
+    root.render(painter);
+    const auto enabledDraws = painter.colors.size();
+    b->setEnabled(false);
+    painter.colors.clear();
+    root.render(painter);
+    test::require(painter.colors.size() > enabledDraws,
+                  "high-contrast disabled button adds non-color dash pattern");
   });
 }

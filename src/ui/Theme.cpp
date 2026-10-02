@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <stdexcept>
 
 #include <ui/Theme.hpp>
@@ -33,14 +34,18 @@ ThemePalette resolveTheme(ColorSchemePreference scheme,
             rgb(dark ? 0xffffff : 0x000000), rgb(dark ? 0xffff00 : 0x000080),
             rgb(dark ? 0x000000 : 0xffffff), rgb(dark ? 0x303030 : 0xe0e0e0),
             rgb(dark ? 0x505050 : 0xc0c0c0), rgb(dark ? 0x00ffff : 0x0000aa),
-            rgb(dark ? 0x404000 : 0xd0d0ff), true};
+            rgb(dark ? 0x404000 : 0xd0d0ff), true,
+            rgb(dark ? 0xffffff : 0x000000), rgb(dark ? 0xffffff : 0x000000),
+            rgb(dark ? 0xffffff : 0x000000), rgb(dark ? 0xffffff : 0x000000)};
   if (dark)
     return {rgb(0x181c22), rgb(0x252c36), rgb(0xf0f3f7), rgb(0xaeb9c8),
             rgb(0x748297), rgb(0x90bfff), rgb(0x102340), rgb(0x344153),
-            rgb(0x435570), rgb(0xffdb80), rgb(0x344d70), false};
+            rgb(0x435570), rgb(0xffdb80), rgb(0x344d70), false,
+            rgb(0xffa8a8), rgb(0xffd080), rgb(0x8ee0a5), rgb(0xaeb9c8)};
   return {rgb(0xf2f4f7), rgb(0xffffff), rgb(0x17212e), rgb(0x506074),
           rgb(0x687a90), rgb(0x195bb5), rgb(0xffffff), rgb(0xe0e9f5),
-          rgb(0xcbdaf0), rgb(0x754400), rgb(0xd4e4fa), false};
+          rgb(0xcbdaf0), rgb(0x754400), rgb(0xd4e4fa), false,
+          rgb(0xb42323), rgb(0x825500), rgb(0x146e37), rgb(0x687a90)};
 }
 
 const ThemePalette &defaultTheme() {
@@ -48,4 +53,197 @@ const ThemePalette &defaultTheme() {
                                          ContrastPreference::Normal, {});
   return value;
 }
+
+void ThemeTypography::validate() const {
+  if (!std::isfinite(textScale) || textScale <= 0 || textScale > 8)
+    throw std::invalid_argument("Invalid theme text scale");
+  for (const auto &style : styles)
+    if (style.family < FontFamily::Interface ||
+        style.family >= FontFamily::Count || !std::isfinite(style.size) ||
+        style.size <= 0 || style.size > 512 ||
+        !std::isfinite(style.lineHeight) || style.lineHeight < 1 ||
+        style.lineHeight > 4)
+      throw std::invalid_argument("Invalid theme text style");
+}
+
+void ThemeMetrics::validate() const {
+  stepper.validate();
+  for (auto value : {controlHeight,
+                     buttonPadding,
+                     padding,
+                     gap,
+                     sectionGap,
+                     borderWidth,
+                     focusWidth,
+                     indicatorStroke,
+                     emphasisWidth,
+                     disabledDash,
+                     indicatorSize,
+                     switchWidth,
+                     switchHeight,
+                     indicatorGap,
+                     iconSize,
+                     chevronWidth,
+                     chevronHeight,
+                     sliderLength,
+                     sliderBreadth,
+                     sliderTrack,
+                     sliderThumbLength,
+                     sliderThumbBreadth,
+                     meterLength,
+                     meterHeight,
+                     meterMarker,
+                     inputWidth,
+                     inputPadding,
+                     caretWidth,
+                     textAreaLines,
+                     scrollbarThickness,
+                     scrollbarMinimumThumb,
+                     popupGap,
+                     popupPadding,
+                     popupMaximumHeight,
+                     settingsPadding})
+    if (!std::isfinite(value) || value < 0 || value > 65536)
+      throw std::invalid_argument("Invalid theme metric");
+  if (disabledDash <= 0 || emphasisWidth <= 0 || chevronWidth <= 0 ||
+      chevronHeight < indicatorStroke || sliderLength <= 0 ||
+      sliderBreadth <= 0 || sliderTrack <= 0 || sliderThumbLength <= 0 ||
+      sliderThumbBreadth <= 0 || meterLength <= 0 || meterHeight <= 0 ||
+      meterMarker <= 0 || focusWidth < 1 || indicatorStroke <= 0 ||
+      indicatorSize <= 0 || switchHeight <= 0 || switchWidth < switchHeight ||
+      iconSize <= 0 || inputWidth <= 0 || textAreaLines < 1 ||
+      caretWidth <= 0 || popupMaximumHeight <= 0 ||
+      !std::isfinite(tooltipShowDelay) || tooltipShowDelay < 0 ||
+      !std::isfinite(tooltipHideDelay) || tooltipHideDelay < 0)
+    throw std::invalid_argument("Invalid theme control geometry/timing");
+}
+
+void ControlStyle::validate() const {
+  if (padding)
+    for (auto v :
+         {padding->left, padding->top, padding->right, padding->bottom})
+      if (!std::isfinite(v) || v < 0)
+        throw std::invalid_argument("Invalid control padding");
+  for (auto v : {minimumHeight, width, gap})
+    if (v && (!std::isfinite(*v) || *v < 0))
+      throw std::invalid_argument("Invalid control style");
+}
+
+void ThemeDefinition::validate() const {
+  metrics.validate();
+  typography.validate();
+}
+
+void ThemeOverrides::validate() const {
+  if (metrics)
+    metrics->validate();
+  if (typography)
+    typography->validate();
+  if (stepper)
+    stepper->validate();
+}
+
+const ThemeDefinition &defaultThemeDefinition() {
+  static const ThemeDefinition value{
+      resolveTheme(ColorSchemePreference::Light, ContrastPreference::Normal,
+                   {}),
+      resolveTheme(ColorSchemePreference::Dark, ContrastPreference::Normal, {}),
+      resolveTheme(ColorSchemePreference::Light, ContrastPreference::High, {}),
+      resolveTheme(ColorSchemePreference::Dark, ContrastPreference::High, {})};
+  return value;
+}
+
+ResolvedTheme resolveTheme(const ThemeDefinition &definition,
+                           ColorSchemePreference scheme,
+                           ContrastPreference contrast,
+                           const SystemAppearance &system) {
+  definition.validate();
+  // Retain preference validation in the palette convenience API.
+  (void)resolveTheme(scheme, contrast, {});
+  const bool dark =
+      scheme == ColorSchemePreference::Dark ||
+      (scheme == ColorSchemePreference::System && system.dark.value_or(false));
+  const bool high = contrast == ContrastPreference::High ||
+                    (contrast == ContrastPreference::System &&
+                     system.highContrast.value_or(false));
+  const bool forced = high && system.highContrast.value_or(false) &&
+                      system.contrastPalette.has_value();
+  auto colors = forced ? *system.contrastPalette
+                : high ? (dark ? definition.darkHighContrast
+                               : definition.lightHighContrast)
+                       : (dark ? definition.dark : definition.light);
+  colors.highContrast = high;
+  auto metrics = definition.metrics;
+  if (high) {
+    metrics.borderWidth = std::max(2.f, metrics.borderWidth);
+    metrics.focusWidth = std::max(2.f, metrics.focusWidth);
+  }
+  return {colors, metrics, definition.typography, forced};
+}
+
+const ResolvedTheme &defaultResolvedTheme() {
+  static const auto value =
+      resolveTheme(defaultThemeDefinition(), ColorSchemePreference::Light,
+                   ContrastPreference::Normal, {});
+  return value;
+}
+
+ControlStyle resolveControlStyle(ControlLayout role, const ThemeMetrics &m,
+                                 const ControlStyle &overrides) {
+  ControlStyle result;
+  switch (role) {
+  case ControlLayout::Button:
+  case ControlLayout::Choice:
+  case ControlLayout::Checkbox:
+  case ControlLayout::Switch:
+  case ControlLayout::Trigger:
+    result.padding = math::Insets::all(
+        role == ControlLayout::Button ? m.buttonPadding : m.padding);
+    result.minimumHeight = m.controlHeight;
+    if (role == ControlLayout::Checkbox)
+      result.padding->left += m.indicatorSize + m.indicatorGap;
+    if (role == ControlLayout::Switch)
+      result.padding->left += m.switchWidth + m.indicatorGap;
+    if (role == ControlLayout::Trigger)
+      result.padding->right += m.chevronWidth + m.indicatorGap;
+    break;
+  case ControlLayout::StepperButton:
+    result.minimumHeight = m.stepper.minimumHeight;
+    result.width = m.stepper.buttonWidth;
+    break;
+  case ControlLayout::StepperCenter:
+    result.minimumHeight = m.stepper.minimumHeight;
+    break;
+  case ControlLayout::StepperRow:
+    result.gap = m.stepper.gap;
+    break;
+  case ControlLayout::FieldRow:
+    result.gap = m.sectionGap;
+    break;
+  case ControlLayout::Group:
+    result.gap = m.gap;
+    break;
+  case ControlLayout::Settings:
+    result.padding = math::Insets::all(m.settingsPadding);
+    break;
+  case ControlLayout::InputGroup:
+    result.width = m.inputWidth;
+    break;
+  case ControlLayout::Section:
+    result.gap = m.sectionGap;
+    break;
+  default:
+    break;
+  }
+  if (overrides.padding)
+    result.padding = overrides.padding;
+  if (overrides.minimumHeight)
+    result.minimumHeight = overrides.minimumHeight;
+  if (overrides.width)
+    result.width = overrides.width;
+  if (overrides.gap)
+    result.gap = overrides.gap;
+  return result;
+}
+
 } // namespace playground::ui

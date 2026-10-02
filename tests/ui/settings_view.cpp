@@ -90,5 +90,18 @@ int main() {
     activate("Return to menu");
     test::require(closed == 1 && menu == 1,
                   "navigation provided by host callbacks");
+    auto definition = ui::defaultThemeDefinition();
+    definition.typography.textScale = 1.5f;
+    root.setThemeDefinition(definition);
+    root.flushLayout({900, 720});
+    const auto tabs = root.resolve(find("Settings categories"));
+    test::require(tabs && !tabs->children().empty(),
+                  "settings retain tab navigation");
+    ui::MeasureContext context;
+    for (const auto &tab : tabs->children()) {
+      const auto required = tab->measure(context, {{}, {}}).size.height;
+      test::require(tab->bounds().h() >= required,
+                    "enlarged settings text cannot collapse tab labels");
+    }
   });
 }

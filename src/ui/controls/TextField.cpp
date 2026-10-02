@@ -46,7 +46,10 @@ TextField::TextField(TextFieldProps props, std::string value,
                      layout::BoxProps box)
     : Node{box}, _props{std::move(props)},
       _model{_props.editing, std::move(value)} {
-  if (!_props.font)
+  if (_props.textRole && (*_props.textRole < TextRole::Display ||
+                          *_props.textRole >= TextRole::Count))
+    throw std::invalid_argument("Invalid text role");
+  if (!_props.font && !_props.textRole)
     throw std::invalid_argument("Text field requires a font");
   _accepted = _model.value();
   setInputProps({HitTestPolicy::Self, true});
@@ -62,11 +65,15 @@ void TextField::onDetach() noexcept {
 }
 
 void TextField::setProps(TextFieldProps props) {
-  if (!props.font)
+  if (props.textRole && (*props.textRole < TextRole::Display ||
+                         *props.textRole >= TextRole::Count))
+    throw std::invalid_argument("Invalid text role");
+  if (!props.font && !props.textRole)
     throw std::invalid_argument("Text field requires a font");
   textBoundaries(props.placeholder, TextBoundary::Grapheme);
   _model.setProps(props.editing);
   _props = std::move(props);
+  _themeFont.reset();
   if (!_props.enabled)
     onDetach();
   _layout.reset();
@@ -85,11 +92,23 @@ void TextField::applyPatch(const TextFieldPatch &p) {
             p.foreground.appliedTo(_props.foreground, d.foreground),
             p.background.appliedTo(_props.background, d.background),
             p.selection.appliedTo(_props.selection, d.selection),
-            p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
+            p.textRole.appliedTo(_props.textRole, d.textRole)});
+}
+
+FontHandle TextField::resolvedFont() const {
+  const auto &typography = resolvedTheme().typography;
+  if (!_themeFont || !_fontTypography || *_fontTypography != typography) {
+    _themeFont = resolveThemeFont(typography, _props.textRole, _props.font);
+    _fontTypography = typography;
+  }
+  return _themeFont;
 }
 
 void TextField::onThemeChanged() noexcept {
-  if (_layout)
+  if (!_fontTypography || *_fontTypography != resolvedTheme().typography) {
+    _themeFont.reset();
+    _layout.reset();
+  } else if (_layout)
     _layout->scale = 0;
 }
 
@@ -164,7 +183,7 @@ void TextField::changed(bool edit) {
 }
 
 void TextField::rebuild(float width) {
-  width = std::max(1.f, width - 8);
+  width = std::max(1.f, width - 2 * themeMetrics().inputPadding);
   std::string display = _model.value();
   std::vector<std::size_t> source(display.size() + 1);
   for (std::size_t i = 0; i < source.size(); ++i)
@@ -202,12 +221,12 @@ void TextField::rebuild(float width) {
   auto next = std::make_unique<Layout>();
   next->text = display;
   next->width = width;
-  next->lineHeight = float(std::max(1, _props.font->getLineSkip()));
+  next->lineHeight = float(std::max(1, resolvedFont()->getLineSkip()));
   using TextResource = SDLResource<TTF_Text, TTF_DestroyText>;
   auto ltr = std::make_shared<const Font>(
-      _props.font->cloneWith({.direction = TTF_DIRECTION_LTR}));
+      resolvedFont()->cloneWith({.direction = TTF_DIRECTION_LTR}));
   auto rtl = std::make_shared<const Font>(
-      _props.font->cloneWith({.direction = TTF_DIRECTION_RTL}));
+      resolvedFont()->cloneWith({.direction = TTF_DIRECTION_RTL}));
   const auto measure = [&](std::string_view line) {
     float width{};
     for (auto run : visualTextRuns(line)) {
@@ -221,7 +240,7 @@ void TextField::rebuild(float width) {
     return width;
   };
   std::size_t start{};
-  float y = 4;
+  float y = themeMetrics().inputPadding;
   const auto preeditOffset =
       std::min(_model.selection().anchor, _model.selection().caret) +
       _model.compositionSelection().caret;
@@ -250,7 +269,7 @@ void TextField::rebuild(float width) {
       }
     }
     const auto line = std::string_view{display}.substr(start, end - start);
-    float x = 4;
+    float x = themeMetrics().inputPadding;
     if (line.empty())
       next->carets.push_back({source[start], {x, y}});
     for (const auto run : visualTextRuns(line)) {
@@ -320,7 +339,7 @@ void TextField::rebuild(float width) {
       break;
     start = end == paragraphEnd ? end + 1 : end;
   }
-  next->height = y + 4;
+  next->height = y + themeMetrics().inputPadding;
   _layout = std::move(next);
   revealCaret();
 }
@@ -328,11 +347,14 @@ void TextField::rebuild(float width) {
 layout::MeasureResult
 TextField::measureContent(MeasureContext &,
                           const layout::SizeConstraints &offer) {
-  const float width = offer.width.maximum.value_or(240);
+  const float width = offer.width.maximum.value_or(themeMetrics().inputWidth);
   rebuild(width);
-  return {{width, _props.editing.multiline
-                      ? std::min(_layout->height, _layout->lineHeight * 5 + 8)
-                      : _layout->lineHeight + 8}};
+  return {{width,
+           _props.editing.multiline
+               ? std::min(_layout->height,
+                          _layout->lineHeight * themeMetrics().textAreaLines +
+                              2 * themeMetrics().inputPadding)
+               : _layout->lineHeight + 2 * themeMetrics().inputPadding}};
 }
 
 void TextField::arrangeChildren(ArrangeContext &, math::Rect area) {
@@ -358,14 +380,12 @@ void TextField::prepareContent(PrepareContext &context) {
     auto font = std::make_shared<const Font>(
         run.font->cloneWith({.size = run.font->getSize() * scale}));
     if (context.text && context.text->isEnabled()) {
-      sdl::FontTextSource source{font, run.text, 0,
-                                 _props.useTheme ? theme().text
-                                                 : _props.foreground};
+      sdl::FontTextSource source{font, run.text, 0, foreground()};
       run.image = context.text->prepareText(source);
     } else {
-      auto surface = adoptManagedSurface(TTF_RenderText_Blended(
-          font->get(), run.text.data(), run.text.size(),
-          sdl::toSDL(_props.useTheme ? theme().text : _props.foreground)));
+      auto surface = adoptManagedSurface(
+          TTF_RenderText_Blended(font->get(), run.text.data(), run.text.size(),
+                                 sdl::toSDL(foreground())));
       if (!surface)
         throwSDLError("Render editor run");
       run.image = sdl::makeSurfaceImage(std::move(surface));
@@ -378,7 +398,8 @@ void TextField::prepareContent(PrepareContext &context) {
 }
 
 TextInputState TextField::textInputState() const {
-  math::Point2 position{4, 4};
+  math::Point2 position{themeMetrics().inputPadding,
+                        themeMetrics().inputPadding};
   float best = std::numeric_limits<float>::infinity();
   if (_layout)
     for (const auto &caret : _layout->carets)
@@ -396,9 +417,10 @@ TextInputState TextField::textInputState() const {
     position = *_layout->compositionCaret;
   return {_props.editing.multiline, _props.editing.readOnly,
           _props.editing.password,
-          math::rect(position.x - _scroll.x, position.y - _scroll.y, 1,
+          math::rect(position.x - _scroll.x, position.y - _scroll.y,
+                     themeMetrics().caretWidth,
                      _layout ? _layout->lineHeight
-                             : float(_props.font->getLineSkip())),
+                             : float(resolvedFont()->getLineSkip())),
           !_model.composition().empty()};
 }
 
@@ -434,14 +456,18 @@ void TextField::moveVisually(int direction, bool extend) {
 
 void TextField::revealCaret() {
   const auto caret = textInputState().caret;
-  if (caret.left() < 4)
-    _scroll.x = std::max(0.f, _scroll.x + caret.left() - 4);
-  else if (bounds().w() > 8 && caret.right() > bounds().w() - 4)
-    _scroll.x += caret.right() - (bounds().w() - 4);
-  if (caret.top() < 4)
-    _scroll.y = std::max(0.f, _scroll.y + caret.top() - 4);
-  else if (bounds().h() > 8 && caret.bottom() > bounds().h() - 4)
-    _scroll.y += caret.bottom() - (bounds().h() - 4);
+  if (caret.left() < themeMetrics().inputPadding)
+    _scroll.x =
+        std::max(0.f, _scroll.x + caret.left() - themeMetrics().inputPadding);
+  else if (bounds().w() > 2 * themeMetrics().inputPadding &&
+           caret.right() > bounds().w() - themeMetrics().inputPadding)
+    _scroll.x += caret.right() - (bounds().w() - themeMetrics().inputPadding);
+  if (caret.top() < themeMetrics().inputPadding)
+    _scroll.y =
+        std::max(0.f, _scroll.y + caret.top() - themeMetrics().inputPadding);
+  else if (bounds().h() > 2 * themeMetrics().inputPadding &&
+           caret.bottom() > bounds().h() - themeMetrics().inputPadding)
+    _scroll.y += caret.bottom() - (bounds().h() - themeMetrics().inputPadding);
 }
 
 std::size_t TextField::hit(math::Point2 p) const {
@@ -452,8 +478,10 @@ std::size_t TextField::hit(math::Point2 p) const {
         lineDistance = distance;
   for (const auto &caret : _layout->carets) {
     const float line =
-        std::abs(std::floor((p.y + _scroll.y - 4) / _layout->lineHeight) -
-                 std::floor((caret.point.y - 4) / _layout->lineHeight));
+        std::abs(std::floor((p.y + _scroll.y - themeMetrics().inputPadding) /
+                            _layout->lineHeight) -
+                 std::floor((caret.point.y - themeMetrics().inputPadding) /
+                            _layout->lineHeight));
     const float d = std::abs(p.x + _scroll.x - caret.point.x);
     if (line < lineDistance || (line == lineDistance && d < distance)) {
       lineDistance = line;
@@ -466,10 +494,10 @@ std::size_t TextField::hit(math::Point2 p) const {
 
 void TextField::paint(PaintContext &context) const {
   context.fill({{}, bounds().size},
-               _props.useTheme ? theme().elevated : _props.background);
-  control_paint::outline(context, {{}, bounds().size},
-                         hasFocus() ? theme().focus : theme().border,
-                         hasFocus() ? 2.f : 1.f);
+               resolveColor(&ThemePalette::elevated, _props.background));
+  control_paint::outline(
+      context, {{}, bounds().size}, hasFocus() ? theme().focus : theme().border,
+      hasFocus() ? resolvedFocusWidth() : themeMetrics().borderWidth);
   if (!_layout)
     return;
   const auto selection = _model.selection();
@@ -479,11 +507,12 @@ void TextField::paint(PaintContext &context) const {
   context.translate(-_scroll);
   for (const auto &cluster : _layout->clusters)
     if (cluster.begin < b && cluster.end > a) {
-      if (_props.useTheme && theme().highContrast)
-        control_paint::outline(context, cluster.bounds, theme().focus, 1);
+      if (theme().highContrast)
+        control_paint::outline(context, cluster.bounds, theme().focus,
+                               themeMetrics().borderWidth);
       else
         context.fill(cluster.bounds,
-                     _props.useTheme ? theme().selection : _props.selection);
+                     resolveColor(&ThemePalette::selection, _props.selection));
     }
   for (const auto &run : _layout->runs)
     if (run.image)
@@ -492,16 +521,17 @@ void TextField::paint(PaintContext &context) const {
   if (hasFocus()) {
     auto caret = textInputState().caret;
     caret.position = caret.position + _scroll;
-    context.fill(caret, _props.useTheme ? theme().text : _props.foreground);
+    context.fill(caret, foreground());
   }
   if (!_model.composition().empty())
     for (const auto &cluster : _layout->clusters)
       if (cluster.begin == _model.selection().caret &&
           cluster.end == cluster.begin)
-        context.fill(math::rect(cluster.bounds.left(),
-                                cluster.bounds.bottom() - 1, cluster.bounds.w(),
-                                1),
-                     _props.useTheme ? theme().text : _props.foreground);
+        context.fill(
+            math::rect(cluster.bounds.left(),
+                       cluster.bounds.bottom() - themeMetrics().caretWidth,
+                       cluster.bounds.w(), themeMetrics().caretWidth),
+            foreground());
 }
 
 SemanticState TextField::semanticState() const {
@@ -690,9 +720,9 @@ void TextField::onDefaultEvent(UIEvent &e) {
     case Key::Up:
     case Key::Down: {
       auto caret = textInputState().caret;
-      auto p = hit(
-          {caret.left(), caret.top() + (e.logicalKey == Key::Up ? -1 : 1) *
-                                           float(_props.font->getLineSkip())});
+      auto p = hit({caret.left(),
+                    caret.top() + (e.logicalKey == Key::Up ? -1 : 1) *
+                                      float(resolvedFont()->getLineSkip())});
       _model.setSelection({e.shift ? _model.selection().anchor : p, p});
       break;
     }

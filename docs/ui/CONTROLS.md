@@ -1,5 +1,7 @@
 # Control behavior and composition
 
+[Theme contracts and typography](THEMING.md) define shared control presentation.
+
 ## State and ownership
 
 Controls retain typed props and explicit signals. Setters and patches validate
@@ -161,8 +163,8 @@ communicate unknown progress.
 
 ## Presentation and accessibility
 
-Shared ControlMetrics specify authored minimum extent and spacing for
-stepper compositions; appearance palettes supply semantic colors. Center slots
+ThemeMetrics supplies live geometry and spacing for all stock controls;
+ThemeTypography supplies text roles and appearance palettes supply semantic colors. Center slots
 align vertically; labels and editors use consistent row alignment. Content,
 fonts and units remain caller supplied. Vector icons avoid font coverage issues.
 Narrow rows wrap/reflow or scroll without reducing readable font size.

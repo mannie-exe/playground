@@ -39,7 +39,8 @@ protected:
 public:
   NumberStepper(std::unique_ptr<Node> center, std::unique_ptr<Node> decrease,
                 std::unique_ptr<Node> increase, NumberStepperProps = {},
-                ButtonProps = {}, layout::BoxProps = {}, ControlMetrics = {});
+                ButtonProps = {}, layout::BoxProps = {},
+                std::optional<ControlMetrics> = {});
 
   const NumberStepperProps &props() const noexcept { return _props; }
 

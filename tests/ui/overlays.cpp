@@ -182,10 +182,11 @@ int main() {
                   "bottom edge chooses above fallback");
     test::rejects(
         [&] {
-          placement.applyPopupPatch({.maximumHeight = Patch<float>::set(-1)});
+          placement.applyPopupPatch(
+              {.maximumHeight = Patch<std::optional<float>>::set(-1)});
         },
         "invalid popup patch rejected");
-    test::require(placement.popupProps().maximumHeight == 320,
+    test::require(placement.effectivePopupProps().maximumHeight == 320,
                   "rejected patch preserves props");
     placement.present(context, math::rect(0, 0, 30, 15), &anchor);
     test::require(placement.bounds().x() >= 0 &&

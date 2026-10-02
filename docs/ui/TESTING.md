@@ -154,7 +154,7 @@ Additional renderer/runtime constituents:
 | ui_stack_baselines | Mixed button padding, every pair of cross alignments in both child orders and directions, partial/fallback baselines, collapsed/empty rows and invalid child rejection |
 | ui_control_text_layout | Six real-font labels across button/checkbox/switch/select, four widths and four densities; raster/measurement agreement and render-only scaling stability |
 | ui_overlays | Clipped owners, viewport placement/fallback, no-flow sizing, preview/commit/cancel, focus restoration, outside press/release consumption, hide/focus-loss cleanup and invalid patches |
-| ui_theme | Native-preference fallback, independent scheme/contrast, local inheritance, root high-contrast priority and optional page background |
+| ui_theme | Four appearances, forced colors, authored/effective overrides, invalid metrics, explicit zero, reparenting and live composite geometry |
 | ui_control_paint | Light/dark/high-contrast slider hover/drag/cancellation, pointer ownership, vertical endpoints/tiny bounds, full-width borderless option rows |
 | ui_scroll_layers | Reserved gutters, clipped-content/chrome paint ordering, track and corner hit priority, drag cancellation, coupled axes, Auto removal and tiny viewports |
 | text_pixels | Styled glyph bearings/crops, straight-alpha mixed runs, natural/explicit line spacing, patch reset and immutable cache distinction |

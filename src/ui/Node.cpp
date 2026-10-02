@@ -2,8 +2,92 @@
 
 namespace playground::ui {
 
+const ResolvedTheme &Node::resolvedTheme() const noexcept {
+  if (!_resolvedTheme) {
+    auto value = _parent      ? _parent->resolvedTheme()
+                 : services() ? services()->theme
+                              : defaultResolvedTheme();
+    if (_theme.colors)
+      value.colors = *_theme.colors;
+    if (_theme.metrics)
+      value.metrics = *_theme.metrics;
+    if (_theme.typography)
+      value.typography = *_theme.typography;
+    if (_theme.stepper)
+      value.metrics.stepper = *_theme.stepper;
+    const auto &root = services() ? services()->theme : defaultResolvedTheme();
+    if (root.colors.highContrast) {
+      value.colors = root.colors;
+      value.metrics.borderWidth = std::max(2.f, value.metrics.borderWidth);
+      value.metrics.focusWidth = std::max(2.f, value.metrics.focusWidth);
+    }
+    value.forcedColors = root.forcedColors;
+    // User text scale is host policy, not a subtree styling override.
+    value.typography.textScale = root.typography.textScale;
+    _resolvedTheme = std::move(value);
+  }
+  return *_resolvedTheme;
+}
+
+void Node::setThemeOverrides(ThemeOverrides value) {
+  value.validate();
+  if (_theme == value)
+    return;
+  _theme = std::move(value);
+  refreshTheme();
+}
+
+void Node::refreshTheme() noexcept {
+  auto previous = std::move(_resolvedTheme);
+  _resolvedTheme.reset();
+  const auto &next = resolvedTheme();
+  const bool layout = !previous || previous->metrics != next.metrics ||
+                      previous->typography != next.typography;
+  onThemeChanged();
+  if (layout)
+    invalidateLayout();
+  else
+    invalidatePaint();
+  for (auto &child : _children)
+    child->refreshTheme();
+}
+
+void Node::setControlLayout(ControlLayout value) {
+  if (value < ControlLayout::None || value >= ControlLayout::Count)
+    throw std::invalid_argument("Invalid control layout");
+  if (_controlLayout == value)
+    return;
+  _controlLayout = value;
+  invalidateLayout();
+}
+
+void Node::setControlStyle(ControlStyle value) {
+  value.validate();
+  if (_controlStyle == value)
+    return;
+  _controlStyle = std::move(value);
+  invalidateLayout();
+}
+
+layout::BoxProps Node::effectiveBoxProps() const noexcept {
+  auto result = _box;
+  const auto style = resolvedControlStyle();
+  if (style.padding) {
+    result.padding.left += style.padding->left;
+    result.padding.top += style.padding->top;
+    result.padding.right += style.padding->right;
+    result.padding.bottom += style.padding->bottom;
+  }
+  if (style.minimumHeight)
+    result.minHeight = std::max(result.minHeight, *style.minimumHeight);
+  if (style.width && result.width.kind() == layout::SizeKind::Content)
+    result.width = layout::SizeRule::fixed(*style.width);
+  return result;
+}
+
 void Node::attach(const std::shared_ptr<detail::NodeTable> &table) {
   _table = table;
+  _resolvedTheme.reset();
   const std::size_t index =
       table->freeHead == std::numeric_limits<std::uint32_t>::max()
           ? table->slots.size()
@@ -100,11 +184,13 @@ Node &Node::insertChildAt(std::size_t index, std::unique_ptr<Node> child) {
     throw std::invalid_argument("UI child must be non-null and detached");
   _children.reserve(_children.size() + 1);
   child->_parent = this;
+  child->refreshTheme();
   try {
     if (auto table = _table.lock())
       child->attach(table);
   } catch (...) {
     child->_parent = nullptr;
+    child->refreshTheme();
     throw;
   }
   _children.insert(_children.begin() + static_cast<std::ptrdiff_t>(index),
@@ -159,6 +245,7 @@ std::unique_ptr<Node> Node::takeChildAt(std::size_t index) {
   _children.erase(_children.begin() + static_cast<std::ptrdiff_t>(index));
   child->detach();
   child->_parent = nullptr;
+  child->refreshTheme();
   invalidateLayout();
   return child;
 }
@@ -365,10 +452,11 @@ void Node::releaseAllPointers() noexcept {
 }
 
 math::Insets Node::contentInsets() const noexcept {
-  return {_box.padding.left + _box.borderWidths.left,
-          _box.padding.top + _box.borderWidths.top,
-          _box.padding.right + _box.borderWidths.right,
-          _box.padding.bottom + _box.borderWidths.bottom};
+  const auto box = effectiveBoxProps();
+  return {box.padding.left + box.borderWidths.left,
+          box.padding.top + box.borderWidths.top,
+          box.padding.right + box.borderWidths.right,
+          box.padding.bottom + box.borderWidths.bottom};
 }
 
 layout::MeasureResult Node::measure(MeasureContext &context,
@@ -399,6 +487,7 @@ layout::MeasureResult Node::measure(MeasureContext &context,
   // A custom measurement may update constraint-dependent derived state.
   if (!canReuseMeasurementOffers())
     ++_arrangeRevision;
+  const auto box = effectiveBoxProps();
   const auto insets = contentInsets();
   const float horizontal =
       layout::detail::checked(static_cast<double>(insets.left) + insets.right);
@@ -415,13 +504,13 @@ layout::MeasureResult Node::measure(MeasureContext &context,
   // Author limits must affect content measurement, not just clamp its final
   // box.
   const layout::SizeConstraints effective{
-      constrainAxis(offered.width, _box.minWidth, _box.maxWidth),
-      constrainAxis(offered.height, _box.minHeight, _box.maxHeight)};
-  auto width = requested(_box.width, offered.width);
-  auto height = requested(_box.height, offered.height);
+      constrainAxis(offered.width, box.minWidth, box.maxWidth),
+      constrainAxis(offered.height, box.minHeight, box.maxHeight)};
+  auto width = requested(box.width, offered.width);
+  auto height = requested(box.height, offered.height);
   if (context.diagnostics) {
-    for (const auto &[rule, axis] : {std::pair{_box.width, offered.width},
-                                     std::pair{_box.height, offered.height}})
+    for (const auto &[rule, axis] : {std::pair{box.width, offered.width},
+                                     std::pair{box.height, offered.height}})
       if (!axis.maximum && (rule.kind() == layout::SizeKind::Fill ||
                             rule.kind() == layout::SizeKind::Percent))
         context.diagnostics->report(id(), LayoutPhase::Measure,
@@ -429,22 +518,22 @@ layout::MeasureResult Node::measure(MeasureContext &context,
                                         ? LayoutIssue::UnboundedFill
                                         : LayoutIssue::IndefinitePercent,
                                     "Indefinite sizing falls back to content");
-    if ((offered.width.maximum && *offered.width.maximum < _box.minWidth) ||
-        (offered.height.maximum && *offered.height.maximum < _box.minHeight))
+    if ((offered.width.maximum && *offered.width.maximum < box.minWidth) ||
+        (offered.height.maximum && *offered.height.maximum < box.minHeight))
       context.diagnostics->report(id(), LayoutPhase::Measure,
                                   LayoutIssue::ConstraintViolation,
                                   "Parent maximum is below authored minimum");
-    if (_box.aspectRatio && width && height &&
-        !math::almostEqual(*width, *height * *_box.aspectRatio))
+    if (box.aspectRatio && width && height &&
+        !math::almostEqual(*width, *height * *box.aspectRatio))
       context.diagnostics->report(
           id(), LayoutPhase::Measure, LayoutIssue::AspectConflict,
           "Definite width and height override aspect ratio");
   }
-  if (_box.aspectRatio) {
+  if (box.aspectRatio) {
     if (width && !height)
-      height = *width / *_box.aspectRatio;
+      height = *width / *box.aspectRatio;
     if (height && !width)
-      width = *height * *_box.aspectRatio;
+      width = *height * *box.aspectRatio;
   }
   auto contentAxis = [](const layout::AxisConstraints &incoming,
                         std::optional<float> desired, float inset) {
@@ -484,16 +573,16 @@ layout::MeasureResult Node::measure(MeasureContext &context,
       static_cast<double>(result.size.width) + horizontal));
   float h = height.value_or(layout::detail::checked(
       static_cast<double>(result.size.height) + vertical));
-  if (_box.aspectRatio && !width && !height) {
-    w = std::max(w, h * *_box.aspectRatio);
-    h = w / *_box.aspectRatio;
+  if (box.aspectRatio && !width && !height) {
+    w = std::max(w, h * *box.aspectRatio);
+    h = w / *box.aspectRatio;
   }
-  w = std::max(_box.minWidth, w);
-  h = std::max(_box.minHeight, h);
-  if (_box.maxWidth)
-    w = std::min(w, *_box.maxWidth);
-  if (_box.maxHeight)
-    h = std::min(h, *_box.maxHeight);
+  w = std::max(box.minWidth, w);
+  h = std::max(box.minHeight, h);
+  if (box.maxWidth)
+    w = std::min(w, *box.maxWidth);
+  if (box.maxHeight)
+    h = std::min(h, *box.maxHeight);
   result.size = {offered.width.clamp(w), offered.height.clamp(h)};
   if (result.firstBaseline)
     *result.firstBaseline += insets.top;
@@ -632,24 +721,25 @@ void Node::render(PaintContext &context, bool overlayPresentation) const {
   if (_paintStyle.opacity < 1)
     layer.emplace(context, paintBounds(), _paintStyle.opacity);
   if (_paintStyle.background)
-    context.fill({{}, _bounds.size}, *_paintStyle.background);
+    context.fill({{}, _bounds.size},
+                 resolveColor(&ThemePalette::surface, _paintStyle.background));
   else if (_paintStyle.themeBackground)
     context.fill({{}, _bounds.size}, theme().surface);
   if (_paintStyle.borderColor) {
     const auto b = _box.borderWidths;
     const float w = _bounds.w(), h = _bounds.h();
     context.fill(math::rect(0, 0, w, std::min(h, b.top)),
-                 *_paintStyle.borderColor);
+                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
     context.fill(math::rect(0, std::max(b.top, h - b.bottom), w,
                             std::min(std::max(0.0f, h - b.top), b.bottom)),
-                 *_paintStyle.borderColor);
+                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
     const float sideHeight = std::max(0.0f, h - b.top - b.bottom);
     context.fill(math::rect(0, b.top, std::min(w, b.left), sideHeight),
-                 *_paintStyle.borderColor);
+                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
     context.fill(math::rect(std::max(b.left, w - b.right), b.top,
                             std::min(std::max(0.0f, w - b.left), b.right),
                             sideHeight),
-                 *_paintStyle.borderColor);
+                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
   }
   paintSubtree(context);
   if (layer)

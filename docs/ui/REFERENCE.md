@@ -445,8 +445,10 @@ and optional BoxProps. TextPatch mirrors its fields:
 
 | Field | Default / meaning |
 |---|---|
-| value / font | empty UTF-8 string / required FontHandle |
-| foreground / background | opaque white / opaque black |
+| value / font | empty UTF-8 string / optional fallback FontHandle; required without a textRole |
+| foreground / background | optional overrides of semantic ink / surface |
+| textRole / ink | absent / Primary; role selects theme typography, ink selects semantic color |
+| colorTreatment | Adaptive; PreserveArtwork keeps authored content colors |
 | method | Blended; also Solid, Shaded, LCD |
 | wrap | None; AvailableInlineSize wraps to inner width horizontally, inner height vertically |
 | paragraphAlignment | Start; also Center/End, resolved with direction |
@@ -472,7 +474,7 @@ size is source pixels / assetDensity, not current display density.
 [Vector.hpp](../../include/ui/content/Vector.hpp): AssetRegistry& plus VectorProps/Patch
 source required (asset-path string or SVGDocumentHandle), styles={},
 intrinsicSize=nullopt, content defaults, rasterScale=1,
-maximumRasterPixels=16×1024², useTheme=false. Opting into useTheme replaces paint
+maximumRasterPixels=16×1024², colorTreatment=PreserveArtwork. Selecting Adaptive replaces paint
 tint with theme text/mutedText (including disabled ancestors); use white monochrome
 SVGs for icons. It does not replace arbitrary SVG fills or recolor artwork intelligently.
 Raster size follows final dimensions and display
@@ -494,9 +496,9 @@ ContentStyle is replaced as a group via its parent's patch, not a property casca
 
 [controls/Button.hpp](../../include/ui/controls/Button.hpp).
 Single arbitrary content subtree, centered by default. ButtonProps/ButtonPatch:
-enabled=true; normal={70,70,70,255}, hover={95,95,95,255},
-pressed={45,45,45,255}, disabled={60,60,60,255};
-focus={255,215,80,255}, focusWidth=2 logical units (finite and nonnegative).
+enabled=true; normal/hover/pressed/disabled/focus and focusWidth are optional
+overrides. Absent colors use semantic theme roles. Focus width is finite and
+nonnegative, with the effective theme focus width as an accessibility minimum.
 The focus border is drawn after child content and does not change layout size.
 setEnabled/isEnabled/isHovered/isPressed; onActivate returns a Connection to retain.
 
@@ -513,8 +515,9 @@ owns the accepted value when present. Readouts use the stepper's numeric range.
 NumberStepperProps/NumberStepperPatch expose value, minimum, maximum, step,
 enabled, name and readOnly. Values are doubles; integer-only entry is a
 NumberField constraint. Setters are silent; onValueChanged and onValueEdited
-report accepted interaction changes. Shared ControlMetrics configure button
-extent and spacing; center content aligns vertically.
+report accepted interaction changes. ThemeMetrics::stepper configures live button
+extent and spacing; an optional ControlMetrics constructor argument overrides
+that group explicitly; center content aligns vertically.
 
 [ChoiceStepper.hpp](../../include/ui/controls/ChoiceStepper.hpp) uses stable
 selection keys. Its center is a Select by default or a readout when explicitly
@@ -558,17 +561,16 @@ Programmatic setters are silent; user/native operations commit state before sign
 | `controls/Composite.hpp`: Field, FieldGroup | FieldProps/FieldPatch: label/description; supplied visible label/control/help nodes. Field links IDs after arrangement; FieldGroup supplies named grouping. |
 | `controls/Composite.hpp`: Status, Tooltip | Supplied content and semantic message. Status is a polite live region. Tooltip is a passive anchored popup; owner controls anchor, open state and timing. |
 
-`Theme.hpp` provides ColorSchemePreference, ContrastPreference, ThemePalette,
-SystemAppearance and resolveTheme. `UIRoot::setTheme` publishes the palette;
-`Node::setTheme` optionally overrides a subtree (root high contrast wins).
-Text and controls default to `useTheme=true`; explicit artwork colors require
-false. `PaintStyle::themeBackground` opts a node into the palette surface fill,
-without forcing all sessions to cover underlying scenes. Background color, when
-provided, takes precedence. Palette changes invalidate prepared color resources.
+`Theme.hpp` defines ThemeDefinition, ResolvedTheme, ThemeOverrides, ThemeMetrics,
+ThemeTypography, TextRole, FontFamily, ControlLayout and ControlStyle.
+UIRoot publishes definitions and appearance preferences; nodes inherit resolved
+values and optional subtree groups. Stock control colors and dimensions are
+optional overrides. See [theming](THEMING.md) for resolution and accessibility.
 
 `containers/Popup.hpp` defines Portal and Popup. `PopupProps/PopupPatch` contain
 open, anchor NodeId, placement/fallbacks (Below/Above Start/End or Center),
-Content/MatchAnchor width, gap=4, viewportPadding=8, maximumHeight=320,
+Content/MatchAnchor width, optional gap/viewportPadding/maximumHeight
+(theme defaults 4/8/320),
 dismissOutside/dismissOnEscape/closeOnTab/autoFocus=true, and optional backdrop.
 Use popupProps/setPopupProps/applyPopupPatch, setOpen/setAnchor, onDismissed.
 UIRoot places and paints portals outside ordinary flow/ancestor clips, within
@@ -578,44 +580,19 @@ Dialogs retain their separate DialogProps and set policy for centered modal use.
 See [appearance and overlays](ACCESSIBILITY.md#appearance-and-transient-surfaces)
 for platform defaults, focus, placement and ownership contracts.
 
-### Concrete control appearance and layout defaults
+### Control appearance and layout
 
-These are the implemented defaults, not a native-widget or Material Design theme.
-All dimensions below are logical units. Theme affects paint, not spacing or fonts.
+The built-in ThemeDefinition supplies four palettes sharing geometry and typography.
+All dimensions are logical units. ThemeMetrics is the source of stock control
+sizes; effectiveBoxProps/resolvedControlStyle report derived layout. Generic
+containers remain transparent and content-sized. ControlLayout recipes add control
+padding to authored BoxProps padding. Explicit ControlStyle zero disables that
+recipe padding without disabling focus indicators.
 
-| Element | Appearance | Layout / behavior |
-|---|---|---|
-| Box, Stack, Flow, Grid, groups | Transparent; no implicit border | Content-sized unless constrained; zero box padding/border and zero stack gap; Start alignment by default. Parent placement controls stretching. |
-| Button | Elevated fill; hover/pressed fills; disabled surface/muted outline; 1-unit border (2 in high contrast); 2-unit keyboard focus outline over children | Centered content; no implicit padding. Demo action buttons supply padding 10. |
-| ToggleButton | Button chrome; inset accent outline when checked | Padding 10 if caller supplied none; leading/vertically centered label. |
-| Checkbox / Switch | No resting outer button border; hover/pressed row fill; checkbox square/check/mixed bar or switch track/thumb; disabled indicator muted | Padding 10, plus 30/48 leading units for indicator. Indicators vertically center even with wrapped labels. |
-| ListBox / Select options / MenuList | No resting per-option border or button background; full-row selected, hover, pressed fills; one leading marker per row, active color taking precedence over selected color | Rows stretch to parent width, padding 10, leading/vertically centered content. Short labels do not shrink hit areas. Focus does not add nested Button chrome. |
-| RadioGroup | Borderless rows plus ring/dot indicator | Same stretching rows; leading padding 40. |
-| Select / Disclosure trigger | Bordered button with vector chevron, muted when disabled | Stretch to owning component width; padding 10, right padding 34; vertically centered chevron. |
-| Tabs | Padded buttons, selected accent underline | Padding 10; horizontal labels; retained active panel. |
-| NumberStepper | Two ordinary themed buttons with caller-owned content | Width 40/min-height 40 per button, row gap 8, expanding readout. SVGs avoid font coverage/baseline dependence. |
-| Slider | Thin border-color track, accent thumb; hover outline, thicker drag outline, outer keyboard focus; disabled/read-only thumb muted | Natural size 160×24 (or 24×160), track thickness 4, thumb 16×20; geometry clamps in tiny bounds. Hover/drag reset on cancellation. |
-| ProgressBar | Border-color track and accent fill | Natural 160×16, read-only. |
-| TextField / TextArea / NumberField | Elevated input surface, themed text/selection/caret/focus; high-contrast selection outline preserves text readability | Text layout and caret scrolling belong to field; TextArea enables multiline; Field composes caller-supplied label/help. |
-| Text / monochrome Vector | Text uses inherited ink by default; Vector must opt into useTheme; disabled ancestors select muted ink | Text needs an explicit font; wrap/fit are explicit. Vector defaults to centered Contain and linear sampling. |
-| ScrollView | Authored gray scrollbar, not palette-derived | Vertical, Fill sizing, Auto scrollbar, thickness 8, minimum thumb 16, wheel step 32; Content sizing is opt-in. |
-| Popup / Tooltip / Dialog | Elevated surface; dialog optionally dims background | Root portal, viewport-clamped. Popup defaults: match anchor width, gap 4, viewport inset 8, maximum height 320. Dialog centers; Tooltip is passive. |
-| Status / FieldGroup | No extra chrome | Status is a polite live region; grouping is semantic, not a forced box decoration. |
-
-Normal palette values (opaque sRGB):
-
-| Role | Light | Dark |
-|---|---|---|
-| surface / elevated | #f2f4f7 / #ffffff | #181c22 / #252c36 |
-| text / mutedText | #17212e / #506074 | #f0f3f7 / #aeb9c8 |
-| border / accent | #687a90 / #195bb5 | #748297 / #90bfff |
-| hover / pressed | #e0e9f5 / #cbdaf0 | #344153 / #435570 |
-| focus / selection | #754400 / #d4e4fa | #ffdb80 / #344d70 |
-| onAccent | #ffffff | #102340 |
-
-System appearance is the default. High contrast uses the supplied native palette
-when available, otherwise black/white with contrasting accent/focus colors; root
-high contrast overrides local palettes. Explicit authored artwork remains opt-out.
+Text and Vector use ColorTreatment::Adaptive for semantic ink or PreserveArtwork
+for exact authored content. TextRole selects semantic typography; omitted roles
+retain explicit font size, with user textScale applied. Settings and ordinary
+application controls use shared styles. See [theming](THEMING.md).
 
 Demo 2D keeps help/status outside the controls' scroll view. At width >=800 it
 reserves a 300-unit right column; below that, the panel spans available width
@@ -665,8 +642,9 @@ not clip; see [cache and isolation contracts](#rendering) for dirty-work behavio
 
 [ScrollView.hpp](../../include/ui/collections/ScrollView.hpp) owns one optional child.
 ScrollProps/ScrollPatch: axes=Vertical (Horizontal/Both supported), wheelStep=32,
-scrollbar=Auto (Never/Always supported), scrollbarThickness=8, minimumThumb=16,
-scrollbarColor={160,160,160,220}, sizing=Fill. Visible scrollbars reserve gutters
+scrollbar=Auto (Never/Always supported), sizing=Fill. scrollbarThickness,
+minimumThumb and scrollbarColor are optional overrides; effectiveProps() resolves
+theme values (built-in thickness 8, minimum thumb 16, semantic scrollbar ink). Visible scrollbars reserve gutters
 inside the border/padding-adjusted area. Content is clipped to the remaining
 viewport; tracks and thumbs paint afterward in the scroll view's chrome pass.
 `viewportExtent()` excludes gutters; the node's bounds still include them.

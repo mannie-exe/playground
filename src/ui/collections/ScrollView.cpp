@@ -20,7 +20,7 @@ bool ScrollView::showBar(layout::Axis axis) const {
 void ScrollView::resolveViewport(MeasureContext &context,
                                  math::Size2 available) {
   const bool bars = _props.scrollbar != ScrollbarPolicy::Never &&
-                    _props.scrollbarThickness > 0;
+                    *effectiveProps().scrollbarThickness > 0;
   _horizontalBar =
       bars && horizontal() && _props.scrollbar == ScrollbarPolicy::Always;
   _verticalBar =
@@ -29,10 +29,12 @@ void ScrollView::resolveViewport(MeasureContext &context,
   // restart from no Auto gutters on the next layout so growth removes them.
   for (int pass = 0; pass < 3; ++pass) {
     _viewport = {
-        std::max(0.f, available.width -
-                          (_verticalBar ? _props.scrollbarThickness : 0)),
+        std::max(0.f,
+                 available.width -
+                     (_verticalBar ? *effectiveProps().scrollbarThickness : 0)),
         std::max(0.f, available.height -
-                          (_horizontalBar ? _props.scrollbarThickness : 0))};
+                          (_horizontalBar ? *effectiveProps().scrollbarThickness
+                                          : 0))};
     const layout::SizeConstraints offered{
         horizontal() ? layout::AxisConstraints{}
                      : layout::AxisConstraints::tight(_viewport.width),
@@ -72,7 +74,7 @@ math::Rect ScrollView::thumb(layout::Axis axis) const {
               extent = x ? _extent.width : _extent.height,
               offset = x ? _offset.x : _offset.y;
   const float length = std::min(
-      viewport, std::max(_props.minimumThumb,
+      viewport, std::max(*effectiveProps().minimumThumb,
                          extent > 0 ? viewport * viewport / extent : viewport));
   const float start = extent > viewport
                           ? offset / (extent - viewport) * (viewport - length)
@@ -128,7 +130,7 @@ void ScrollView::paintSubtree(PaintContext &context) const {
   for (auto axis : {layout::Axis::Horizontal, layout::Axis::Vertical})
     if (showBar(axis)) {
       context.fill(track(axis), theme().surface);
-      context.fill(thumb(axis), _props.scrollbarColor);
+      context.fill(thumb(axis), *effectiveProps().scrollbarColor);
     }
 }
 

@@ -61,16 +61,18 @@ int main() {
             for (auto direction : {layout::LayoutDirection::LeftToRight,
                                    layout::LayoutDirection::RightToLeft}) {
               auto text = std::make_unique<ui::Text>(
-                  assets, ui::TextProps{.value = "alpha beta",
-                                        .font = font,
-                                        .method = method,
-                                        .wrap = wrap,
-                                        .paragraphAlignment = align,
-                                        .fontFit = fit,
-                                        .minFontSize = 8,
-                                        .maxFontSize = 20,
-                                        .fitStep = 2,
-                                        .useTheme = false});
+                  assets,
+                  ui::TextProps{.value = "alpha beta",
+                                .font = font,
+                                .method = method,
+                                .wrap = wrap,
+                                .paragraphAlignment = align,
+                                .fontFit = fit,
+                                .minFontSize = 8,
+                                .maxFontSize = 20,
+                                .fitStep = 2,
+                                .colorTreatment =
+                                    ui::ColorTreatment::PreserveArtwork});
               auto *t = text.get();
               root.setContent(std::move(text));
               root.flushLayout(math::Size2{80, 60}, direction);
@@ -83,8 +85,9 @@ int main() {
                   root.stats().textLayouts == layouts,
                   "unchanged preparation reuses density-specific text layout");
               t->applyPatch(
-                  {.foreground = playground::Patch<math::ColorRGBA8>::set(
-                       {200, 210, 220, 255})});
+                  {.foreground =
+                       playground::Patch<std::optional<math::ColorRGBA8>>::set(
+                           math::ColorRGBA8{200, 210, 220, 255})});
               root.prepare();
               test::require(
                   root.stats().textLayouts == layouts,
@@ -243,7 +246,7 @@ int main() {
       auto icon = std::make_unique<ui::Vector>(
           assets,
           ui::VectorProps{.source = base + "/assets/ui/icons/" + name + ".svg",
-                          .useTheme = true},
+                          .colorTreatment = ui::ColorTreatment::Adaptive},
           layout::BoxProps{.width = layout::SizeRule::fixed(24),
                            .height = layout::SizeRule::fixed(24)});
       auto *glyph = icon.get();
@@ -267,7 +270,13 @@ int main() {
       root.render(paint);
       test::require(paint.appearance.tint == glyph->theme().mutedText,
                     "disabled icon inherits disabled ancestor ink");
-      glyph->applyPatch({.useTheme = Patch<bool>::reset()});
+      root.setAppearance(ui::ColorSchemePreference::Dark,
+                         ui::ContrastPreference::High, {});
+      root.prepare();
+      root.render(paint);
+      test::require(paint.appearance.tint == glyph->theme().mutedText,
+                    "adaptive icons follow high-contrast disabled ink");
+      glyph->applyPatch({.colorTreatment = Patch<ui::ColorTreatment>::reset()});
       root.prepare();
       root.render(paint);
       test::require(paint.appearance.tint ==

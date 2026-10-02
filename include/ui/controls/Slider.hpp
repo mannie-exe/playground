@@ -10,8 +10,7 @@ struct SliderProps {
   bool readOnly{};
   layout::Axis axis{layout::Axis::Horizontal};
   std::string name;
-  math::ColorRGBA8 track{65, 65, 65, 255}, thumb{230, 190, 70, 255};
-  bool useTheme{true};
+  std::optional<math::ColorRGBA8> track, thumb;
   bool snapToStep{true};
   bool operator==(const SliderProps &) const = default;
 };
@@ -21,8 +20,7 @@ struct SliderPatch {
   Patch<bool> enabled, readOnly;
   Patch<layout::Axis> axis;
   Patch<std::string> name;
-  Patch<math::ColorRGBA8> track, thumb;
-  Patch<bool> useTheme;
+  Patch<std::optional<math::ColorRGBA8>> track, thumb;
   Patch<bool> snapToStep;
 };
 
@@ -81,8 +79,7 @@ public:
 struct ProgressProps {
   RangeValue range;
   std::string name;
-  math::ColorRGBA8 track{50, 50, 50, 255}, fill{90, 190, 100, 255};
-  bool useTheme{true};
+  std::optional<math::ColorRGBA8> track, fill;
   bool indeterminate{};
 };
 

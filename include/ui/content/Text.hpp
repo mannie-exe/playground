@@ -1,8 +1,6 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <optional>
 #include <string>
 
@@ -22,8 +20,7 @@ enum class TextMethod { Blended, Solid, Shaded, LCD };
 struct TextProps {
   std::string value;
   FontHandle font;
-  math::ColorRGBA8 foreground{255, 255, 255, 255};
-  math::ColorRGBA8 background{0, 0, 0, 255};
+  std::optional<math::ColorRGBA8> foreground, background;
   TextMethod method{TextMethod::Blended};
   TextWrap wrap{TextWrap::None};
   layout::Align paragraphAlignment{layout::Align::Start};
@@ -33,14 +30,16 @@ struct TextProps {
   float maxFontSize{256};
   float fitStep{0.5f};
   TextFlowProps flow;
-  bool useTheme{true};
+  ColorTreatment colorTreatment{ColorTreatment::Adaptive};
+  std::optional<TextRole> textRole;
+  TextInk ink{TextInk::Primary};
   bool operator==(const TextProps &) const = default;
 };
 
 struct TextPatch {
   Patch<std::string> value;
   Patch<FontHandle> font;
-  Patch<math::ColorRGBA8> foreground, background;
+  Patch<std::optional<math::ColorRGBA8>> foreground, background;
   Patch<TextMethod> method;
   Patch<TextWrap> wrap;
   Patch<layout::Align> paragraphAlignment;
@@ -48,7 +47,9 @@ struct TextPatch {
   Patch<FontFit> fontFit;
   Patch<float> minFontSize, maxFontSize, fitStep;
   Patch<TextFlowProps> flow;
-  Patch<bool> useTheme;
+  Patch<ColorTreatment> colorTreatment;
+  Patch<std::optional<TextRole>> textRole;
+  Patch<TextInk> ink;
 };
 
 class Text final : public Node {
@@ -63,6 +64,9 @@ class Text final : public Node {
 
   AssetRegistry &_assets;
   TextProps _props;
+  mutable FontHandle _themeFont;
+  mutable std::optional<ThemeTypography> _fontTypography;
+  FontHandle resolvedFont() const;
 
   struct LayoutEntry {
     layout::SizeConstraints constraints;
@@ -109,15 +113,27 @@ protected:
   void prepareContent(PrepareContext &context) override;
   void paint(PaintContext &context) const override;
 
-  void onThemeChanged() noexcept override { _prepared = false; }
+  void onThemeChanged() noexcept override;
 
   math::ColorRGBA8 foreground() const {
-    if (!_props.useTheme)
-      return _props.foreground;
-    for (auto *p = parent(); p; p = p->parent())
-      if (!p->isInteractionEnabled())
-        return theme().mutedText;
-    return theme().text;
+    if (_props.colorTreatment == ColorTreatment::PreserveArtwork)
+      return _props.foreground.value_or(theme().text);
+    if (!isEffectivelyEnabled())
+      return theme().mutedText;
+    const auto role =
+        _props.ink == TextInk::Secondary  ? &ThemePalette::mutedText
+        : _props.ink == TextInk::Error    ? &ThemePalette::error
+        : _props.ink == TextInk::Warning  ? &ThemePalette::warning
+        : _props.ink == TextInk::Success  ? &ThemePalette::success
+        : _props.ink == TextInk::OnAccent ? &ThemePalette::onAccent
+                                          : &ThemePalette::text;
+    return resolveColor(role, _props.foreground);
+  }
+
+  math::ColorRGBA8 background() const {
+    return _props.colorTreatment == ColorTreatment::PreserveArtwork
+               ? _props.background.value_or(theme().surface)
+               : resolveColor(&ThemePalette::surface, _props.background);
   }
 
 public:
@@ -133,7 +149,7 @@ public:
   bool isTruncated() const noexcept { return displayedValue() != _props.value; }
 
   FontHandle effectiveFont() const {
-    return _arrangedText ? _arrangedText->font : _props.font;
+    return _arrangedText ? _arrangedText->font : resolvedFont();
   }
 
   void setProps(TextProps value);

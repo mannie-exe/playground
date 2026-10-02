@@ -37,14 +37,16 @@ void Slider::applyPatch(const SliderPatch &p) {
             p.name.appliedTo(_props.name, d.name),
             p.track.appliedTo(_props.track, d.track),
             p.thumb.appliedTo(_props.thumb, d.thumb),
-            p.useTheme.appliedTo(_props.useTheme, d.useTheme),
             p.snapToStep.appliedTo(_props.snapToStep, d.snapToStep)});
 }
 
 layout::MeasureResult Slider::measureContent(MeasureContext &,
                                              const layout::SizeConstraints &) {
-  return {_props.axis == layout::Axis::Horizontal ? math::Size2{160, 24}
-                                                  : math::Size2{24, 160}};
+  return {_props.axis == layout::Axis::Horizontal
+              ? math::Size2{themeMetrics().sliderLength,
+                            themeMetrics().sliderBreadth}
+              : math::Size2{themeMetrics().sliderBreadth,
+                            themeMetrics().sliderLength}};
 }
 
 void Slider::paint(PaintContext &p) const {
@@ -55,9 +57,10 @@ void Slider::paint(PaintContext &p) const {
   const bool horizontal = _props.axis == layout::Axis::Horizontal;
   const float length = horizontal ? bounds().w() : bounds().h();
   const float breadth = horizontal ? bounds().h() : bounds().w();
-  const float thumbLength = std::min(16.f, length);
-  const float thumbBreadth = std::min(20.f, breadth);
-  const float trackBreadth = std::min(4.f, breadth);
+  const float thumbLength = std::min(themeMetrics().sliderThumbLength, length);
+  const float thumbBreadth =
+      std::min(themeMetrics().sliderThumbBreadth, breadth);
+  const float trackBreadth = std::min(themeMetrics().sliderTrack, breadth);
   const auto rect = [&](float x, float y, float w, float h) {
     return horizontal ? math::rect(x, y, w, h) : math::rect(y, x, h, w);
   };
@@ -66,18 +69,21 @@ void Slider::paint(PaintContext &p) const {
            (breadth - thumbBreadth) / 2, thumbLength, thumbBreadth);
   p.fill(rect(thumbLength / 2, (breadth - trackBreadth) / 2,
               length - thumbLength, trackBreadth),
-         _props.useTheme ? theme().border : _props.track);
-  const bool interactive = _props.enabled && !_props.readOnly;
-  p.fill(thumb, _props.useTheme
-                    ? (!interactive ? theme().mutedText : theme().accent)
-                    : _props.thumb);
+         resolveColor(&ThemePalette::border, _props.track));
+  const bool interactive = isEffectivelyEnabled() && !_props.readOnly;
+  p.fill(thumb, !interactive
+                    ? theme().mutedText
+                    : resolveColor(&ThemePalette::accent, _props.thumb));
+  if (!isEffectivelyEnabled())
+    control_paint::disabledOutline(p, {{}, bounds().size}, theme(),
+                                   themeMetrics());
   if (interactive && (_hovered || _pointer))
-    control_paint::outline(p, thumb,
-                           _props.useTheme ? theme().text : _props.track,
-                           _pointer ? 3.f : 2.f);
+    control_paint::outline(p, thumb, theme().text,
+                           _pointer ? themeMetrics().emphasisWidth
+                                    : themeMetrics().indicatorStroke);
   if (hasFocus() && _props.enabled)
-    control_paint::outline(p, {{}, bounds().size},
-                           _props.useTheme ? theme().focus : _props.thumb, 2);
+    control_paint::outline(p, {{}, bounds().size}, theme().focus,
+                           resolvedFocusWidth());
 }
 
 SemanticState Slider::semanticState() const {
@@ -160,7 +166,8 @@ void Slider::onDefaultEvent(UIEvent &e) {
        e.type == EventType::PointerUp)) {
     const bool horizontal = _props.axis == layout::Axis::Horizontal;
     const float extent = horizontal ? bounds().w() : bounds().h();
-    const float halfThumb = std::min(16.f, extent) / 2;
+    const float halfThumb =
+        std::min(themeMetrics().sliderThumbLength, extent) / 2;
     double t =
         extent > 2 * halfThumb
             ? ((horizontal ? e.localPosition.x : extent - e.localPosition.y) -
@@ -218,18 +225,19 @@ void ProgressBar::setProps(ProgressProps p) {
 
 layout::MeasureResult
 ProgressBar::measureContent(MeasureContext &, const layout::SizeConstraints &) {
-  return {{160, 16}};
+  return {{themeMetrics().meterLength, themeMetrics().meterHeight}};
 }
 
 void ProgressBar::paint(PaintContext &p) const {
-  p.fill({{}, bounds().size}, _props.useTheme ? theme().border : _props.track);
+  p.fill({{}, bounds().size},
+         resolveColor(&ThemePalette::border, _props.track));
   const auto &r = _props.range;
   const float t = _props.indeterminate ? .35f
                   : r.minimum == r.maximum
                       ? 0
                       : float((r.value - r.minimum) / (r.maximum - r.minimum));
   p.fill(math::rect(0, 0, bounds().w() * t, bounds().h()),
-         _props.useTheme ? theme().accent : _props.fill);
+         resolveColor(&ThemePalette::accent, _props.fill));
 }
 
 SemanticState ProgressBar::semanticState() const {

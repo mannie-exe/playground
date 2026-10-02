@@ -23,21 +23,20 @@ void Meter::setProps(MeterProps p) {
 
 layout::MeasureResult Meter::measureContent(MeasureContext &,
                                             const layout::SizeConstraints &) {
-  return {{160, 16}};
+  return {{themeMetrics().meterLength, themeMetrics().meterHeight}};
 }
 
 void Meter::paint(PaintContext &p) const {
   p.fill({{}, bounds().size}, theme().border);
   if (!_props.value) {
-    control_paint::outline(p, {{}, bounds().size}, theme().mutedText, 2);
+    control_paint::outline(p, {{}, bounds().size}, theme().mutedText,
+                           themeMetrics().indicatorStroke);
     return;
   }
   const auto v = *_props.value;
-  auto color = _props.critical && v >= *_props.critical
-                   ? (theme().highContrast ? theme().text : theme().error)
-               : _props.warning && v >= *_props.warning
-                   ? (theme().highContrast ? theme().text : theme().warning)
-                   : theme().accent;
+  auto color = _props.critical && v >= *_props.critical ? theme().error
+               : _props.warning && v >= *_props.warning ? theme().warning
+                                                        : theme().accent;
   p.fill(math::rect(0, 0,
                     bounds().w() *
                         float(std::clamp((v - _props.minimum) /
@@ -46,11 +45,14 @@ void Meter::paint(PaintContext &p) const {
                     bounds().h()),
          color);
   if (v > _props.maximum)
-    control_paint::outline(p, {{}, bounds().size}, theme().text, 2);
+    control_paint::outline(p, {{}, bounds().size}, theme().text,
+                           themeMetrics().indicatorStroke);
   if ((_props.critical && v >= *_props.critical) ||
       (_props.warning && v >= *_props.warning)) {
-    const float side = std::min({12.f, bounds().w(), bounds().h()});
+    const float side =
+        std::min({themeMetrics().meterMarker, bounds().w(), bounds().h()});
     const float x = bounds().w() - side, y = (bounds().h() - side) / 2;
+    p.fill(math::rect(x, y, side, side), theme().elevated);
     math::Path2D marker;
     if (_props.critical && v >= *_props.critical) {
       marker.moveTo({x, y}).lineTo({x + side, y + side});
@@ -61,7 +63,9 @@ void Meter::paint(PaintContext &p) const {
           .lineTo({x, y + side})
           .lineTo({x + side / 2, y});
     }
-    p.drawPath(marker, {.fill = {}, .stroke = theme().text, .strokeWidth = 2});
+    p.drawPath(marker, {.fill = {},
+                        .stroke = theme().text,
+                        .strokeWidth = themeMetrics().indicatorStroke});
   }
 }
 
@@ -90,17 +94,25 @@ SemanticState Meter::semanticState() const {
 
 void ControlIcon::paint(PaintContext &p) const {
   const float x = bounds().w() / 2, y = bounds().h() / 2;
+  const float half = std::min({themeMetrics().iconSize * .375f, x, y});
+  const float stroke = std::min(themeMetrics().indicatorStroke, 2 * half);
+  bool enabled = true;
+  for (auto *p = parent(); p; p = p->parent())
+    enabled &= p->isInteractionEnabled();
+  const auto ink = enabled ? theme().text : theme().mutedText;
   if (_glyph == ControlGlyph::Minus || _glyph == ControlGlyph::Plus) {
-    p.fill(math::rect(x - 6, y - 1, 12, 2), theme().text);
+    p.fill(math::rect(x - half, y - stroke / 2, 2 * half, stroke), ink);
     if (_glyph == ControlGlyph::Plus)
-      p.fill(math::rect(x - 1, y - 6, 2, 12), theme().text);
+      p.fill(math::rect(x - stroke / 2, y - half, stroke, 2 * half), ink);
   } else {
     math::Path2D path;
     float d = _glyph == ControlGlyph::Previous ? -1 : 1;
-    path.moveTo({x - d * 3, y - 6})
-        .lineTo({x + d * 3, y})
-        .lineTo({x - d * 3, y + 6});
-    p.drawPath(path, {.fill = {}, .stroke = theme().text, .strokeWidth = 2});
+    path.moveTo({x - d * half / 2, y - half})
+        .lineTo({x + d * half / 2, y})
+        .lineTo({x - d * half / 2, y + half});
+    p.drawPath(path, {.fill = {},
+                      .stroke = ink,
+                      .strokeWidth = themeMetrics().indicatorStroke});
   }
 }
 } // namespace playground::ui

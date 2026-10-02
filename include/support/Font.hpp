@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -8,6 +7,7 @@
 
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include <support/FontHandle.hpp>
 #include <support/SDLResource.hpp>
 
 using FontResource = SDLResource<TTF_Font, TTF_CloseFont>;
@@ -149,5 +149,3 @@ public:
 private:
   void configureFont(const FontProps &props);
 };
-
-using FontHandle = std::shared_ptr<const Font>;

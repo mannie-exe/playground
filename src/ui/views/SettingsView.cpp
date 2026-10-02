@@ -13,21 +13,22 @@ using namespace rendering;
 SettingsView::SettingsView(AssetRegistry &assets, FontHandle font,
                            GraphicsSettings settings,
                            SettingsViewActions actions)
-    : SettingsPanel{
-          layout::BoxProps{.maxWidth = 960, .padding = math::Insets::all(20)}},
-      _assets{assets}, _font{std::move(font)}, _actions{std::move(actions)},
-      _draft{settings}, _applied{settings} {
+    : SettingsPanel{layout::BoxProps{.maxWidth = 960}}, _assets{assets},
+      _font{std::move(font)}, _actions{std::move(actions)}, _draft{settings},
+      _applied{settings} {
+  setControlLayout(ControlLayout::Settings);
   setPaintStyle({.themeBackground = true});
   setSemanticProps(
       {.role = SemanticRole::Group, .name = "Playground settings"});
   build();
 }
 
-std::unique_ptr<Text> SettingsView::text(std::string value) {
-  return std::make_unique<Text>(
-      _assets, TextProps{.value = std::move(value),
-                         .font = _font,
-                         .wrap = TextWrap::AvailableInlineSize});
+std::unique_ptr<Text> SettingsView::text(std::string value, TextRole role) {
+  return std::make_unique<Text>(_assets,
+                                TextProps{.value = std::move(value),
+                                          .font = _font,
+                                          .wrap = TextWrap::AvailableInlineSize,
+                                          .textRole = role});
 }
 
 void SettingsView::arrangeChildren(ArrangeContext &ctx, math::Rect bounds) {
@@ -97,16 +98,18 @@ void SettingsView::submit(bool persist) {
 }
 
 void SettingsView::build() {
-  auto root = std::make_unique<VStack>(layout::StackProps{
-      .gap = 12, .childrenAlignment = layout::CrossAlignment::Stretch});
-  root->append(text("Playground settings"));
+  auto root = std::make_unique<VStack>(
+      layout::StackProps{.childrenAlignment = layout::CrossAlignment::Stretch});
+  root->setControlLayout(ControlLayout::Section);
+  root->append(text("Playground settings", TextRole::Title));
   root->append(text("Shared by every app. Edit a draft, then Apply for this "
                     "run or Save for future launches."));
   std::vector<TabItem> tabs;
   const std::string names[]{"General", "2D", "3D", "Automatic", "Resources"};
   for (unsigned group = 0; group < 5; ++group) {
     auto column = std::make_unique<VStack>(layout::StackProps{
-        .gap = 10, .childrenAlignment = layout::CrossAlignment::Stretch});
+        .childrenAlignment = layout::CrossAlignment::Stretch});
+    column->setControlLayout(ControlLayout::Group);
     if (group == 1)
       column->append(
           text("Raster scale applies to layers that opt in. Ordinary UI and "
@@ -143,7 +146,8 @@ void SettingsView::build() {
         column->append(std::move(toggle));
       } else {
         std::unique_ptr<Node> control;
-        auto error = text("");
+        auto error = text("", TextRole::Caption);
+        error->applyPatch({.ink = Patch<TextInk>::set(TextInk::Error)});
         auto *errorText = error.get();
         if (!field.choices.empty()) {
           std::vector<ChoiceItem> choices;
@@ -161,8 +165,7 @@ void SettingsView::build() {
                           field.choices[std::size_t(field.get(_draft))]},
                   .required = true,
                   .name = label},
-              ButtonProps{},
-              layout::BoxProps{.width = layout::SizeRule::fixed(240)});
+              ButtonProps{}, layout::BoxProps{});
           auto *raw = select.get();
           _connections.push_back(select->onSelectionChanged(
               [this, &field, readout](std::string key) {
@@ -183,7 +186,10 @@ void SettingsView::build() {
           control = std::move(select);
         } else {
           auto editor = std::make_unique<NumberField>(
-              TextFieldProps{.font = _font, .required = true, .name = label},
+              TextFieldProps{.font = _font,
+                             .required = true,
+                             .name = label,
+                             .textRole = TextRole::Label},
               NumberFieldProps{.range = {field.get(_draft), field.minimum,
                                          field.maximum, field.step},
                                .integer = field.kind == SettingKind::Integer},
@@ -199,9 +205,7 @@ void SettingsView::build() {
                                  .maximum = field.maximum,
                                  .step = field.step,
                                  .name = label},
-              ButtonProps{},
-              layout::BoxProps{.width = layout::SizeRule::fixed(240),
-                               .minHeight = 40});
+              ButtonProps{}, layout::BoxProps{});
           auto *raw = stepper.get();
           _connections.push_back(
               stepper->onValueChanged([this, &field](double value) {
@@ -221,6 +225,7 @@ void SettingsView::build() {
           });
           control = std::move(stepper);
         }
+        control->setControlLayout(ControlLayout::InputGroup);
         column->append(std::make_unique<Field>(
             std::move(control),
             text(label + (field.unit.empty()
@@ -244,8 +249,7 @@ void SettingsView::build() {
       column->append(std::move(gpu));
     }
     auto scroll = std::make_unique<ScrollView>(
-        std::move(column), ScrollProps{},
-        layout::BoxProps{.height = layout::SizeRule::fixed(340)});
+        std::move(column), ScrollProps{}, layout::BoxProps{.maxHeight = 340});
     tabs.push_back({std::to_string(group), names[group], text(names[group]),
                     std::move(scroll)});
   }
@@ -258,11 +262,11 @@ void SettingsView::build() {
   auto status = text("Changes are not applied until Apply or Save.");
   _status = status.get();
   root->append(std::move(status));
-  auto actions = std::make_unique<HStack>(layout::StackProps{.gap = 10});
+  auto actions = std::make_unique<HStack>(layout::StackProps{});
+  actions->setControlLayout(ControlLayout::Group);
   const auto button = [&](std::string label, std::function<void()> action) {
-    auto node = std::make_unique<Button>(
-        text(label), ButtonProps{},
-        layout::BoxProps{.padding = math::Insets::all(8)});
+    auto node = std::make_unique<Button>(text(label), ButtonProps{});
+    node->setControlLayout(ControlLayout::Choice);
     node->setSemanticProps({.role = SemanticRole::Button, .name = label});
     _connections.push_back(node->onActivate(std::move(action)));
     actions->append(std::move(node));
@@ -281,7 +285,8 @@ void SettingsView::build() {
   root->append(std::move(actions));
   root->append(text("Esc: close settings | Ctrl/Cmd+Shift+M: menu | Unapplied "
                     "edits are discarded on close."));
-  setChild(std::move(root));
+  setChild(std::make_unique<ScrollView>(
+      std::move(root), ScrollProps{.sizing = ScrollSizing::Content}));
 }
 
 void SettingsView::setResult(GraphicsSettings applied, std::string message) {

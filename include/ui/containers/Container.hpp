@@ -168,15 +168,15 @@ inline float marginCross(math::Insets value, layout::Axis axis) {
 }
 
 inline layout::AxisConstraints limits(const Node &node, layout::Axis axis) {
-  const auto &box = node.boxProps();
+  const auto &box = node.effectiveBoxProps();
   return axis == layout::Axis::Horizontal
              ? layout::AxisConstraints{box.minWidth, box.maxWidth}
              : layout::AxisConstraints{box.minHeight, box.maxHeight};
 }
 
 inline layout::SizeRule rule(const Node &node, layout::Axis axis) {
-  return axis == layout::Axis::Horizontal ? node.boxProps().width
-                                          : node.boxProps().height;
+  return axis == layout::Axis::Horizontal ? node.effectiveBoxProps().width
+                                          : node.effectiveBoxProps().height;
 }
 
 inline layout::SizeConstraints loose(layout::SizeConstraints value) {
@@ -188,10 +188,10 @@ inline layout::SizeConstraints loose(layout::SizeConstraints value) {
 inline layout::Alignment eligibleAlignment(const Node &node,
                                            layout::Alignment alignment) {
   if (alignment.horizontal == layout::Align::Stretch &&
-      node.boxProps().width.kind() == layout::SizeKind::Fixed)
+      node.effectiveBoxProps().width.kind() == layout::SizeKind::Fixed)
     alignment.horizontal = layout::Align::Start;
   if (alignment.vertical == layout::Align::Stretch &&
-      node.boxProps().height.kind() == layout::SizeKind::Fixed)
+      node.effectiveBoxProps().height.kind() == layout::SizeKind::Fixed)
     alignment.vertical = layout::Align::Start;
   return alignment;
 }

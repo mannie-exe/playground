@@ -13,17 +13,20 @@ class Disclosure::Header final : public Button {
 
 public:
   Header(Disclosure &owner, std::unique_ptr<Node> label, ButtonProps props)
-      : Button{std::move(label), props, {.padding = {10, 10, 34, 10}}},
-        _owner{owner} {}
+      : Button{std::move(label), props}, _owner{owner} {
+    setControlLayout(ControlLayout::Trigger);
+  }
 
 protected:
   void paint(PaintContext &p) const override {
     Button::paint(p);
-    control_paint::chevron(p,
-                           {std::max(0.f, bounds().w() - 24),
-                            std::max(0.f, (bounds().h() - 8) / 2)},
-                           _owner.expansionProps().expanded,
-                           isEnabled() ? theme().text : theme().mutedText);
+    control_paint::chevron(
+        p,
+        {std::max(0.f, bounds().w() - themeMetrics().padding -
+                           themeMetrics().chevronWidth),
+         std::max(0.f, (bounds().h() - themeMetrics().chevronHeight) / 2)},
+        _owner.expansionProps().expanded,
+        isEnabled() ? theme().text : theme().mutedText, themeMetrics());
   }
 
 public:
@@ -103,17 +106,20 @@ class Select::Trigger final : public Button {
 
 public:
   Trigger(Select &owner, std::unique_ptr<Node> label, ButtonProps p)
-      : Button{std::move(label), p, {.padding = {10, 10, 34, 10}}},
-        _owner{owner} {}
+      : Button{std::move(label), p}, _owner{owner} {
+    setControlLayout(ControlLayout::Trigger);
+  }
 
 protected:
   void paint(PaintContext &p) const override {
     Button::paint(p);
-    control_paint::chevron(p,
-                           {std::max(0.f, bounds().w() - 24),
-                            std::max(0.f, (bounds().h() - 8) / 2)},
-                           _owner.isExpanded(),
-                           isEnabled() ? theme().text : theme().mutedText);
+    control_paint::chevron(
+        p,
+        {std::max(0.f, bounds().w() - themeMetrics().padding -
+                           themeMetrics().chevronWidth),
+         std::max(0.f, (bounds().h() - themeMetrics().chevronHeight) / 2)},
+        _owner.isExpanded(), isEnabled() ? theme().text : theme().mutedText,
+        themeMetrics());
   }
 
 public:
@@ -317,8 +323,10 @@ protected:
   void paint(PaintContext &c) const override {
     Button::paint(c);
     if (selected)
-      c.fill(math::rect(0, std::max(0.f, bounds().h() - 3), bounds().w(), 3),
-             buttonProps().useTheme ? theme().accent : buttonProps().focus);
+      c.fill(math::rect(
+                 0, std::max(0.f, bounds().h() - themeMetrics().emphasisWidth),
+                 bounds().w(), themeMetrics().emphasisWidth),
+             theme().accent);
   }
 };
 
@@ -333,11 +341,10 @@ Tabs::Tabs(std::vector<TabItem> items, SelectionProps props, ButtonProps button,
   auto row = std::make_unique<HStack>();
   row->setSemanticProps({.role = SemanticRole::Tabs, .name = props.name});
   auto *bar = row.get();
-  append(std::move(row));
+  append(std::move(row), {.shrink = 0});
   for (auto &item : items) {
-    auto tab = std::make_unique<Tab>(
-        std::move(item.label), button,
-        layout::BoxProps{.padding = math::Insets::all(10)});
+    auto tab = std::make_unique<Tab>(std::move(item.label), button);
+    tab->setControlLayout(ControlLayout::Choice);
     tab->setSemanticProps({.name = item.name});
     auto *raw = tab.get();
     bar->append(std::move(tab));
@@ -449,17 +456,14 @@ void Dialog::setProps(DialogProps p) {
   setSemanticProps({.role = SemanticRole::Dialog,
                     .name = _props.name,
                     .description = _props.description});
-  setPopupProps(
-      {.open = _props.open,
-       .placement = PopupPlacement::Center,
-       .width = PopupWidth::Content,
-       .maximumHeight = std::numeric_limits<float>::max(),
-       .dismissOutside = false,
-       .dismissOnEscape = _props.dismissOnEscape,
-       .closeOnTab = false,
-       .backdrop = _props.modal
-                       ? std::optional<math::ColorRGBA8>{{0, 0, 0, 100}}
-                       : std::nullopt});
+  setPopupProps({.open = _props.open,
+                 .placement = PopupPlacement::Center,
+                 .width = PopupWidth::Content,
+                 .maximumHeight = std::numeric_limits<float>::max(),
+                 .dismissOutside = false,
+                 .dismissOnEscape = _props.dismissOnEscape,
+                 .closeOnTab = false,
+                 .themeBackdrop = _props.modal});
 }
 
 void Dialog::applyPatch(const DialogPatch &p) {
@@ -500,7 +504,8 @@ void Dialog::dismiss(DismissReason) {
 
 void Dialog::paint(PaintContext &p) const {
   p.fill({{}, bounds().size}, theme().elevated);
-  control_paint::outline(p, {{}, bounds().size}, theme().border, 2);
+  control_paint::outline(p, {{}, bounds().size}, theme().border,
+                         themeMetrics().indicatorStroke);
 }
 
 Field::Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
@@ -517,7 +522,8 @@ Field::Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
     _descriptionBaseline = _description->semanticProps();
   if (inlineControl) {
     auto row = std::make_unique<HStack>(layout::StackProps{
-        .gap = 16, .childrenAlignment = layout::CrossAlignment::Center});
+        .childrenAlignment = layout::CrossAlignment::Center});
+    row->setControlLayout(ControlLayout::FieldRow);
     row->append(std::move(label), {.grow = 1});
     row->append(std::move(control), {.shrink = 0});
     append(std::move(row));

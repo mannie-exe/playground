@@ -54,7 +54,7 @@ int main() {
     ui::UIRoot root;
     const math::ColorRGBA8 ink{200, 10, 20, 255};
     auto button = std::make_unique<ui::Button>(
-        nullptr, ui::ButtonProps{.normal = ink, .useTheme = false},
+        nullptr, ui::ButtonProps{.normal = ink},
         layout::BoxProps{.height = layout::SizeRule::fixed(300)});
     int activated{};
     auto connection = button->onActivate([&] { ++activated; });
@@ -70,10 +70,16 @@ int main() {
     Painter painter;
     root.render(painter);
     test::require(
-        painter.draws.size() == 3 && painter.draws[0].color == ink &&
+        painter.draws.size() == 7 && painter.draws[0].color == ink &&
             painter.draws[0].bounds == math::rect(0, 0, 92, 80) &&
-            painter.draws[1].bounds == math::rect(92, 0, 8, 80),
+            painter.draws[5].bounds == math::rect(92, 0, 8, 80) &&
+            painter.draws[6].color == view->theme().scrollbar,
         "content is clipped first, then gutter and thumb paint separately");
+    for (std::size_t i = 1; i < 5; ++i)
+      test::require(!painter.draws[i].bounds.hasArea() ||
+                        (painter.draws[i].bounds.right() <= 92 &&
+                         painter.draws[i].bounds.bottom() <= 80),
+                    "button outlines stay clipped to the content viewport");
     auto hit = root.hitTest({96, 70});
     test::require(hit && hit->target.get() == view,
                   "whole track wins hit testing, not only thumb");
@@ -109,7 +115,8 @@ int main() {
     root.flushLayout({100, 400});
     test::require(view->viewportExtent().width == 92,
                   "Always reserves gutter without overflow");
-    view->applyPatch({.scrollbarThickness = Patch<float>::set(0)});
+    view->applyPatch(
+        {.scrollbarThickness = Patch<std::optional<float>>::set(0)});
     root.flushLayout({100, 80});
     test::require(view->viewportExtent().width == 100,
                   "zero-thickness bars reserve nothing");

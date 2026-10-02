@@ -5,7 +5,8 @@
 namespace playground::ui {
 ToggleGroup::ToggleGroup(std::vector<ChoiceItem> items, ToggleGroupProps props,
                          bool checkboxes, layout::BoxProps box)
-    : HStack{{.gap = 8}, box}, _checkboxes{checkboxes} {
+    : HStack{{}, box}, _checkboxes{checkboxes} {
+  setControlLayout(ControlLayout::Group);
   std::set<std::string> keys;
   for (auto &item : items) {
     if (item.key.empty() || !keys.insert(item.key).second || !item.content)
@@ -120,8 +121,8 @@ void ToggleGroup::onDefaultEvent(UIEvent &e) {
 }
 
 Toolbar::Toolbar(std::string name, layout::BoxProps box)
-    : HStack{{.gap = 8, .childrenAlignment = layout::CrossAlignment::Center},
-             box} {
+    : HStack{{.childrenAlignment = layout::CrossAlignment::Center}, box} {
+  setControlLayout(ControlLayout::Group);
   setSemanticProps({.role = SemanticRole::Toolbar, .name = std::move(name)});
 }
 
@@ -201,9 +202,9 @@ void Toolbar::onDefaultEvent(UIEvent &e) {
 
 Accordion::Accordion(std::vector<AccordionItem> items, bool multiple,
                      layout::BoxProps box)
-    : VStack{{.gap = 8, .childrenAlignment = layout::CrossAlignment::Stretch},
-             box},
+    : VStack{{.childrenAlignment = layout::CrossAlignment::Stretch}, box},
       _multiple{multiple} {
+  setControlLayout(ControlLayout::Group);
   std::set<std::string> keys;
   for (auto &item : items) {
     if (item.key.empty() || !keys.insert(item.key).second)

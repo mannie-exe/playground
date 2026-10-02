@@ -1,8 +1,5 @@
 #pragma once
 
-#include <numeric>
-#include <span>
-
 #include <ui/containers/Container.hpp>
 
 namespace playground::ui {
@@ -52,6 +49,13 @@ public:
                  layout::BoxProps box = {})
       : PlacementContainer{box}, _axis{axis}, _props{props} {
     _props.validate(_axis);
+  }
+
+  layout::StackProps effectiveProps() const noexcept {
+    auto value = _props;
+    if (auto gap = resolvedControlStyle().gap)
+      value.gap = *gap;
+    return value;
   }
 
   layout::Axis axis() const noexcept { return _axis; }

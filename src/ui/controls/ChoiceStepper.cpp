@@ -5,18 +5,19 @@ namespace playground::ui {
 ChoiceStepper::ChoiceStepper(std::unique_ptr<Node> display,
                              std::vector<ChoiceItem> items,
                              SelectionProps props, ChoiceCenter mode, bool wrap,
-                             layout::BoxProps box, ControlMetrics metrics)
-    : HStack{{.gap = metrics.gap,
-              .childrenAlignment = layout::CrossAlignment::Center},
-             box},
+                             layout::BoxProps box,
+                             std::optional<ControlMetrics> metrics)
+    : HStack{{.childrenAlignment = layout::CrossAlignment::Center}, box},
       _wrap{wrap} {
-  metrics.validate();
+  if (metrics)
+    setThemeOverrides({.stepper = metrics});
+  setControlLayout(ControlLayout::StepperRow);
   for (auto &item : items)
     _items.push_back({item.key, item.label, item.enabled});
   auto previous = std::make_unique<Button>(
       std::make_unique<ControlIcon>(ControlGlyph::Previous), ButtonProps{},
-      layout::BoxProps{.width = layout::SizeRule::fixed(metrics.buttonWidth),
-                       .minHeight = metrics.minimumHeight});
+      layout::BoxProps{});
+  previous->setControlLayout(ControlLayout::StepperButton);
   _previous = previous.get();
   _connections.push_back(
       previous->onInvoke([this](ActionSource source) { stepBy(-1, source); }));
@@ -35,8 +36,9 @@ ChoiceStepper::ChoiceStepper(std::unique_ptr<Node> display,
     append(std::move(select), {.grow = 1});
   } else {
     auto center = std::make_unique<Box>(
-        layout::BoxProps{.minHeight = metrics.minimumHeight},
+        layout::BoxProps{},
         BoxContentProps{{layout::Align::Stretch, layout::Align::Center}});
+    center->setControlLayout(ControlLayout::StepperCenter);
     center->setChild(std::move(display));
     _center = center.get();
     _center->setInputProps({.focusable = true});
@@ -54,8 +56,8 @@ ChoiceStepper::ChoiceStepper(std::unique_ptr<Node> display,
   }
   auto next = std::make_unique<Button>(
       std::make_unique<ControlIcon>(ControlGlyph::Next), ButtonProps{},
-      layout::BoxProps{.width = layout::SizeRule::fixed(metrics.buttonWidth),
-                       .minHeight = metrics.minimumHeight});
+      layout::BoxProps{});
+  next->setControlLayout(ControlLayout::StepperButton);
   _next = next.get();
   _connections.push_back(
       next->onInvoke([this](ActionSource source) { stepBy(1, source); }));

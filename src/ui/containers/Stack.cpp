@@ -16,7 +16,7 @@ Stack::measureContent(MeasureContext &context,
   const auto plan = container_detail::stackPlan(
       *this, container_detail::childIndices(*this),
       [&](auto index) -> const auto & { return placementInParent(index); },
-      context, offered, _axis, _props);
+      context, offered, _axis, effectiveProps());
   return {plan.size, plan.firstBaseline, plan.lastBaseline};
 }
 
@@ -24,8 +24,8 @@ void Stack::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
   const auto plan = container_detail::stackPlan(
       *this, container_detail::childIndices(*this),
       [&](auto index) -> const auto & { return placementInParent(index); },
-      context, layout::SizeConstraints::tight(bounds.size), _axis, _props,
-      true);
+      context, layout::SizeConstraints::tight(bounds.size), _axis,
+      effectiveProps(), true);
   container_detail::arrangeStackPlan(*this, context, plan, bounds, _axis);
 }
 
