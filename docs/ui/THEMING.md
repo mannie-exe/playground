@@ -51,6 +51,9 @@ padding, minimum height, width and gap overrides. An explicit zero remains zero.
 resolvedControlStyle() reports effective values. BoxProps remains caller-owned
 layout; its padding is additional to control padding, and its explicit size constraints
 remain authoritative. A Content width uses the recipe's intrinsic width. Generic layout containers have no implicit control styling.
+StackProps.gap is optional: absent inherits the control recipe or zero; explicit
+values, including zero, override the recipe. ControlStyle.gap takes precedence.
+Resetting StackPatch.gap restores inheritance.
 
 Stock controls and composed controls use these same recipes. Future Combobox and
 Autocomplete reuse the input, trigger, list-row, popup and supporting-text roles;
@@ -61,21 +64,56 @@ validation, navigation, queue capacity and domain behavior remain control props.
 
 ## Typography
 
-TextRole identifies Display, Title, Heading, Body, Label, Caption and Code.
-FontFamily identifies Interface, Display and Monospace resources. A TextStyle
-specifies family, size, emphasis and line-height ratio. ThemeTypography stores the
-style table, optional family handles and textScale. Existing font resources serve
-as provisional fallbacks; family selection remains an explicit follow-up decision.
+TextRole identifies Display, Title, Heading, Body, Label, Caption, Code, Value
+and Prose. FontFamily identifies Interface, Display, Monospace and Serif resources.
+A TextStyle specifies family, size, line-height ratio and FontSelection. Selection
+contains weight (1–1000), slant (Upright/Italic) and optical design
+(Text/Caption/SmallText/Subhead/Display). ThemeTypography stores the style table,
+optional immutable FontFamilyDefinition handles and textScale. Definitions enumerate
+stable face IDs, resolved file sources, cache identities and selection metadata;
+they contain no open font objects. Titles/headings default to weight 700; other
+roles use 400.
+
+Matching prefers the requested slant, then optical design (Text fallback), then
+nearest weight with lighter ties. Other optical ties use enum order. Selection is
+deterministic and does not synthesize styles for registered families. Optical
+design is explicit, independent of DPI and textScale. Explicit legacy fallback
+fonts may synthesize bold/italic when a role or instance requests it.
+
+All static weight/italic variants are bundled, including Source Serif's five
+optical designs. Faces open on demand. OpenType shaping uses renderer defaults;
+arbitrary feature switches and variable axes are not exposed by this contract.
+No scene serialization or editor is required to enumerate or select these faces.
+
+| Roles | Bundled family | Use |
+| --- | --- | --- |
+| Display, Title, Heading, Label | Inter Display | Titles, buttons, tabs and control labels |
+| Body, Caption | Inter | Descriptions, help, errors and small captions |
+| Value | Inter | Editable or read-only values and selection choices |
+| Code | JetBrains Mono | Code, logs and technical measurements |
+| Prose | Source Serif 4 | Optional serif prose |
+
+Roles follow content purpose and readability, not focus or editability. A value
+keeps its role when made read-only. Small labels may use Caption. Prose is opt-in;
+ordinary interface text remains sans serif. All four appearances share typography.
+The host UISession supplies missing bundled families on attachment, preserving
+explicit family overrides. Standalone UIRoot users supply their own family handles
+or explicit fallback fonts. Bundled versions and licenses live in assets/fonts/README.md.
 Visual text roles do not assign accessibility heading levels. TextInk selects
 Primary, Secondary, Error, Warning, Success or OnAccent semantic ink independently
 of typography.
 
-Text and TextField accept an optional textRole. Without a role, an explicit font
+Text and TextField accept optional textRole, fontFamily and fontSelection props.
+An instance family/selection overrides the role's family/selection without changing
+its size or line height. Reset restores the role. Without a role, family-only text
+uses the explicit fallback size or 18 units. A control's text child can override
+its family independently; a subtree may override the typography table. Without a role, an explicit font
 retains its authored size; textScale still applies. With a role, the resolved style
 selects its family or falls back to the supplied font. Font resources are resolved
-through the existing font/asset infrastructure. Missing both family and fallback
+through the existing font/asset infrastructure. Missing both resolved family and fallback
 is an error at measurement, not silent invisible text. Typography changes clear
-text layout caches and reflow content without replacing edit models. DPI scaling
+text layout caches and reflow content without replacing edit models. Editors retain
+directional faces across width changes and replace them when typography changes. DPI scaling
 and user text scaling are separate and are each applied once. Tabs retain their
 navigation height; Settings scrolls overflowing content instead of shrinking text
 or making actions unreachable.
@@ -86,16 +124,20 @@ or making actions unreachable.
 auto definition = ui::defaultThemeDefinition();
 definition.metrics.padding = 12;
 definition.typography.textScale = 1.25f;
-definition.typography.families[static_cast<unsigned>(ui::FontFamily::Interface)] = font;
+definition.typography.families[static_cast<unsigned>(ui::FontFamily::Interface)] = customFamily;
 root.setThemeDefinition(std::move(definition));
 root.setAppearance(ui::ColorSchemePreference::System,
                    ui::ContrastPreference::System, appearance);
 button.setControlStyle({.padding = math::Insets::all(0)});
+text.applyPatch({
+    .fontFamily = Patch<std::optional<ui::FontFamily>>::set(ui::FontFamily::Serif),
+    .fontSelection = Patch<std::optional<ui::FontSelection>>::set(
+        {.weight = 600, .slant = ui::FontSlant::Italic})});
 ```
 
 Set an override to an empty optional to resume inheritance. Theme groups replace
-as groups; the optional stepper group changes only stepper metrics. Font families
-are borrowed shared resource handles, with ownership retained by the snapshot.
+as groups; the optional stepper group changes only stepper metrics. Font family
+definitions are shared immutable resources, with ownership retained by the snapshot.
 Settings for validation, navigation and resource budgets are unaffected.
 
 ## Verification

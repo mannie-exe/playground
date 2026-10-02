@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -17,6 +18,8 @@ struct TextFieldProps {
   std::string name, placeholder, validationMessage;
   std::optional<math::ColorRGBA8> foreground, background, selection;
   std::optional<TextRole> textRole;
+  std::optional<FontFamily> fontFamily;
+  std::optional<FontSelection> fontSelection;
   bool operator==(const TextFieldProps &) const = default;
 };
 
@@ -27,6 +30,8 @@ struct TextFieldPatch {
   Patch<std::string> name, placeholder, validationMessage;
   Patch<std::optional<math::ColorRGBA8>> foreground, background, selection;
   Patch<std::optional<TextRole>> textRole;
+  Patch<std::optional<FontFamily>> fontFamily;
+  Patch<std::optional<FontSelection>> fontSelection;
 };
 
 class TextField : public Node,
@@ -42,6 +47,7 @@ class TextField : public Node,
 
   std::unique_ptr<Layout> _layout;
   mutable FontHandle _themeFont;
+  mutable std::array<FontHandle, 2> _directionFonts;
   mutable std::optional<ThemeTypography> _fontTypography;
   FontHandle resolvedFont() const;
 

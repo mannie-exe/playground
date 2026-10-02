@@ -8,6 +8,7 @@
 #include <math/Color.hpp>
 #include <math/Geometry2D.hpp>
 #include <support/FontHandle.hpp>
+#include <ui/FontFamily.hpp>
 
 class AssetRegistry;
 
@@ -48,27 +49,32 @@ enum class TextRole {
   Label,
   Caption,
   Code,
+  Value,
+  Prose,
   Count
 };
-enum class FontFamily { Interface, Display, Monospace, Count };
+enum class FontFamily { Interface, Display, Monospace, Serif, Count };
 
 struct TextStyle {
   FontFamily family{FontFamily::Interface};
   float size{18}, lineHeight{1.25f};
-  bool emphasized{};
+  FontSelection face;
   bool operator==(const TextStyle &) const = default;
 };
 
 struct ThemeTypography {
   std::array<TextStyle, static_cast<std::size_t>(TextRole::Count)> styles{
-      {{FontFamily::Display, 36, 1.2f, true},
-       {FontFamily::Interface, 28, 1.2f, true},
-       {FontFamily::Interface, 22, 1.25f, true},
-       {FontFamily::Interface, 18, 1.25f, false},
-       {FontFamily::Interface, 18, 1.25f, false},
-       {FontFamily::Interface, 14, 1.3f, false},
-       {FontFamily::Monospace, 16, 1.25f, false}}};
-  std::array<FontHandle, static_cast<std::size_t>(FontFamily::Count)> families;
+      {{FontFamily::Display, 36, 1.2f, {700}},
+       {FontFamily::Display, 28, 1.2f, {700}},
+       {FontFamily::Display, 22, 1.25f, {700}},
+       {FontFamily::Interface, 18, 1.25f, {}},
+       {FontFamily::Display, 18, 1.25f, {}},
+       {FontFamily::Interface, 14, 1.3f, {}},
+       {FontFamily::Monospace, 16, 1.25f, {}},
+       {FontFamily::Interface, 18, 1.25f, {}},
+       {FontFamily::Serif, 18, 1.4f, {}}}};
+  std::array<FontFamilyHandle, static_cast<std::size_t>(FontFamily::Count)>
+      families;
   float textScale{1};
   void validate() const;
   bool operator==(const ThemeTypography &) const = default;
@@ -160,5 +166,7 @@ ControlStyle resolveControlStyle(ControlLayout, const ThemeMetrics &,
                                  const ControlStyle &);
 FontHandle resolveThemeFont(const ThemeTypography &, std::optional<TextRole>,
                             FontHandle fallback,
-                            AssetRegistry *assets = nullptr);
+                            AssetRegistry *assets = nullptr,
+                            std::optional<FontFamily> family = {},
+                            std::optional<FontSelection> selection = {});
 } // namespace playground::ui

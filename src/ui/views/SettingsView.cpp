@@ -103,7 +103,8 @@ void SettingsView::build() {
   root->setControlLayout(ControlLayout::Section);
   root->append(text("Playground settings", TextRole::Title));
   root->append(text("Shared by every app. Edit a draft, then Apply for this "
-                    "run or Save for future launches."));
+                    "run or Save for future launches.",
+                    TextRole::Body));
   std::vector<TabItem> tabs;
   const std::string names[]{"General", "2D", "3D", "Automatic", "Resources"};
   for (unsigned group = 0; group < 5; ++group) {
@@ -113,14 +114,17 @@ void SettingsView::build() {
     if (group == 1)
       column->append(
           text("Raster scale applies to layers that opt in. Ordinary UI and "
-               "text keep their authored resolution."));
+               "text keep their authored resolution.",
+               TextRole::Body));
     if (group == 2)
       column->append(text("Future options are stored preferences only. They "
-                          "have no rendering effect until supported."));
+                          "have no rendering effect until supported.",
+                          TextRole::Body));
     if (group == 3)
       column->append(text(
           "Automatic mode overrides only permitted scene resolution. It never "
-          "changes saved preferences, UI scale or simulation speed."));
+          "changes saved preferences, UI scale or simulation speed.",
+          TextRole::Body));
     for (const auto &field : graphicsSettingsSchema()) {
       if (static_cast<unsigned>(field.group) != group)
         continue;
@@ -152,10 +156,11 @@ void SettingsView::build() {
         if (!field.choices.empty()) {
           std::vector<ChoiceItem> choices;
           for (auto key : field.choices)
-            choices.push_back(
-                {std::string{key}, std::string{key}, text(std::string{key})});
+            choices.push_back({std::string{key}, std::string{key},
+                               text(std::string{key}, TextRole::Value)});
           auto display =
-              text(std::string{field.choices[std::size_t(field.get(_draft))]});
+              text(std::string{field.choices[std::size_t(field.get(_draft))]},
+                   TextRole::Value);
           auto *readout = display.get();
           auto select = std::make_unique<Select>(
               std::move(display), std::move(choices),
@@ -189,7 +194,7 @@ void SettingsView::build() {
               TextFieldProps{.font = _font,
                              .required = true,
                              .name = label,
-                             .textRole = TextRole::Label},
+                             .textRole = TextRole::Value},
               NumberFieldProps{.range = {field.get(_draft), field.minimum,
                                          field.maximum, field.step},
                                .integer = field.kind == SettingKind::Integer},
@@ -236,7 +241,7 @@ void SettingsView::build() {
       }
     }
     if (group == 4) {
-      auto meters = text("");
+      auto meters = text("", TextRole::Code);
       _meters = meters.get();
       column->append(std::move(meters));
       auto cpu = std::make_unique<Meter>(
@@ -259,7 +264,8 @@ void SettingsView::build() {
                                       .name = "Settings categories"});
   _tabs = categories.get();
   root->append(std::move(categories));
-  auto status = text("Changes are not applied until Apply or Save.");
+  auto status =
+      text("Changes are not applied until Apply or Save.", TextRole::Body);
   _status = status.get();
   root->append(std::move(status));
   auto actions = std::make_unique<HStack>(layout::StackProps{});
@@ -284,7 +290,8 @@ void SettingsView::build() {
   button("Return to menu", [this] { _actions.returnToMenu(); });
   root->append(std::move(actions));
   root->append(text("Esc: close settings | Ctrl/Cmd+Shift+M: menu | Unapplied "
-                    "edits are discarded on close."));
+                    "edits are discarded on close.",
+                    TextRole::Caption));
   setChild(std::make_unique<ScrollView>(
       std::move(root), ScrollProps{.sizing = ScrollSizing::Content}));
 }

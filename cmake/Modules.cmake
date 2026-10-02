@@ -52,6 +52,7 @@ playground_add_module(playground_text
 target_link_libraries(playground_text PRIVATE ICU::uc ICU::i18n ICU::data)
 
 playground_add_module(playground_ui_core
+    src/ui/FontFamily.cpp
     src/ui/Theme.cpp
     src/ui/Node.cpp
     src/ui/UIRoot.cpp

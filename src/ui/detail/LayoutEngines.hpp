@@ -87,19 +87,21 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
   }
 
   double natural =
-      margins +
-      (flex.empty() ? 0.0 : static_cast<double>(props.gap) * (flex.size() - 1));
+      margins + (flex.empty() ? 0.0
+                              : static_cast<double>(props.gap.value_or(0)) *
+                                    (flex.size() - 1));
   for (const auto &item : flex)
     natural += item.limits.clamp(item.basis);
   const float available =
       mainOffered.maximum.value_or(layout::detail::checked(natural));
   auto allocation = layout::allocateStack(
-      flex, std::max(0.0f, available - margins), props.gap);
+      flex, std::max(0.0f, available - margins), props.gap.value_or(0));
   float mainExtent = margins;
   if (flex.size() > 1)
     mainExtent =
-        sum(mainExtent, layout::detail::checked(static_cast<double>(props.gap) *
-                                                (flex.size() - 1)));
+        sum(mainExtent,
+            layout::detail::checked(static_cast<double>(props.gap.value_or(0)) *
+                                    (flex.size() - 1)));
   float crossExtent{};
   float firstAscent{}, firstDescent{}, lastAscent{}, lastDescent{};
 
@@ -140,8 +142,9 @@ StackPlan stackPlan(Node &parent, std::span<const std::size_t> indices,
   plan.size = size(mainExtent, crossExtent, axis);
   const float crossAvailable =
       arranging ? crossOffered.maximum.value_or(crossExtent) : crossExtent;
-  const auto distribution = layout::distributionOffsets(
-      props.distribution, available - mainExtent, plan.items.size(), props.gap);
+  const auto distribution =
+      layout::distributionOffsets(props.distribution, available - mainExtent,
+                                  plan.items.size(), props.gap.value_or(0));
   float cursor = distribution.leading;
   for (auto &item : plan.items) {
     const bool horizontal = axis == layout::Axis::Horizontal;

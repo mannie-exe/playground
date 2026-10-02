@@ -338,12 +338,13 @@ struct StackPlacement {
 };
 
 struct StackProps {
-  float gap{};
+  std::optional<float> gap;
   Distribution distribution{Distribution::Start};
   CrossAlignment childrenAlignment{CrossAlignment::Start};
 
   void validate(Axis axis = Axis::Horizontal) const {
-    detail::nonnegative(gap, "Stack gap must be finite and nonnegative");
+    if (gap)
+      detail::nonnegative(*gap, "Stack gap must be finite and nonnegative");
     if (axis == Axis::Vertical &&
         (childrenAlignment == CrossAlignment::FirstBaseline ||
          childrenAlignment == CrossAlignment::LastBaseline))

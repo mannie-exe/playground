@@ -5,47 +5,62 @@
 namespace playground::ui {
 FontHandle resolveThemeFont(const ThemeTypography &typography,
                             std::optional<TextRole> role, FontHandle fallback,
-                            AssetRegistry *assets) {
-  float size{}, lineHeight{};
-  bool emphasized{};
+                            AssetRegistry *assets,
+                            std::optional<FontFamily> family,
+                            std::optional<FontSelection> selection) {
+  if (family &&
+      (*family < FontFamily::Interface || *family >= FontFamily::Count))
+    throw std::invalid_argument("Invalid font family");
+  if (selection)
+    selection->validate();
+  FontProps props =
+      fallback ? fallback->props() : FontProps{.style = {.size = 18}};
+  float size = props.style.size;
+  std::optional<float> lineHeight;
   if (role) {
     if (*role < TextRole::Display || *role >= TextRole::Count)
       throw std::invalid_argument("Invalid text role");
     const auto &style = typography.styles[static_cast<std::size_t>(*role)];
-    if (auto family =
-            typography.families[static_cast<std::size_t>(style.family)])
-      fallback = std::move(family);
+    if (!family)
+      family = style.family;
+    if (!selection)
+      selection = style.face;
     size = style.size;
     lineHeight = style.lineHeight;
-    emphasized = style.emphasized;
   }
-  if (!fallback)
+  bool selected{};
+  if (family) {
+    if (const auto &definition =
+            typography.families[static_cast<std::size_t>(*family)]) {
+      const auto &face =
+          selectFontFace(*definition, selection.value_or(FontSelection{}));
+      props.path = face.path;
+      props.cacheIdentity = face.cacheIdentity;
+      props.style.flags &= ~(TTF_STYLE_BOLD | TTF_STYLE_ITALIC);
+      selected = true;
+    }
+  }
+  if (!selected && !fallback)
     throw std::invalid_argument(
         "Text requires a theme family or fallback font");
-  if (!role && typography.textScale == 1)
-    return fallback;
-  if (!role)
-    size = fallback->getSize();
-  size *= typography.textScale;
-  auto flags = fallback->props().style.flags;
-  if (emphasized)
-    flags |= TTF_STYLE_BOLD;
-  const auto lineSpace =
-      role ? std::optional<int>{sdl::checkedPixel(
-                 std::ceil(static_cast<double>(size) * lineHeight))}
-      : fallback->props().layout.lineSpace
-          ? std::optional<int>{sdl::checkedPixel(std::ceil(
-                static_cast<double>(*fallback->props().layout.lineSpace) *
-                typography.textScale))}
-          : std::nullopt;
-  if (assets) {
-    auto props = fallback->props();
-    props.style.size = size;
-    props.style.flags = flags;
-    props.layout.lineSpace = lineSpace;
-    return assets->getFont(std::move(props));
+  if (!selected && selection) {
+    props.style.flags &= ~(TTF_STYLE_BOLD | TTF_STYLE_ITALIC);
+    if (selection->weight >= 600)
+      props.style.flags |= TTF_STYLE_BOLD;
+    if (selection->slant == FontSlant::Italic)
+      props.style.flags |= TTF_STYLE_ITALIC;
   }
-  return std::make_shared<Font>(fallback->cloneWith(
-      {.size = size, .flags = flags, .lineSpace = lineSpace}));
+  if (!role && !family && !selection && typography.textScale == 1)
+    return fallback;
+  props.style.size = size * typography.textScale;
+  if (lineHeight)
+    props.layout.lineSpace = sdl::checkedPixel(
+        std::ceil(static_cast<double>(props.style.size) * *lineHeight));
+  else if (props.layout.lineSpace)
+    props.layout.lineSpace = sdl::checkedPixel(std::ceil(
+        static_cast<double>(*props.layout.lineSpace) * typography.textScale));
+  if (assets)
+    return assets->getFont(std::move(props));
+  return std::make_shared<Font>(std::move(props));
 }
 } // namespace playground::ui

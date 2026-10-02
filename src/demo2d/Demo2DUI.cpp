@@ -37,12 +37,13 @@ class ControlsShowcase final : public ui::ZStack {
   ui::Button *_tooltipTrigger{};
   std::vector<ui::Connection> _connections;
 
-  std::unique_ptr<ui::Text> label(std::string value) {
+  std::unique_ptr<ui::Text> label(std::string value,
+                                  ui::TextRole role = ui::TextRole::Label) {
     return std::make_unique<ui::Text>(
         _assets, ui::TextProps{.value = std::move(value),
                                .font = _font,
                                .wrap = ui::TextWrap::AvailableInlineSize,
-                               .textRole = ui::TextRole::Label});
+                               .textRole = role});
   }
 
   void report(std::string value) {
@@ -72,9 +73,11 @@ class ControlsShowcase final : public ui::ZStack {
 
   std::vector<ui::ChoiceItem> choices() {
     std::vector<ui::ChoiceItem> values;
-    values.push_back({"first", "First", label("First")});
-    values.push_back({"second", "Second", label("Second")});
-    values.push_back({"disabled", "Disabled", label("Disabled option"), false});
+    values.push_back({"first", "First", label("First", ui::TextRole::Value)});
+    values.push_back(
+        {"second", "Second", label("Second", ui::TextRole::Value)});
+    values.push_back({"disabled", "Disabled",
+                      label("Disabled option", ui::TextRole::Value), false});
     return values;
   }
 
@@ -124,8 +127,10 @@ public:
             .gap = 12, .childrenAlignment = layout::CrossAlignment::Stretch},
         layout::BoxProps{.padding = math::Insets::all(12)});
     information->setPaintStyle({.themeBackground = true});
-    information->append(label("Demo 2D — controls and accessibility"));
-    auto statusText = label("Ready — try the controls below");
+    information->append(
+        label("Demo 2D — controls and accessibility", ui::TextRole::Heading));
+    auto statusText =
+        label("Ready — try the controls below", ui::TextRole::Body);
     _statusText = statusText.get();
     auto status = std::make_unique<ui::Status>(
         std::move(statusText), "Ready — try the controls below");
@@ -134,7 +139,8 @@ public:
     information->append(
         label("Tab / Shift+Tab: focus • arrows: navigate or adjust • "
               "Enter/Space: activate • Esc: settings; Ctrl/Cmd+Shift+M: menu. "
-              "Gamepad D-pad and south/east buttons work too."));
+              "Gamepad D-pad and south/east buttons work too.",
+              ui::TextRole::Body));
     auto column = std::make_unique<ui::VStack>(
         layout::StackProps{
             .gap = 16, .childrenAlignment = layout::CrossAlignment::Stretch},
@@ -187,7 +193,8 @@ public:
     auto text = std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = _font,
                            .required = true,
-                           .placeholder = "Type Unicode text"},
+                           .placeholder = "Type Unicode text",
+                           .textRole = ui::TextRole::Value},
         "Editable text");
     _connections.push_back(text->onValueChanged([this](std::string v) {
       report("Text changed (" + std::to_string(v.size()) + " UTF-8 bytes)");
@@ -197,26 +204,32 @@ public:
     group->append(std::make_unique<ui::Field>(
         std::move(text), label("Name (required)"),
         label("Try selection, clipboard, undo, emoji, combining accents, RTL "
-              "and an IME."),
+              "and an IME.",
+              ui::TextRole::Caption),
         ui::FieldProps{.label = "Name", .description = "Required plain text"}));
-    group->append(std::make_unique<ui::TextField>(ui::TextFieldProps{
-        .font = _font,
-        .editing = {.password = true},
-        .name = "Password",
-        .placeholder = "Password — not copied or announced"}));
+    group->append(std::make_unique<ui::TextField>(
+        ui::TextFieldProps{.font = _font,
+                           .editing = {.password = true},
+                           .name = "Password",
+                           .placeholder = "Password — not copied or announced",
+                           .textRole = ui::TextRole::Value}));
     group->append(std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = _font,
                            .editing = {.readOnly = true},
-                           .name = "Read-only text"},
+                           .name = "Read-only text",
+                           .textRole = ui::TextRole::Value},
         "Read-only text can still be selected and copied"));
     group->append(std::make_unique<ui::TextArea>(
-        ui::TextFieldProps{.font = _font, .name = "Multiline notes"},
+        ui::TextFieldProps{.font = _font,
+                           .name = "Multiline notes",
+                           .textRole = ui::TextRole::Value},
         "Multiple lines, wrapping and selection.\nUnicode: café, á, שלום, "
         "مرحبا.\nEnter adds a line; Ctrl/Cmd+Enter commits.",
         layout::BoxProps{.height = layout::SizeRule::fixed(130)}));
     auto number = std::make_unique<ui::NumberField>(
         ui::TextFieldProps{.font = _font,
-                           .name = "Number from zero to one hundred"},
+                           .name = "Number from zero to one hundred",
+                           .textRole = ui::TextRole::Value},
         ui::NumberFieldProps{.range = {20, 0, 100, 1}, .integer = true});
     _connections.push_back(number->onNumberChanged(
         [this](double v) { report(std::format("Number: {}", v)); }));
@@ -237,7 +250,7 @@ public:
     }));
     column->append(std::move(slider));
     column->append(std::move(progress));
-    auto readout = label("3");
+    auto readout = label("3", ui::TextRole::Value);
     auto *readoutPtr = readout.get();
     auto stepper = std::make_unique<ui::NumberStepper>(
         std::move(readout), icon(resources.removeIcon), icon(resources.addIcon),
@@ -250,7 +263,7 @@ public:
     }));
     column->append(std::move(stepper));
 
-    auto choiceLabel = label("First");
+    auto choiceLabel = label("First", ui::TextRole::Value);
     auto *choiceText = choiceLabel.get();
     auto choiceStepper = std::make_unique<ui::ChoiceStepper>(
         std::move(choiceLabel), choices(),
@@ -284,7 +297,8 @@ public:
         label("Interactive anchored content; Escape dismisses")));
     column->append(std::make_unique<ui::TooltipTrigger>(
         std::make_unique<ui::Button>(label("Focus or hover for help")),
-        label("Shared tooltip timing"), "Shared tooltip timing"));
+        label("Shared tooltip timing", ui::TextRole::Caption),
+        "Shared tooltip timing"));
 
     column->append(label("Radio group"));
     auto radio = std::make_unique<ui::RadioGroup>(
@@ -300,7 +314,7 @@ public:
     _connections.push_back(list->onSelectionChanged(
         [this](std::string v) { report("List: " + v); }));
     column->append(std::move(list));
-    auto selectLabel = label("Select: First");
+    auto selectLabel = label("Select: First", ui::TextRole::Value);
     auto *selectedLabel = selectLabel.get();
     auto select = std::make_unique<ui::Select>(
         std::move(selectLabel), choices(),
@@ -322,11 +336,12 @@ public:
     tabs.push_back(
         {"overview", "Overview", label("Overview"),
          label("Overview panel — try Left/Right or Home/End on the tabs.")});
-    tabs.push_back(
-        {"details", "Details", label("Details"),
-         std::make_unique<ui::TextField>(
-             ui::TextFieldProps{.font = _font, .name = "Details note"},
-             "Retained when you switch tabs")});
+    tabs.push_back({"details", "Details", label("Details"),
+                    std::make_unique<ui::TextField>(
+                        ui::TextFieldProps{.font = _font,
+                                           .name = "Details note",
+                                           .textRole = ui::TextRole::Value},
+                        "Retained when you switch tabs")});
     column->append(std::make_unique<ui::Tabs>(
         std::move(tabs), ui::SelectionProps{.name = "Showcase tabs"}));
     auto menu = std::make_unique<ui::MenuList>(
@@ -340,7 +355,8 @@ public:
     column->append(std::move(menu));
 
     auto tooltip = std::make_unique<ui::Tooltip>(
-        label("Tooltip: passive help, not another keyboard stop."),
+        label("Tooltip: passive help, not another keyboard stop.",
+              ui::TextRole::Caption),
         "Passive help text");
     auto *hint = tooltip.get();
     _tooltip = hint;
@@ -368,11 +384,13 @@ public:
         .gap = 16, .childrenAlignment = layout::CrossAlignment::Stretch});
     dialogContent->append(
         label("Modal dialog — background controls cannot receive input. Close "
-              "to restore the opener."));
+              "to restore the opener.",
+              ui::TextRole::Body));
     dialogContent->append(std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = _font,
                            .name = "Dialog input",
-                           .placeholder = "Try typing here"}));
+                           .placeholder = "Try typing here",
+                           .textRole = ui::TextRole::Value}));
     auto close = button("Close dialog");
     _connections.push_back(close->onActivate([this] {
       _dialog->performAction(ui::SetExpanded{false}, ui::ActionSource::Program);

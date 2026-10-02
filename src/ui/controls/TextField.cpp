@@ -37,7 +37,7 @@ struct TextField::Layout {
   std::vector<Cluster> clusters;
   std::optional<math::Point2> compositionCaret;
   std::string text;
-  float width{}, height{}, lineHeight{};
+  float width{}, height{}, lineHeight{}, padding{};
   float scale{};
   rendering::ResourceDomainId domain{};
 };
@@ -46,10 +46,15 @@ TextField::TextField(TextFieldProps props, std::string value,
                      layout::BoxProps box)
     : Node{box}, _props{std::move(props)},
       _model{_props.editing, std::move(value)} {
+  if (_props.fontSelection)
+    _props.fontSelection->validate();
+  if (_props.fontFamily && (*_props.fontFamily < FontFamily::Interface ||
+                            *_props.fontFamily >= FontFamily::Count))
+    throw std::invalid_argument("Invalid font family");
   if (_props.textRole && (*_props.textRole < TextRole::Display ||
                           *_props.textRole >= TextRole::Count))
     throw std::invalid_argument("Invalid text role");
-  if (!_props.font && !_props.textRole)
+  if (!_props.font && !_props.textRole && !_props.fontFamily)
     throw std::invalid_argument("Text field requires a font");
   _accepted = _model.value();
   setInputProps({HitTestPolicy::Self, true});
@@ -65,10 +70,15 @@ void TextField::onDetach() noexcept {
 }
 
 void TextField::setProps(TextFieldProps props) {
+  if (props.fontSelection)
+    props.fontSelection->validate();
+  if (props.fontFamily && (*props.fontFamily < FontFamily::Interface ||
+                           *props.fontFamily >= FontFamily::Count))
+    throw std::invalid_argument("Invalid font family");
   if (props.textRole && (*props.textRole < TextRole::Display ||
                          *props.textRole >= TextRole::Count))
     throw std::invalid_argument("Invalid text role");
-  if (!props.font && !props.textRole)
+  if (!props.font && !props.textRole && !props.fontFamily)
     throw std::invalid_argument("Text field requires a font");
   textBoundaries(props.placeholder, TextBoundary::Grapheme);
   _model.setProps(props.editing);
@@ -92,14 +102,19 @@ void TextField::applyPatch(const TextFieldPatch &p) {
             p.foreground.appliedTo(_props.foreground, d.foreground),
             p.background.appliedTo(_props.background, d.background),
             p.selection.appliedTo(_props.selection, d.selection),
-            p.textRole.appliedTo(_props.textRole, d.textRole)});
+            p.textRole.appliedTo(_props.textRole, d.textRole),
+            p.fontFamily.appliedTo(_props.fontFamily, d.fontFamily),
+            p.fontSelection.appliedTo(_props.fontSelection, d.fontSelection)});
 }
 
 FontHandle TextField::resolvedFont() const {
   const auto &typography = resolvedTheme().typography;
   if (!_themeFont || !_fontTypography || *_fontTypography != typography) {
-    _themeFont = resolveThemeFont(typography, _props.textRole, _props.font);
+    _themeFont =
+        resolveThemeFont(typography, _props.textRole, _props.font, nullptr,
+                         _props.fontFamily, _props.fontSelection);
     _fontTypography = typography;
+    _directionFonts = {};
   }
   return _themeFont;
 }
@@ -216,17 +231,30 @@ void TextField::rebuild(float width) {
     display = _props.placeholder;
     source.assign(display.size() + 1, 0);
   }
-  if (_layout && _layout->text == display && _layout->width == width)
+  if (_layout && _layout->text == display && _layout->width == width &&
+      _layout->padding == themeMetrics().inputPadding)
     return;
   auto next = std::make_unique<Layout>();
   next->text = display;
   next->width = width;
+  next->padding = themeMetrics().inputPadding;
   next->lineHeight = float(std::max(1, resolvedFont()->getLineSkip()));
   using TextResource = SDLResource<TTF_Text, TTF_DestroyText>;
-  auto ltr = std::make_shared<const Font>(
-      resolvedFont()->cloneWith({.direction = TTF_DIRECTION_LTR}));
-  auto rtl = std::make_shared<const Font>(
-      resolvedFont()->cloneWith({.direction = TTF_DIRECTION_RTL}));
+  // Retain directional faces across width-dependent layout passes. Reopening
+  // them also discards FreeType/HarfBuzz glyph and script caches.
+  const auto font = resolvedFont();
+  if (!_directionFonts[0])
+    _directionFonts[0] = font->getDirection() == TTF_DIRECTION_LTR
+                             ? font
+                             : std::make_shared<const Font>(font->cloneWith(
+                                   {.direction = TTF_DIRECTION_LTR}));
+  if (!_directionFonts[1])
+    _directionFonts[1] = font->getDirection() == TTF_DIRECTION_RTL
+                             ? font
+                             : std::make_shared<const Font>(font->cloneWith(
+                                   {.direction = TTF_DIRECTION_RTL}));
+  const auto &ltr = _directionFonts[0];
+  const auto &rtl = _directionFonts[1];
   const auto measure = [&](std::string_view line) {
     float width{};
     for (auto run : visualTextRuns(line)) {
@@ -495,9 +523,14 @@ std::size_t TextField::hit(math::Point2 p) const {
 void TextField::paint(PaintContext &context) const {
   context.fill({{}, bounds().size},
                resolveColor(&ThemePalette::elevated, _props.background));
-  control_paint::outline(
-      context, {{}, bounds().size}, hasFocus() ? theme().focus : theme().border,
-      hasFocus() ? resolvedFocusWidth() : themeMetrics().borderWidth);
+  if (!isEffectivelyEnabled() && theme().highContrast)
+    control_paint::disabledOutline(context, {{}, bounds().size}, theme(),
+                                   themeMetrics());
+  else
+    control_paint::outline(context, {{}, bounds().size},
+                           hasFocus() ? theme().focus : theme().border,
+                           hasFocus() ? resolvedFocusWidth()
+                                      : themeMetrics().borderWidth);
   if (!_layout)
     return;
   const auto selection = _model.selection();

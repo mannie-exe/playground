@@ -33,6 +33,8 @@ struct TextProps {
   ColorTreatment colorTreatment{ColorTreatment::Adaptive};
   std::optional<TextRole> textRole;
   TextInk ink{TextInk::Primary};
+  std::optional<FontFamily> fontFamily;
+  std::optional<FontSelection> fontSelection;
   bool operator==(const TextProps &) const = default;
 };
 
@@ -50,6 +52,8 @@ struct TextPatch {
   Patch<ColorTreatment> colorTreatment;
   Patch<std::optional<TextRole>> textRole;
   Patch<TextInk> ink;
+  Patch<std::optional<FontFamily>> fontFamily;
+  Patch<std::optional<FontSelection>> fontSelection;
 };
 
 class Text final : public Node {
