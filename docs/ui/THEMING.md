@@ -53,7 +53,16 @@ layout; its padding is additional to control padding, and its explicit size cons
 remain authoritative. A Content width uses the recipe's intrinsic width. Generic layout containers have no implicit control styling.
 StackProps.gap is optional: absent inherits the control recipe or zero; explicit
 values, including zero, override the recipe. ControlStyle.gap takes precedence.
-Resetting StackPatch.gap restores inheritance.
+Resetting StackPatch.gap restores inheritance. FlowProps.itemGap/lineGap follow
+the same rule independently; ControlStyle.gap overrides both axes.
+
+Buttons default to 10-unit padding and a 40-unit minimum height; content can
+increase their height. FieldStack uses fieldGap (6) between its label, control
+and supporting text. Tabs and expanded disclosures use the shared group gap (8)
+between their header and content. Explicit ControlStyle.gap, including zero,
+overrides these recipes. ToggleGroup and CheckboxGroup wrap whole options across
+rows, using the group gap for both axes. Keyboard navigation retains logical
+item order across wrapped rows.
 
 Stock controls and composed controls use these same recipes. Future Combobox and
 Autocomplete reuse the input, trigger, list-row, popup and supporting-text roles;

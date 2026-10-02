@@ -253,6 +253,10 @@ int main() {
       auto button = std::make_unique<ui::Button>(std::move(icon));
       auto *owner = button.get();
       root.setContent(std::move(button));
+      root.flushLayout({44, 44});
+      test::require(glyph->bounds() == math::rect(10, 10, 24, 24),
+                    "default button reserves padding around its icon");
+      owner->setControlLayout(ui::ControlLayout::StepperButton);
       root.flushLayout({40, 40});
       test::require(glyph->bounds() == math::rect(8, 8, 24, 24),
                     "SVG icon is geometrically centered");

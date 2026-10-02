@@ -79,6 +79,7 @@ void ThemeMetrics::validate() const {
                      padding,
                      gap,
                      sectionGap,
+                     fieldGap,
                      borderWidth,
                      focusWidth,
                      indicatorStroke,
@@ -222,6 +223,9 @@ ControlStyle resolveControlStyle(ControlLayout role, const ThemeMetrics &m,
     break;
   case ControlLayout::StepperRow:
     result.gap = m.stepper.gap;
+    break;
+  case ControlLayout::FieldStack:
+    result.gap = m.fieldGap;
     break;
   case ControlLayout::FieldRow:
     result.gap = m.sectionGap;

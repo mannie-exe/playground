@@ -542,8 +542,8 @@ template <typename PlacementAt> class FlowEngine {
       bases.push_back(sum(main(measured.size, _props.mainAxis),
                           marginMain(placement.margin, _props.mainAxis)));
     }
-    const auto breaks =
-        layout::breakFlowLines(bases, mainOffered.maximum, _props.itemGap);
+    const auto breaks = layout::breakFlowLines(bases, mainOffered.maximum,
+                                               _props.itemGap.value_or(0));
     Plan result;
     float mainExtent{}, crossExtent{};
     const layout::StackProps stackProps{_props.itemGap, _props.distribution,
@@ -558,7 +558,7 @@ template <typename PlacementAt> class FlowEngine {
           _props.mainAxis, stackProps);
       mainExtent = std::max(mainExtent, main(plan.size, _props.mainAxis));
       if (!result.lines.empty())
-        crossExtent = sum(crossExtent, _props.lineGap);
+        crossExtent = sum(crossExtent, _props.lineGap.value_or(0));
       crossExtent = sum(crossExtent, cross(plan.size, _props.mainAxis));
       result.lines.push_back(std::move(plan));
     }
@@ -603,8 +603,8 @@ public:
                          bounds.position.y + offset.height},
                         lineSize},
                        _props.mainAxis);
-      cursor =
-          sum(cursor, sum(cross(line.size, _props.mainAxis), _props.lineGap));
+      cursor = sum(cursor, sum(cross(line.size, _props.mainAxis),
+                               _props.lineGap.value_or(0)));
     }
   }
 };

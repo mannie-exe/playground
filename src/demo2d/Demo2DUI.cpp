@@ -251,6 +251,8 @@ public:
     column->append(std::move(slider));
     column->append(std::move(progress));
     auto readout = label("3", ui::TextRole::Value);
+    readout->applyPatch({.paragraphAlignment =
+                             Patch<layout::Align>::set(layout::Align::Center)});
     auto *readoutPtr = readout.get();
     auto stepper = std::make_unique<ui::NumberStepper>(
         std::move(readout), icon(resources.removeIcon), icon(resources.addIcon),

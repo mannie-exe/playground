@@ -31,8 +31,9 @@ int main() {
         layout::BoxProps{.padding = math::Insets::all(10)}));
     buttons.append(std::make_unique<ui::Button>(leaf(20, 15.f, 15.f)));
     const auto measured = buttons.measure(context, {});
-    test::require(measured.firstBaseline == 15 && measured.lastBaseline == 25,
-                  "mixed padding exports ordered positioned baselines");
+    test::require(
+        measured.firstBaseline == 25 && measured.lastBaseline == 35,
+        "theme and authored padding export ordered positioned baselines");
 
     constexpr std::array alignments{layout::CrossAlignment::Start,
                                     layout::CrossAlignment::Center,

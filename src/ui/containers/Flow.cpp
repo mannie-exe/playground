@@ -49,16 +49,18 @@ void Flow::applyPlacementPatch(std::size_t index,
 layout::MeasureResult
 Flow::measureContent(MeasureContext &context,
                      const layout::SizeConstraints &offered) {
+  const auto props = effectiveProps();
   auto engine = container_detail::FlowEngine{
-      *this, _props, [this](std::size_t i) -> const layout::StackPlacement & {
+      *this, props, [this](std::size_t i) -> const layout::StackPlacement & {
         return placementInParent(i);
       }};
   return engine.measure(context, offered);
 }
 
 void Flow::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
+  const auto props = effectiveProps();
   auto engine = container_detail::FlowEngine{
-      *this, _props, [this](std::size_t i) -> const layout::StackPlacement & {
+      *this, props, [this](std::size_t i) -> const layout::StackPlacement & {
         return placementInParent(i);
       }};
   engine.arrange(context, bounds);

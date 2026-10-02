@@ -437,14 +437,13 @@ struct GridProps {
 
 struct FlowProps {
   Axis mainAxis{Axis::Horizontal};
-  float itemGap{};
-  float lineGap{};
+  std::optional<float> itemGap, lineGap;
   Distribution distribution{Distribution::Start};
   CrossAlignment childrenAlignment{CrossAlignment::Start};
 
   void validate() const {
     StackProps{itemGap, distribution, childrenAlignment}.validate(mainAxis);
-    detail::nonnegative(lineGap,
+    detail::nonnegative(lineGap.value_or(0),
                         "Flow line gap must be finite and nonnegative");
   }
 

@@ -410,9 +410,11 @@ unbounded fractions behave as content. Remeasure at span widths before sizing ro
 This is not CSS Grid/subgrid or a bidirectional constraint solver.
 
 [Flow.hpp](../../include/ui/containers/Flow.hpp): FlowProps/Patch mainAxis=Horizontal,
-itemGap/lineGap=0, distribution=Start, childrenAlignment=Start.
-StackPlacement/Patch applies within lines. Decide line membership from outer
-bases before flex allocation; an oversized item occupies one line, an unbounded
+itemGap/lineGap absent (theme recipe or zero), distribution=Start, childrenAlignment=Start.
+StackPlacement/Patch applies within lines. effectiveProps() resolves gaps without
+mutating authored props. Explicit per-axis gaps override the recipe; ControlStyle.gap
+overrides both axes, including explicit zero. Patch reset resumes inheritance.
+Decide line membership from outer bases before flex allocation; an oversized item occupies one line, an unbounded
 main axis one line. No dense packing/shared columns or iterative optimal packing.
 
 [AnchorLayout.hpp](../../include/ui/containers/AnchorLayout.hpp): common BoxProps,

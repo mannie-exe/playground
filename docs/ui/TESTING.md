@@ -237,6 +237,7 @@ cmake --build --preset release --target playground_ui_layout_workload playground
 ./build/release/bin/playground_ui_layout_workload --verify
 ./build/release/bin/playground_ui_layout_workload --verify --gpu
 ./build/release/bin/playground_ui_layout_workload --verify --full-layout
+./build/release/bin/playground_ui_layout_workload --screenshots build/review/demo2d
 ./build/release/bin/playground_ui_host_workload software
 ./build/release/bin/playground_ui_host_workload gpu
 ./build/release/bin/playground_ui_host_workload software --burst
@@ -254,6 +255,12 @@ within Vulkan with a 1/1024 channel tolerance for RGBA16F rounding; software
 pixels compare exactly. It does not compare software gamma arithmetic with GPU
 arithmetic. Missing Vulkan support skips the GPU check.
 CTest runs correctness checks, without timing thresholds.
+
+--screenshots writes software-rendered BMP captures of every Demo 2D control
+scroll page at 960×760 and 408×760, in light/dark with 100%/150% text. It uses
+the app's preview font size and bundled theme fonts. This is a separate capture
+mode, not a timing run or native window screenshot. Keep captures and raw timing
+output in ignored build directories; do not commit machine-specific artifacts.
 
 The native workload uses isolated preferences, a non-resizable 408×480 window and 80 synthetic
 scrollbar moves eight milliseconds apart; --burst queues them without spacing.

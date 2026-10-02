@@ -46,6 +46,7 @@ Disclosure::Disclosure(std::unique_ptr<Node> label, std::unique_ptr<Node> body,
                        ExpansionProps props, ButtonProps button,
                        layout::BoxProps box)
     : VStack{{.childrenAlignment = layout::CrossAlignment::Stretch}, box} {
+  setControlLayout(ControlLayout::Group);
   if (!label || !body)
     throw std::invalid_argument("Disclosure requires label and body");
   auto header = std::make_unique<Header>(*this, std::move(label), button);
@@ -333,6 +334,7 @@ protected:
 Tabs::Tabs(std::vector<TabItem> items, SelectionProps props, ButtonProps button,
            layout::BoxProps box)
     : VStack{{}, box} {
+  setControlLayout(ControlLayout::Group);
   std::set<std::string> keys;
   for (const auto &i : items)
     if (i.key.empty() || !keys.insert(i.key).second || !i.label || !i.panel)
@@ -512,6 +514,7 @@ Field::Field(std::unique_ptr<Node> control, std::unique_ptr<Node> label,
              std::unique_ptr<Node> description, FieldProps props,
              layout::BoxProps box, bool inlineControl)
     : VStack{{}, box}, _props{std::move(props)} {
+  setControlLayout(ControlLayout::FieldStack);
   if (!control || !label)
     throw std::invalid_argument("Field requires control and label");
   _control = control.get();
