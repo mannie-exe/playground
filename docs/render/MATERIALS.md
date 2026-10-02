@@ -188,28 +188,23 @@ No blending, events/root motion, skinning or VAT is implied. Cubic rotation resu
 are normalized after interpolation; unlike LINEAR slerp, cubic tangents must not be
 independently sign-flipped. Direct mutable track users must validate after editing.
 
-## Demo 3D
+## Rendering demos
 
-Install the project and launch it normally; choose **Demo 3D** or press **2**. CPU model,
-HDR and smoke preparation run as one bounded worker job. It owns captured catalog
-and result state, not AppContext or UI pointers. Exit cancels the job; completion
-is polled only by the living app. GPU realization happens during owner-thread scene
-preparation. Renderer recreation reuses CPU assets; no native resources are stored
-in the app model.
-
-Arrow keys orbit, W/S adjust distance, Q/E adjust exposure, L toggles direct light,
-Space pauses the smoke, Escape opens shared settings; Ctrl/Cmd+Shift+M returns to the menu. Environment illumination remains
-when direct light is disabled. Asset provenance and the cropped smoke-row detail
-are in [the asset manifest](../../assets/demo3d/README.md).
+[DEMOS.md](DEMOS.md) defines the separate material and architectural/chess scenes,
+content preparation, controls and deliberate compatibility fallbacks. CPU import
+and environment preparation run as bounded cancellable work; GPU realization is
+owner-thread work. Additional material extensions are not implemented by these
+demos, even when an approximate core material is displayed.
 
 ## Verification
 
 Focused constituent tests cover texture conversion/mips/budgets, tangent generation,
 UV transforms, animation interpolation/seeking/invalid tracks/stale instances,
 and capability refusal. Opt-in Vulkan tests exercise material output and scene
-composition; build success alone is not visual verification. Demo 3D uses
-a CC0 BoomBox prop, CC0 smoke atlas and CC0 studio environment, with provenance
-stored beside the assets. Lighting/PBR is in scope; shadows, skinning and VAT are not.
+composition; build success alone is not visual verification. Material Test uses
+the CC0 BoomBox, two CC0 helmets, smoke atlas and studio environment. Separate scene demos use CC-BY Bistro and A Beautiful Game, with
+provenance and conversion notes stored beside each asset. Lighting/PBR is in
+scope; shadows, skinning and VAT are not.
 `gpu_materials` checks directional response, normal perturbation, HDR emission,
 exposure with/without tone mapping, environment-lit metal, mip-level selection, per-instance UVs and
 alpha masks, then renders the real prop.
@@ -217,7 +212,14 @@ The alpha regressions cover zero-alpha opaque PBR, shared opaque/blend/mask
 realizations, bilinear/mip filtering and straight PaintImage sampling on GPU
 and software. `texture_materials` also checks partial and authored opaque chains.
 The optional first executable argument to `gpu_materials`
-is a BMP capture path. These checks are not a calibrated reference-viewer comparison;
+is a BMP capture path; an optional second argument selects a GLB for a single-frame
+acceptance capture with environment illumination and scene framing. For example:
+
+```sh
+MVK_CONFIG_LOG_LEVEL=2 build/debug/bin/playground_gpu_materials_tests build/chess.bmp assets/demoscene/chess/ABeautifulGame.glb
+```
+
+This is an import/render check, not the deferred camera-path workload. These checks are not a calibrated reference-viewer comparison;
 broader driver testing, complex UV/tangent seam visual cases and appearance matching
 remain verification work, not claims established by the unit suite.
 `software_materials` checks exposure/alpha preservation, explicit preview conversion

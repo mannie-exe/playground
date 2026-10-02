@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <fstream>
+#include <limits>
 
 #include "GPUSceneRenderer.hpp"
 #include <app/SDLGuard.hpp>
@@ -229,13 +230,67 @@ int main(int argc, char **argv) {
       // Real sample exercises importer->texture->PBR->tone-map together.
       scene::ModelImportProps limits;
       limits.maxTotalResourceBytes = 512 * 1024 * 1024;
-      auto model = loadGLTF(std::filesystem::path{PLAYGROUND_SOURCE_DIR} /
-                                "assets/demo3d/BoomBox.glb",
-                            limits);
+      if (argc > 2) {
+        limits.allowMaterialFallback = true;
+        limits.maxDocumentBytes = limits.maxResourceBytes =
+            320ULL * 1024 * 1024;
+        limits.maxTotalResourceBytes = 1024ULL * 1024 * 1024;
+      }
+      auto model =
+          loadGLTF(argc > 2 ? std::filesystem::path{argv[2]}
+                            : std::filesystem::path{PLAYGROUND_SOURCE_DIR} /
+                                  "assets/demo3d/BoomBox.glb",
+                   limits);
       scene::Scene3D world;
-      model->instantiate(world, {.scale = {100, 100, 100}});
+      const float scale = argc > 2 ? 1 : 100;
+      model->instantiate(world, {.scale = {scale, scale, scale}});
       auto draws = world.snapshot();
       view.camera = scene::CameraProps{.eye = {2, 1, -4}}.view(1);
+      scene::PreparedEnvironment sampleEnvironment;
+      if (argc > 2) {
+        const float inf = std::numeric_limits<float>::infinity();
+        math::Vec3f low{inf, inf, inf}, high{-inf, -inf, -inf};
+        for (const auto &item : draws) {
+          const auto box = item.mesh->bounds();
+          for (int c = 0; c < 8; ++c) {
+            const auto p = math::transformPoint(
+                item.model, {c & 1 ? box.maximum.x : box.minimum.x,
+                             c & 2 ? box.maximum.y : box.minimum.y,
+                             c & 4 ? box.maximum.z : box.minimum.z});
+            low = {std::min(low.x, p.x), std::min(low.y, p.y),
+                   std::min(low.z, p.z)};
+            high = {std::max(high.x, p.x), std::max(high.y, p.y),
+                    std::max(high.z, p.z)};
+          }
+        }
+        const auto center = (low + high) * .5f, extent = high - low;
+        const float size = std::max({extent.x, extent.y, extent.z});
+        view.camera =
+            scene::CameraProps{.eye = center +
+                                      math::Vec3f{0, size * .35f, -size * 1.1f},
+                               .target = center,
+                               .nearPlane = .01f,
+                               .farPlane = 5000}
+                .view(1);
+        if (std::filesystem::path{argv[2]}.filename() == "Bistro.glb")
+          view.camera =
+              scene::CameraProps{.eye = {24.82285f, 3.16055f, 61.64814f},
+                                 .target = {24.50443f, 3.10232f, 60.70198f},
+                                 .nearPlane = .02f,
+                                 .farPlane = 5000}
+                  .view(1);
+        const auto path = std::filesystem::path{PLAYGROUND_SOURCE_DIR} /
+                          "assets/demo3d/studio_small_09_1k.hdr";
+        std::ifstream source{path, std::ios::binary | std::ios::ate};
+        test::require(bool(source), "reference environment exists");
+        std::vector<std::byte> data(static_cast<std::size_t>(source.tellg()));
+        source.seekg(0);
+        source.read(reinterpret_cast<char *>(data.data()), data.size());
+        sampleEnvironment = scene::prepareEnvironment(*decodeHDR(data));
+        view.lighting.diffuseEnvironment = sampleEnvironment.diffuse;
+        view.lighting.specularEnvironment = sampleEnvironment.specular;
+        view.lighting.brdf = sampleEnvironment.brdf;
+      }
       view.pixelSize = {256, 256};
       view.toneMap = true;
       view.lighting.irradiance = {2, 2, 2};

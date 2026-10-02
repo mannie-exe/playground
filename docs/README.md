@@ -12,7 +12,7 @@ scope. Contract text is not a report of implementation or test status.
 | Audio | [Playback, synthesis, spatial state and accounting](audio/README.md) |
 | Networking | [Transport, shared sessions and hosting](platform/NETWORKING.md) |
 | Desktop policy | [Windows](platform/WINDOWING.md), [settings](platform/SETTINGS.md), [graphics](platform/GRAPHICS.md) |
-| Rendering | [Architecture](render/ARCHITECTURE.md), [coordinates and values](render/CONTRACTS.md), [resources](render/RESOURCES.md) |
+| Rendering | [Demos](render/DEMOS.md), [Architecture](render/ARCHITECTURE.md), [coordinates and values](render/CONTRACTS.md), [resources](render/RESOURCES.md) |
 | UI composition | [Guide](ui/GUIDE.md), [reference](ui/REFERENCE.md), [controls](ui/CONTROLS.md) |
 | UI services | [Themes](ui/THEMING.md), [motion](ui/MOTION.md), [async](ui/ASYNC.md), [accessibility](ui/ACCESSIBILITY.md), [testing](ui/TESTING.md) |
 
@@ -21,6 +21,7 @@ scope. Contract text is not a report of implementation or test status.
 - [App authoring, executable bundles and dynamic loading](platform/DISTRIBUTED_APPS.md)
 - [Executable-app permissions and isolation](platform/SECURITY.md)
 - [Runtime UI documents and editor](ui/DOCUMENTS.md)
+- [Repeatable camera workloads](render/DEMOS.md#repeatable-camera-workloads-future)
 - Combobox and Autocomplete in [control contracts](ui/CONTROLS.md)
 
 [C++ notes](NOTES.md), the [historical migration guide](CATCH_UP.md), and

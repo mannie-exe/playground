@@ -51,6 +51,30 @@ public:
   CameraProps camera(CameraProps lens = {}) const;
 };
 
+struct FreeCameraProps {
+  math::Vec3f position{0, 0, -3};
+  float yaw{}, pitch{}, unitsPerSecond{5};
+  float maximumPitch{1.553343f};
+};
+
+struct FreeCameraIntent {
+  math::Vec3f movement{}; // Local right, world up, local forward.
+  math::Vec2f radians{};  // Displacement, never multiplied by time here.
+};
+
+class FreeCameraController {
+  FreeCameraProps _props;
+
+public:
+  explicit FreeCameraController(FreeCameraProps props = {});
+
+  const FreeCameraProps &props() const noexcept { return _props; }
+
+  void setProps(FreeCameraProps);
+  void advance(FreeCameraIntent, double seconds);
+  CameraProps camera(CameraProps lens = {}) const;
+};
+
 // Model poses, not renderer state. Publish once per completed simulation tick.
 class PoseHistory {
   math::Transform3D _previous, _current;

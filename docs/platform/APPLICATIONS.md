@@ -108,46 +108,17 @@ Binding persistence, capture UI, gestures and response curves remain future work
 
 ## Launcher and demo organization
 
-The launcher owns a retained `MenuUI`: a padded VStack with the `Me n' U` title
-and five buttons. `menu/Config.hpp` is the single ordered entry list used for
-button labels and numeric bindings:
+The launcher groups UI Test, Material Test, Bistro/Chess scenes and study games.
+[Rendering demos](../render/DEMOS.md) define entries, asset ownership, compatibility
+fallbacks and controls. Menu configuration is the single ordered list for groups,
+labels and numeric bindings. Group labels are not focus stops; the content scrolls
+when the available window cannot contain all entries.
 
-| Key | Application |
-|---|---|
-| 1 | Demo 2D |
-| 2 | Demo 3D |
-| 3 | Minesweeper |
-| 4 | Rock Paper Scissors |
-| 5 | Snake |
-
-Mouse activation and Tab/Enter/Space use ordinary UI Button routing. Q quits
-from the launcher. Escape opens settings after local UI cancellation;
-Ctrl/Cmd+Shift+M returns from an app to the launcher. Button callbacks queue an
-app identity in MenuApp, never capture a temporary AppContext. The event handler
-forwards that intent after routing; AppHost still performs the actual transition
-at its safe boundary. Failed transitions are shown in the launcher's status text.
-
-`demo2d/` owns the surface/UI composition demo; `demo3d/` owns the material/scene
-demo and `assets/demo3d/` its sample content. `app/Assets.hpp` registers shared
-font families independently of either demo. Persisted app keys `demo` and
-`material-lab` remain stable for existing settings; their current C++ identities are Demo2D and
-Demo3D. Rock Paper Scissors and Snake are registered study stubs, not implemented
-games; the separate console experiment remains untouched.
-
-## Demo 3D
-
-The launcher's `2` action opens a Vulkan-required material sample with a licensed
-textured BoomBox and smoke atlas. CPU decode, tangent preparation and HDR
-environment filtering run as one explicitly submitted, cancellable worker task;
-the owner thread installs the result and creates native GPU resources. Exit
-cancels outstanding work without capturing the application in the worker.
-
-Arrow keys orbit, W/S zoom, Q/E adjust exposure, L toggles the directional light,
-Space pauses smoke playback, Escape opens settings and Ctrl/Cmd+Shift+M returns
-to the launcher. See
-[material contracts](../render/MATERIALS.md) and the
-[asset manifest](../../assets/demo3d/README.md). Rigid animation is verified
-with a small synthetic import test rather than implied by the static prop.
+Q quits from the launcher. Unhandled Escape opens settings; Ctrl/Cmd+Shift+M
+returns from an app. Button callbacks queue an app identity, and AppHost switches
+at a safe boundary. Failures remain visible in the launcher or scene loading view.
+Persisted keys demo and material-lab retain existing UI/material preferences.
+Rock Paper Scissors and Snake remain study stubs.
 
 ## Accessibility boundary
 

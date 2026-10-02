@@ -3,6 +3,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <app/IApp.hpp>
 #include <assets/AssetCatalog.hpp>
@@ -17,18 +18,26 @@
 namespace playground::demo3d {
 void registerAssets(assets::AssetCatalog &catalog);
 
+enum class DemoKind { Material, Bistro, Chess };
+
 class Demo3DApp final : public IApp {
   struct Resources {
-    scene::ModelHandle model;
+    std::vector<scene::ModelHandle> models;
     scene::PreparedEnvironment environment;
-    rendering::TextureHandle smoke;
+    rendering::TextureHandle smoke, environmentReference;
   };
 
+  DemoKind _kind;
   Resources _resources;
   std::shared_ptr<scene::Scene3D> _scene;
   scene::ObjectId _smoke;
   scene::Playback _playback;
   scene::OrbitController _camera;
+  scene::FreeCameraController _freeCamera;
+  scene::FreeCameraProps _initialCamera;
+  input::InputSnapshot _navigation;
+  scene::CameraProps camera() const;
+  void updateView();
   float _exposure{1};
   bool _lighting{true};
 
@@ -42,11 +51,11 @@ class Demo3DApp final : public IApp {
   void synchronize(AppContext &ctx);
 
 public:
-  Demo3DApp();
+  explicit Demo3DApp(DemoKind kind = DemoKind::Material);
   ~Demo3DApp() override;
-  static AppInfo staticInfo();
+  static AppInfo staticInfo(DemoKind kind = DemoKind::Material);
 
-  AppInfo info() const override { return staticInfo(); }
+  AppInfo info() const override { return staticInfo(_kind); }
 
   input::InputClaims inputClaims() override { return _ui.inputClaims(); }
 

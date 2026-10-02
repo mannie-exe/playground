@@ -36,6 +36,29 @@ int main() {
     require(rejected && orbit.props().distance == 0.1f,
             "invalid props leave camera unchanged");
 
+    scene::FreeCameraController fly{{.unitsPerSecond = 2}};
+    fly.advance({.movement = {1, 0, 1}}, 1);
+    require(std::abs(
+                std::hypot(fly.props().position.x, fly.props().position.z + 3) -
+                2) < 1e-5,
+            "free camera bounds diagonal movement speed");
+    scene::FreeCameraController whole, split;
+    whole.advance({.movement = {0, 0, 1}}, 1);
+    for (int i = 0; i < 10; ++i)
+      split.advance({.movement = {0, 0, 1}}, .1);
+    require(std::abs(whole.props().position.z - split.props().position.z) <
+                1e-5,
+            "held free movement is time based");
+    const auto before = fly.props().position;
+    test::rejects([&] { fly.advance({.radians = {INFINITY, 0}}, 1); },
+                  "non-finite look rejected before mutation");
+    require(fly.props().position == before, "invalid camera intent is atomic");
+    fly.advance({.radians = {std::numbers::pi_v<float> / 2, 100}}, 0);
+    fly.camera().view(1);
+    require(fly.props().pitch == fly.props().maximumPitch &&
+                fly.props().position == before,
+            "look displacement clamps poles independently of elapsed time");
+
     scene::PoseHistory poses;
     scene::Scene3D world;
     auto id = world.create();

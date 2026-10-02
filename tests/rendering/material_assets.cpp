@@ -1,7 +1,9 @@
 #include <filesystem>
 #include <fstream>
 
+#include <demo3d/Demo3DApp.hpp>
 #include <platform/sdl/ModelImport.hpp>
+#include <platform/sdl/ModelPreparation.hpp>
 #include <platform/sdl/TextureDecode.hpp>
 #include <support/Test.hpp>
 
@@ -35,6 +37,20 @@ int main() {
                         "prop retains normal texture");
         }
     test::require(pbr, "prop is metallic-roughness, not silently unlit");
+    assets::AssetCatalog catalog{std::filesystem::path{PLAYGROUND_SOURCE_DIR} /
+                                 "assets"};
+    demo3d::registerAssets(catalog);
+    catalog.freeze();
+    for (const auto *name : {"demo3d.scifi-helmet", "demo3d.flight-helmet",
+                             "demoscene.chess", "demoscene.bistro"}) {
+      std::cout << "Preparing " << name << std::endl;
+      auto asset =
+          sdl::prepareModel(catalog, assets::AssetId<assets::ModelAsset>{name});
+      scene::Scene3D world;
+      asset->instantiate(world);
+      test::require(!world.snapshot().empty(),
+                    "distributed sample imports into renderable geometry");
+    }
     auto hdr = sdl::decodeHDR(read("studio_small_09_1k.hdr"));
     bool bright{};
     for (auto p : hdr->levels()[0].texels)

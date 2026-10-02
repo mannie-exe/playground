@@ -19,6 +19,8 @@ enum class AppId {
   Minesweeper,
   RockPaperScissors,
   Snake,
+  Bistro,
+  Chess,
 };
 
 enum class AppCommandType {
@@ -69,15 +71,19 @@ constexpr std::string_view toString(AppId appId) {
   case AppId::Menu:
     return "Menu";
   case AppId::Demo2D:
-    return "Demo 2D";
+    return "UI Test";
   case AppId::Demo3D:
-    return "Demo 3D";
+    return "Material Test";
   case AppId::Minesweeper:
     return "Minesweeper";
   case AppId::RockPaperScissors:
     return "Rock Paper Scissors";
   case AppId::Snake:
     return "Snake";
+  case AppId::Bistro:
+    return "Scene: Bistro";
+  case AppId::Chess:
+    return "Scene: Chess";
   default:
     return "Unknown";
   }
@@ -133,6 +139,10 @@ constexpr std::string_view appKey(AppId id) {
     return "rock-paper-scissors";
   case AppId::Snake:
     return "snake";
+  case AppId::Bistro:
+    return "scene-bistro";
+  case AppId::Chess:
+    return "scene-chess";
   }
   throw std::invalid_argument("Unknown app identity");
 }

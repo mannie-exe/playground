@@ -57,6 +57,24 @@ int main() {
         scene::importGLTF(bytes(fixture), services, {.unitsPerMeter = 2});
     test::require(model->nodes().size() == 3 && decodes == 1,
                   "selected hierarchy imported and texture decoded once");
+    const auto extended =
+        replaced(fixture, "KHR_materials_unlit", "KHR_materials_transmission");
+    test::rejects([&] { scene::importGLTF(bytes(extended), services); },
+                  "required unsupported material rejects by default");
+    const auto approximate = scene::importGLTF(bytes(extended), services,
+                                               {.allowMaterialFallback = true});
+    test::require(!approximate->warnings().empty() &&
+                      !approximate->nodes().empty(),
+                  "explicit material preview keeps geometry and diagnostics");
+    const auto compressed = replaced(extended, "KHR_materials_transmission",
+                                     "KHR_draco_mesh_compression");
+    test::rejects(
+        [&] {
+          scene::importGLTF(bytes(compressed), services,
+                            {.allowMaterialFallback = true});
+        },
+        "material fallback never bypasses required geometry extensions");
+    const auto beforeBasis = decodes;
     auto basisFixture =
         replaced(fixture, "\"KHR_texture_transform\"]",
                  "\"KHR_texture_transform\",\"KHR_texture_basisu\"]");
@@ -64,7 +82,7 @@ int main() {
         basisFixture, "\"source\":0,\"sampler\":0",
         "\"extensions\":{\"KHR_texture_basisu\":{\"source\":0}},\"sampler\":0");
     auto basisModel = scene::importGLTF(bytes(basisFixture), services);
-    test::require(!basisModel->nodes().empty() && decodes == 2,
+    test::require(!basisModel->nodes().empty() && decodes == beforeBasis + 1,
                   "required Basis extension resolves through explicit decoder "
                   "once per model");
     test::require(model->warnings().empty(),
