@@ -39,7 +39,7 @@ struct ThemePalette {
       success{20, 110, 55, 255};
   math::ColorRGBA8 scrollbar{116, 130, 151, 255}, backdrop{0, 0, 0, 100};
   math::ColorRGBA8 onWarning{255, 255, 255, 255}, onError{255, 255, 255, 255},
-      meterOnTrack{255, 255, 255, 255};
+      meterOnTrack{23, 33, 46, 255}, meterTrack{220, 227, 237, 255};
   bool operator==(const ThemePalette &) const = default;
 };
 
@@ -100,6 +100,8 @@ struct ThemeMetrics {
   float meterLength{160}, meterHeight{16}, meterMarker{16}, meterMarkerInset{8};
   float inputWidth{240}, inputPadding{4}, caretWidth{1}, textAreaLines{5};
   float scrollbarThickness{8}, scrollbarMinimumThumb{16};
+  // Absent inherits gap; the reserved gutter adds scrollbarThickness.
+  std::optional<float> scrollbarContentGap;
   float popupGap{4}, popupPadding{8}, popupMaximumHeight{320};
   float settingsPadding{20};
   double tooltipShowDelay{.5}, tooltipHideDelay{.1};

@@ -48,10 +48,10 @@ ThemePalette resolveTheme(ColorSchemePreference scheme,
               rgb(0x687a90), rgb(0x195bb5), rgb(0xffffff), rgb(0xe0e9f5),
               rgb(0xcbdaf0), rgb(0x754400), rgb(0xd4e4fa), false,
               rgb(0xb42323), rgb(0x825500), rgb(0x146e37), rgb(0x687a90)};
-  result.onWarning = result.onError = result.meterOnTrack =
-      high   ? result.surface
-      : dark ? rgb(0x181c22)
-             : rgb(0xffffff);
+  result.onWarning = result.onError =
+      high || dark ? result.surface : result.elevated;
+  result.meterTrack = high ? result.surface : rgb(dark ? 0x303b49 : 0xdce3ed);
+  result.meterOnTrack = result.text;
   return result;
 }
 
@@ -114,6 +114,7 @@ void ThemeMetrics::validate() const {
                      textAreaLines,
                      scrollbarThickness,
                      scrollbarMinimumThumb,
+                     scrollbarContentGap.value_or(gap),
                      popupGap,
                      popupPadding,
                      popupMaximumHeight,

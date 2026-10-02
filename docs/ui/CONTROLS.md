@@ -157,9 +157,10 @@ monochrome `TintableContent` icons (`Vector` for SVGs) replace the built-in
 triangle/cross. The meter owns icon
 visibility, placement and tint. Each marker is clipped at the fill boundary and
 painted using `onWarning`/`onError` over the fill and `meterOnTrack` over the empty
-track. No backing square or background sampling is required. High contrast keeps
-paired inks and distinct shapes. Demo 2D uses filled Material warning/error SVGs
-and a visible value/status readout.
+`meterTrack`. Empty tracks use dark ink in light mode and light ink in dark
+mode. No backing square or background sampling is required. High contrast
+outlines the full range and keeps paired inks and distinct shapes. Demo 2D uses
+filled Material warning/error SVGs and a visible value/status readout.
 ProgressBar represents task completion; unknown progress is indeterminate, never
 zero. Neither is adjustable or sequentially focusable.
 

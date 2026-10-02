@@ -63,27 +63,27 @@ int main() {
     auto *view = scroll.get();
     root.setContent(std::move(scroll));
     root.flushLayout({100, 80});
-    test::require(view->viewportExtent() == math::Size2{92, 80},
-                  "vertical gutter reserves eight logical units");
-    test::require(content->bounds().w() == 92,
+    test::require(view->viewportExtent() == math::Size2{84, 80},
+                  "vertical gutter reserves thickness plus shared spacing");
+    test::require(content->bounds().w() == 84,
                   "non-scrolling axis remeasures to usable width");
     Painter painter;
     root.render(painter);
     test::require(
         painter.draws.size() == 7 && painter.draws[0].color == ink &&
-            painter.draws[0].bounds == math::rect(0, 0, 92, 80) &&
+            painter.draws[0].bounds == math::rect(0, 0, 84, 80) &&
             painter.draws[5].bounds == math::rect(92, 0, 8, 80) &&
             painter.draws[6].color == view->theme().scrollbar,
         "content is clipped first, then gutter and thumb paint separately");
     for (std::size_t i = 1; i < 5; ++i)
       test::require(!painter.draws[i].bounds.hasArea() ||
-                        (painter.draws[i].bounds.right() <= 92 &&
+                        (painter.draws[i].bounds.right() <= 84 &&
                          painter.draws[i].bounds.bottom() <= 80),
                     "button outlines stay clipped to the content viewport");
     auto hit = root.hitTest({96, 70});
     test::require(hit && hit->target.get() == view,
                   "whole track wins hit testing, not only thumb");
-    hit = root.hitTest({91, 70});
+    hit = root.hitTest({83, 70});
     test::require(hit && hit->target.get() == content,
                   "content remains clickable to usable edge");
     auto send = [&](ui::EventType type, math::Point2 position) {
@@ -92,6 +92,14 @@ int main() {
       root.dispatch(e);
       return e.handled;
     };
+    hit = root.hitTest({88, 70});
+    test::require(hit && hit->target.get() == view,
+                  "spacing never routes pointer input to clipped content");
+    send(ui::EventType::PointerDown, {88, 70});
+    send(ui::EventType::PointerMove, {88, 20});
+    send(ui::EventType::PointerUp, {88, 20});
+    test::require(view->offset() == math::Vec2f{} && activated == 0,
+                  "spacing is inert and does not start a scrollbar drag");
     test::require(send(ui::EventType::PointerDown, {96, 70}) &&
                       view->offset().y > 0,
                   "track click scrolls rather than activating content");
@@ -113,7 +121,7 @@ int main() {
     view->applyPatch({.scrollbar = Patch<ui::ScrollbarPolicy>::set(
                           ui::ScrollbarPolicy::Always)});
     root.flushLayout({100, 400});
-    test::require(view->viewportExtent().width == 92,
+    test::require(view->viewportExtent().width == 84,
                   "Always reserves gutter without overflow");
     view->applyPatch(
         {.scrollbarThickness = Patch<std::optional<float>>::set(0)});
@@ -121,12 +129,63 @@ int main() {
     test::require(view->viewportExtent().width == 100,
                   "zero-thickness bars reserve nothing");
 
+    auto definition = ui::defaultThemeDefinition();
+    definition.metrics.gap = 12;
+    root.setThemeDefinition(definition);
+    view->setProps({});
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent().width == 80,
+                  "scroll spacing follows live theme gap changes");
+    definition.metrics.scrollbarContentGap = 4;
+    root.setThemeDefinition(definition);
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent().width == 88,
+                  "theme scrollbar gap overrides shared spacing");
+    view->applyPatch(
+        {.scrollbarThickness = Patch<std::optional<float>>::set(12),
+         .scrollbarContentGap = Patch<std::optional<float>>::set(0)});
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent().width == 88,
+                  "explicit zero gap leaves only authored rail thickness");
+    view->applyPatch(
+        {.scrollbarContentGap = Patch<std::optional<float>>::reset()});
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent().width == 84,
+                  "reset restores theme gap without double-counting thickness");
+    view->applyPatch({.scrollbar = Patch<ui::ScrollbarPolicy>::set(
+                          ui::ScrollbarPolicy::Never)});
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent().width == 100,
+                  "Never reserves neither spacing nor rail");
+    test::rejects(
+        [&] {
+          view->applyPatch(
+              {.scrollbarContentGap = Patch<std::optional<float>>::set(-1)});
+        },
+        "negative per-control scrollbar spacing rejected");
+    definition.metrics.scrollbarContentGap = -1;
+    test::rejects([&] { root.setThemeDefinition(definition); },
+                  "negative theme scrollbar spacing rejected");
+    root.setThemeDefinition(ui::defaultThemeDefinition());
+
+    view->setProps({.axes = ui::ScrollAxes::Horizontal});
+    view->setChild(std::make_unique<ui::Box>(
+        layout::BoxProps{.width = layout::SizeRule::fixed(300)}));
+    root.flushLayout({100, 80});
+    test::require(view->viewportExtent() == math::Size2{100, 64},
+                  "horizontal scrolling reserves thickness plus gap");
+    painter.draws.clear();
+    root.render(painter);
+    test::require(painter.draws.size() == 2 &&
+                      painter.draws[0].bounds == math::rect(0, 72, 100, 8),
+                  "horizontal rail remains at outer edge beyond spacing");
+
     view->setProps({.axes = ui::ScrollAxes::Both});
     view->setChild(std::make_unique<ui::Box>(
         layout::BoxProps{.width = layout::SizeRule::fixed(100),
                          .height = layout::SizeRule::fixed(81)}));
     root.flushLayout({100, 80});
-    test::require(view->viewportExtent() == math::Size2{92, 72},
+    test::require(view->viewportExtent() == math::Size2{84, 64},
                   "one gutter can induce the second scrollbar");
     hit = root.hitTest({96, 76});
     test::require(hit && hit->target.get() == view,

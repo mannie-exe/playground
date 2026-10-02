@@ -19,8 +19,10 @@ bool ScrollView::showBar(layout::Axis axis) const {
 
 void ScrollView::resolveViewport(MeasureContext &context,
                                  math::Size2 available) {
+  const auto props = effectiveProps();
   const bool bars = _props.scrollbar != ScrollbarPolicy::Never &&
-                    *effectiveProps().scrollbarThickness > 0;
+                    *props.scrollbarThickness > 0;
+  const float gutter = *props.scrollbarThickness + *props.scrollbarContentGap;
   _horizontalBar =
       bars && horizontal() && _props.scrollbar == ScrollbarPolicy::Always;
   _verticalBar =
@@ -29,12 +31,8 @@ void ScrollView::resolveViewport(MeasureContext &context,
   // restart from no Auto gutters on the next layout so growth removes them.
   for (int pass = 0; pass < 3; ++pass) {
     _viewport = {
-        std::max(0.f,
-                 available.width -
-                     (_verticalBar ? *effectiveProps().scrollbarThickness : 0)),
-        std::max(0.f, available.height -
-                          (_horizontalBar ? *effectiveProps().scrollbarThickness
-                                          : 0))};
+        std::max(0.f, available.width - (_verticalBar ? gutter : 0)),
+        std::max(0.f, available.height - (_horizontalBar ? gutter : 0))};
     const layout::SizeConstraints offered{
         horizontal() ? layout::AxisConstraints{}
                      : layout::AxisConstraints::tight(_viewport.width),
@@ -58,12 +56,14 @@ void ScrollView::resolveViewport(MeasureContext &context,
 math::Rect ScrollView::track(layout::Axis axis) const {
   const auto content =
       math::inset(math::Rect{{}, bounds().size}, contentInsets());
+  const float thickness = *effectiveProps().scrollbarThickness;
+  // Keep the rail against the outer edge; narrow viewports lose gap first.
   return axis == layout::Axis::Horizontal
-             ? math::rect(content.x(), content.y() + _viewport.height,
-                          _viewport.width,
-                          std::max(0.f, content.h() - _viewport.height))
-             : math::rect(content.x() + _viewport.width, content.y(),
-                          std::max(0.f, content.w() - _viewport.width),
+             ? math::rect(content.x(),
+                          content.bottom() - std::min(thickness, content.h()),
+                          _viewport.width, std::min(thickness, content.h()))
+             : math::rect(content.right() - std::min(thickness, content.w()),
+                          content.y(), std::min(thickness, content.w()),
                           _viewport.height);
 }
 
@@ -252,7 +252,9 @@ void ScrollView::applyPatch(const ScrollPatch &p) {
                                            d.scrollbarThickness),
             p.minimumThumb.appliedTo(_props.minimumThumb, d.minimumThumb),
             p.scrollbarColor.appliedTo(_props.scrollbarColor, d.scrollbarColor),
-            p.sizing.appliedTo(_props.sizing, d.sizing)});
+            p.sizing.appliedTo(_props.sizing, d.sizing),
+            p.scrollbarContentGap.appliedTo(_props.scrollbarContentGap,
+                                            d.scrollbarContentGap)});
 }
 
 void ScrollView::setProps(ScrollProps props) {

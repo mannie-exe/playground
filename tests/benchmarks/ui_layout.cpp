@@ -274,7 +274,7 @@ int main(int argc, char **argv) {
       ui::UIRoot root;
       if (appearance == 4) {
         auto theme = ui::defaultThemeDefinition();
-        theme.light.border = {255, 255, 255, 255};
+        theme.light.meterTrack = {255, 255, 255, 255};
         theme.light.warning = {0, 0, 0, 255};
         theme.light.error = {0, 0, 80, 255};
         theme.light.meterOnTrack = {0, 0, 0, 255};
@@ -313,8 +313,17 @@ int main(int argc, char **argv) {
       for (const bool critical : {false, true}) {
         const auto empty = sample(0, critical);
         const auto full = sample(100, critical);
+        if (high)
+          test::require(std::memcmp(empty.data() + (8 * 200 + 199) * stride,
+                                    empty.data() + (8 * 200 + 100) * stride,
+                                    stride) != 0 &&
+                            std::memcmp(empty.data() + 100 * stride,
+                                        empty.data() + (8 * 200 + 199) * stride,
+                                        stride) == 0,
+                        "high contrast outlines the empty range at its top and "
+                        "right edges");
         for (unsigned y = 0; y < 16; ++y)
-          for (unsigned x = 192; x < 200; ++x)
+          for (unsigned x = 192; x < (high ? 198u : 200u); ++x)
             test::require(
                 std::memcmp(full.data() + (y * 200 + x) * stride,
                             full.data() + (y * 200 + 100) * stride,
@@ -351,7 +360,7 @@ int main(int argc, char **argv) {
       root.flushLayout({200, 16});
       const auto normal = raster(root, {200, 16});
       for (unsigned y = 0; y < 16; ++y)
-        for (unsigned x = 176; x < 200; ++x)
+        for (unsigned x = 176; x < (high ? 198u : 200u); ++x)
           test::require(std::memcmp(normal.data() + (y * 200 + x) * stride,
                                     normal.data() + (y * 200 + 100) * stride,
                                     stride) == 0,

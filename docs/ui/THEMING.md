@@ -26,6 +26,8 @@ focus, drafts, selections and capture. Reparenting refreshes inherited values.
 
 ThemePalette names surface, elevated, text, mutedText, border, accent/onAccent,
 hover, pressed, focus, selection, error, warning, success, scrollbar and backdrop.
+Meter colors are `meterTrack`/`meterOnTrack` and status pairs
+`warning`/`onWarning`, `error`/`onError`; tracks do not reuse border ink.
 Control color overrides are optional: absent inherits, present replaces. Controls
 resolve them through Node::resolveColor; high contrast and forced colors retain
 the effective accessibility palette. Native palette foreground/background pairs
@@ -54,7 +56,19 @@ Meter threshold indicators use `meterMarker` sizing and `meterMarkerInset`
 (default 8 logical units) inside the track. `meterOnTrack`, `onWarning` and
 `onError` pair icon ink with the track, warning and critical backgrounds. Custom
 palettes supply contrasting pairs; built-in pairs meet 3:1. Native forced colors
-use the native window background as ink over the native foreground-colored track.
+use the native window background for the empty track and native foreground for
+its ink and outline. Built-in light tracks use dark ink; dark tracks use light
+ink. High contrast outlines the full range even when the empty track matches
+the surrounding surface.
+
+Scrollbar rail thickness and content separation are independent. Optional
+`ThemeMetrics.scrollbarContentGap` inherits `gap` (8 by default); a ScrollProps
+value overrides it, including zero. The reserved gutter is derived from the
+resolved thickness plus gap, never stored as another theme setting. A thicker
+rail does not implicitly enlarge content spacing. ScrollView owns reservation,
+clipping and rail placement on both axes; callers must not add compensating
+padding. Hidden/zero-thickness scrollbars reserve neither rail nor gap.
+
 ControlLayout identifies shared layout recipes. ControlStyle provides optional
 padding, minimum height, width and gap overrides. An explicit zero remains zero.
 resolvedControlStyle() reports effective values. BoxProps remains caller-owned

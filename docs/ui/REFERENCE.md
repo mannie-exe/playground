@@ -658,10 +658,15 @@ not clip; see [cache and isolation contracts](#rendering) for dirty-work behavio
 [ScrollView.hpp](../../include/ui/collections/ScrollView.hpp) owns one optional child.
 ScrollProps/ScrollPatch: axes=Vertical (Horizontal/Both supported), wheelStep=32,
 scrollbar=Auto (Never/Always supported), sizing=Fill. scrollbarThickness,
-minimumThumb and scrollbarColor are optional overrides; effectiveProps() resolves
-theme values (built-in thickness 8, minimum thumb 16, semantic scrollbar ink). Visible scrollbars reserve gutters
-inside the border/padding-adjusted area. Content is clipped to the remaining
-viewport; tracks and thumbs paint afterward in the scroll view's chrome pass.
+minimumThumb, scrollbarContentGap and scrollbarColor are optional overrides;
+effectiveProps() resolves theme values (built-in thickness 8, minimum thumb 16,
+semantic scrollbar ink). The gap inherits ThemeMetrics.scrollbarContentGap or
+the shared gap (8); explicit zero disables separation. Visible scrollbars reserve
+thickness + gap inside the border/padding-adjusted area. Rails stay against the
+outer edge; the gap separates them from content. Tiny viewports shrink the gap
+before rail thickness. Callers do not add compensating padding. Content is
+clipped to the remaining viewport; tracks and thumbs paint afterward in the
+scroll view's chrome pass.
 `viewportExtent()` excludes gutters; the node's bounds still include them.
 Auto gutters are resolved in a bounded pass because one axis can induce overflow
 on the other; resizing to fit removes them. Never/zero thickness reserves no space.
@@ -679,9 +684,10 @@ content extent, gutters or offset. Arrangement commits those values and clamps
 the offset. Offset-only changes reuse committed geometry without remeasuring;
 content, constraints, theme, direction or density changes invalidate it.
 Offsets clamp; the entire gutter intercepts hits ahead of content, not only its
-thumb. Track clicks move the thumb toward the pointer and can continue as a drag;
-cancellation releases capture. Nested wheel
-handlers consume available delta and pass residual movement upward.
+thumb. Gap and corner hits cannot activate content or start a drag. Track clicks
+move the thumb toward the pointer and can continue as a drag; cancellation
+releases capture. Nested wheel handlers consume available delta and pass residual
+movement upward.
 Clipping all children is not virtualization.
 
 Popups stretch their child to the presented content box. MatchAnchor fixes the

@@ -76,7 +76,7 @@ void Meter::arrangeChildren(ArrangeContext &context, math::Rect) {
 
 void Meter::paintSubtree(PaintContext &p) const {
   const auto track = trackBounds();
-  p.fill(track, theme().border);
+  p.fill(track, theme().meterTrack);
   if (!_props.value) {
     control_paint::outline(p, track, theme().mutedText,
                            themeMetrics().indicatorStroke);
@@ -90,7 +90,7 @@ void Meter::paintSubtree(PaintContext &p) const {
   filled.size.width *= float(std::clamp(
       (v - _props.minimum) / (_props.maximum - _props.minimum), 0., 1.));
   p.fill(filled, color);
-  if (v > _props.maximum)
+  if (theme().highContrast || v > _props.maximum)
     control_paint::outline(p, track, theme().text,
                            themeMetrics().indicatorStroke);
   if (!critical() && !warning())

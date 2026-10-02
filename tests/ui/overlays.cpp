@@ -207,7 +207,7 @@ int main() {
     auto &longPopup = *longPicker->children()[1];
     auto &longScroll = dynamic_cast<ui::ScrollView &>(*longPopup.children()[0]);
     test::require(longScroll.viewportExtent().width ==
-                      longPopup.bounds().w() - 8,
+                      longPopup.bounds().w() - 16,
                   "long dropdown reserves its own scrollbar gutter");
     for (const auto &row : longScroll.child()->children())
       test::require(row->bounds().w() == longScroll.viewportExtent().width,

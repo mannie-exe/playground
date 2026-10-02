@@ -30,7 +30,7 @@ int main() {
     test::require(view->contentExtent() == math::Size2{400, 300},
                   "overflow preserves full content extent");
     view->setOffset({999, 999});
-    test::require(view->offset() == math::Vec2f{158, 108},
+    test::require(view->offset() == math::Vec2f{166, 116},
                   "overflow scrolls to content end");
     root.flushLayout({400, 300});
     test::require(view->offset() == math::Vec2f{},

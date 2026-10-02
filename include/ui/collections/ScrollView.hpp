@@ -15,6 +15,7 @@ struct ScrollProps {
   std::optional<float> scrollbarThickness, minimumThumb;
   std::optional<math::ColorRGBA8> scrollbarColor;
   ScrollSizing sizing{ScrollSizing::Fill};
+  std::optional<float> scrollbarContentGap;
   bool operator==(const ScrollProps &) const = default;
 
   void validate() const {
@@ -25,6 +26,9 @@ struct ScrollProps {
     if (scrollbarThickness)
       layout::detail::nonnegative(*scrollbarThickness,
                                   "Invalid scrollbar thickness");
+    if (scrollbarContentGap)
+      layout::detail::nonnegative(*scrollbarContentGap,
+                                  "Invalid scrollbar content gap");
     if (minimumThumb)
       layout::detail::nonnegative(*minimumThumb,
                                   "Invalid scrollbar thumb extent");
@@ -38,6 +42,7 @@ struct ScrollPatch {
   Patch<std::optional<float>> scrollbarThickness, minimumThumb;
   Patch<std::optional<math::ColorRGBA8>> scrollbarColor;
   Patch<ScrollSizing> sizing;
+  Patch<std::optional<float>> scrollbarContentGap;
 };
 
 class ScrollView : public Node {
@@ -102,6 +107,8 @@ public:
     auto value = _props;
     value.scrollbarThickness =
         value.scrollbarThickness.value_or(themeMetrics().scrollbarThickness);
+    value.scrollbarContentGap = value.scrollbarContentGap.value_or(
+        themeMetrics().scrollbarContentGap.value_or(themeMetrics().gap));
     value.minimumThumb =
         value.minimumThumb.value_or(themeMetrics().scrollbarMinimumThumb);
     value.scrollbarColor =
