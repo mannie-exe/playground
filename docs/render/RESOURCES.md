@@ -141,3 +141,17 @@ conservative where dependency-private scratch cannot be attributed precisely.
 Automatic adjustments consume this ledger and obey its ceilings; see
 [GRAPHICS.md](../platform/GRAPHICS.md). Managed storage and physical residency
 remain distinct even on unified-memory hardware.
+
+## Active scene resources
+
+A scene view supplies a lifetime identity for its active resource working set.
+The renderer deduplicates mesh and texture realizations, protects active entries
+from retention eviction, and preflights missing native bytes against the shared
+ledger. Per-resource limits still apply. Retention targets cannot cause recurring
+reuploads of an otherwise admissible working set. Replacing or destroying a view
+releases its pins; submitted uses retire through existing completion tracking.
+
+Resource counters distinguish cache hits/misses, native uploads and bytes,
+evictions, required active bytes and refused plans. They do not claim physical
+VRAM residency. Camera motion, exposure and smoke animation change rendered
+output without changing immutable mesh/texture identity.

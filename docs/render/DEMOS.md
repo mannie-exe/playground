@@ -11,6 +11,7 @@ are noninteractive; buttons use ordinary focus, activation and scrolling.
 | Demo 3D | Material Test | material-lab |
 | Demo 3D | Scene: Bistro | scene-bistro |
 | Demo 3D | Scene: Chess | scene-chess |
+| Benchmark | Bistro: 5s / 15s / Infinite | benchmark-bistro |
 | Play | Minesweeper | minesweeper |
 | Play | Rock Paper Scissors | rock-paper-scissors |
 | Play | Snake | snake |
@@ -90,21 +91,30 @@ Opening Settings, losing focus or leaving an app cancels held navigation intent.
 Exposure and light controls remain separate from movement. Reset restores the
 scene's authored inspection camera without rebuilding its resources.
 
-## Repeatable camera workloads (future)
+## Bistro benchmark
 
-Camera-path benchmarking is explicitly deferred. A workload definition will name
-scene/content digests, camera shots or timestamped intent, seed, viewport extent,
-render settings, warm-up and measured intervals. The same camera evaluator serves
-interactive views and playback; the harness does not synthesize SDL input timing.
+The Benchmark group follows Scene: Chess. Its Bistro row contains three equally
+sized buttons: 5s, 15s and Infinite. Duration selects one shared workload; it does
+not select separate paths or content. The path loops every 15 seconds and is
+sampled from monotonic elapsed time rather than frame count.
 
-Fixed-time sampling verifies camera and image correctness separately from native
-real-time pacing. Record actual rendering capabilities and fallbacks. Compare
-identical content/settings across implementations, distinguishing cold preparation,
-warm traversal, active CPU/GPU work, frame tails and managed storage. Idle waits
-and GPU completion observation are not GPU execution time.
+Loading and initial resource preparation precede warm-up. Warm-up renders a full
+path cycle; finite measurement begins afterward and ends at its duration. Reports
+separate CPU recording, completed GPU samples, submitted frames and wall time.
+GPU completion is collected before a final report; incomplete samples remain
+explicit. Infinite runs repeat the path until stopped and publish periodic
+summaries. Completion retains the scene and results; R restarts the run.
 
-A run verifies final presentation, cancellation, resource retirement and bounded
-steady-state growth. Capture selected viewpoints and retain deterministic traces
-as test inputs. Generated screenshots, timings and downloaded authoring sources
-stay outside version control. No benchmark runner, recording UI or camera-path
-playback is required for the initial demo integration.
+Settings, focus loss, window resizing or graphics-policy changes invalidate a
+measured run rather than silently compare different workloads. Returning to the
+menu cancels preparation and releases activation-owned state. Interactive camera
+input is disabled during automated traversal. Escape still opens settings; the
+normal return-to-menu shortcut remains available.
+
+Results identify scene/content version, path version, duration, renderer/domain,
+actual pixel extent and applied settings. Loading, warm-up, measured traversal and
+completion draining are distinct states. Captures verify geometry and camera
+correctness; they are not performance evidence on their own. Developer workloads
+exercise the same app/controllers and support repeatable automated launches.
+
+See [verification](TESTING.md) for resource and responsiveness invariants.

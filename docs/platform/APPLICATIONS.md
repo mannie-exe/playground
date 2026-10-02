@@ -169,3 +169,11 @@ an explicitly cooperative execution policy, not blocking waits on the UI thread.
 transport adapters instead of assuming ordinary native sockets. Keep shared
 application models, UI semantics and renderer contracts independent of these
 adapters; no browser implementation or new platform dependency is introduced now.
+
+## Benchmark activation
+
+The Bistro benchmark is one app identity with a launch duration (5 seconds,
+15 seconds or unbounded). Launcher buttons share its implementation and looping
+camera path. Launch configuration is activation-local, not a persisted graphics
+setting. Settings remain shared across apps; benchmark results record the actual
+settings and invalidate on changes during measurement.

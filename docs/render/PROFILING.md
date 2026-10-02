@@ -86,7 +86,7 @@ target and target is the acquired presentation image.
 
 F10 toggles optional reporting and detailed UI measurement. While reporting is
 enabled, Shift+F10 reports immediately; F11 switches the automatic report interval
-between 60 and 300 CPU frames. Each report starts with CPU phases,
+between one and five seconds of monotonic wall time. Each report starts with CPU phases,
 then collection health and one row per GPU group, then UI work counters. GPU rows
 include independent execution-duration and observed-completion-latency statistics.
 `unspecified` extents and `unmeasured` latency mean absent metadata, not zero.
@@ -99,8 +99,9 @@ Frame caps and admission belong independently to [RESOURCES.md](RESOURCES.md).
 
 Activity policy now independently permits whole-frame idle skipping; see
 [ACTIVITY.md](../platform/ACTIVITY.md). `Idle` reports wait count and accumulated
-milliseconds outside active CPU-frame totals. Reports remain active-frame-based;
-an idle window takes longer to reach 60 samples.
+milliseconds outside active CPU-frame totals. Reports use elapsed-time deadlines serviced at host boundaries, including idle
+maintenance. A blocked owner thread can delay a deadline; missed intervals never
+produce a catch-up burst.
 
 These aggregates do not measure input-to-display latency. Diagnose perceived wake
 delay by separating event arrival/polling, dispatch/update, first-frame preparation,
@@ -211,3 +212,18 @@ counts, query exhaustion and completed-buffer eviction. `gpu_timing` covers
 delayed context publication and invalid context updates with an injected driver.
 `performance_reports` covers grouping, latency denominators, resize/domain/session
 separation, health deltas, group limits, structured snapshots and console output.
+
+## Scene diagnostics
+
+Each CPU phase reports its own sample count. Iterations, rendered frames and
+presentations are distinct; averages with different denominators are not added.
+Reports identify the app interval and scene resource work: cache hits/misses,
+upload bytes/counts, evictions and CPU preparation. App transitions close the old
+reporting interval. Delayed GPU results retain submission identity; they cannot
+be attributed to the current app merely because collection occurs there.
+
+Benchmark reports include load/warm-up duration, measured wall interval, CPU
+percentiles and GPU sample counts/durations. They record pixels, settings and
+content/path identity. Neither completion latency nor CPU recording time is GPU
+execution time. Tests assert reuse/ownership/invalidation invariants; hardware
+measurements are reported with environment metadata, not universal FPS promises.

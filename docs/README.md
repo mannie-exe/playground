@@ -27,3 +27,6 @@ scope. Contract text is not a report of implementation or test status.
 [C++ notes](NOTES.md), the [historical migration guide](CATCH_UP.md), and
 [original learning outline](TODO.md) are learning material, not architecture
 requirements or implementation backlogs.
+
+[Scene verification workloads](render/TESTING.md) cover camera, resource reuse and
+native benchmark workflows.
