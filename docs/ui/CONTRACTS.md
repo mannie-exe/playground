@@ -272,4 +272,4 @@ accessibility while retaining it for painting. See [MOTION.md](MOTION.md).
 Explicit async resources publish immutable results by request generation. A
 notification never owns the only result copy. Views build nodes on the owner
 thread; loading correctness is independent of reveal animation. See
-[ASYNC.md](ASYNC.md). Audio remains [planned](../audio/README.md).
+[ASYNC.md](ASYNC.md). Playback follows the independent [audio service contract](../audio/README.md).

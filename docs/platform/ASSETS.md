@@ -1,7 +1,10 @@
-# C++ authoring and asset ownership
+# Asset definitions and ownership
 
-C++ remains the authoring language. App factories remain compiled; no document
-app, UI serializer, filesystem watcher or automatic disk reload is implied.
+App factories remain compiled. Definitions come from C++ registration or validated
+pack manifests and share the same catalog and preparation contracts.
+[Asset packs](PACKAGES.md) define distribution and mounting;
+[distributed apps](DISTRIBUTED_APPS.md) and [UI documents](../ui/DOCUMENTS.md)
+remain separate future capabilities.
 
 ## Definitions, instances and realizations
 
@@ -16,9 +19,10 @@ the catalog. Native realization caches remain renderer-owned. Build dependencies
 (HLSL includes), resource dependencies (model images), and execution dependencies
 (producer passes before consumers) are separate relationships.
 
-Catalog registration is C++-only and freezes before consumption. File locations
-are relative to a supplied content root; owned byte sources and procedural meshes
-do not require a filesystem path. Definition revisions are explicit, not automatic
+Catalog registration freezes before consumption. CatalogBuilder imports validated
+pack records; C++ registration uses the same typed definitions. File locations
+are relative to a supplied content root. Mounted entries, owned byte sources and
+procedural meshes do not require an extracted filesystem path. Definition revisions are explicit, not automatic
 file-change detection. Variant parameters remain part of resource cache keys.
 Catalog identity/revision is distinct from renderer ResourceDomainId.
 
@@ -44,20 +48,22 @@ request generation. Cancellation suppresses publication and is cooperative, not
 forced interruption of a parser. Failure is retained as an exception result.
 Executor destruction requests stop and joins workers before dependent services die.
 
-No parallel layout, general task graph, native plugin loading, package format,
-automatic reload or arbitrary callback serialization is part of this boundary.
+Parallel layout, general task graphs, native plugin loading, automatic reload and
+arbitrary callback serialization are outside the asset preparation boundary.
 
 ## Public API
 
 | API | Contract |
 |---|---|
 | `assets::AssetId<T>` | Owning logical name typed by definition kind; not a path or native handle |
-| `AssetCatalog(root)` | Register C++ definitions under one content root |
+| `AssetCatalog(root)` | Register typed definitions with an explicit loose-file root |
+| `CatalogBuilder` | Import validated mounted definitions and freeze a catalog snapshot |
 | `add(id, definition, dependencies, revision)` | Reject invalid/duplicate identities; revision defaults to 1 |
 | `freeze()` | Validate references/cycles before concurrent reads; failure leaves registration open |
 | `dependencies(roots)` | Iterative dependency-first traversal, each identity once, including roots |
 | `definition(id)` | Borrow immutable definition; retain its catalog |
-| `read(source, limit)` | Bounded relative file or owned bytes; no implicit network access |
+| `AssetReader` | Bounded reads and seekable streams over file, owned-byte and mounted sources |
+| `read(source, limit)` | Whole-asset acquisition through AssetReader; no implicit network access |
 | `cacheKey(key)` | Process-local catalog identity + kind/name/revision; not a persisted ID/hash |
 | `sdl::AssetResources` | Owner-thread adapter with shared frozen catalog and borrowed SDL cache |
 | `font/image/vector/mesh/model/shader` | Typed acquisition; failed construction publishes no cache entry |
@@ -70,14 +76,21 @@ automatic reload or arbitrary callback serialization is part of this boundary.
 
 `playground_assets` owns neutral definitions and depends on scene/rendering
 contracts, never SDL. `playground_sdl` owns decoding/cache adapters.
-`playground_runtime` owns the executor and completion mailbox. The catalog's
-closed variant covers image/font/vector/binary/mesh/shader/model definitions;
-it is not a plugin/type-registration system.
+`playground_runtime` owns managed accounting, services, the executor and completion
+mailbox. The catalog uses explicit built-in definition kinds, not a plugin/type
+registration system. Image/font/vector/binary/mesh/shader/model definitions retain
+their typed APIs. Audio source definitions add decoding and streaming properties;
+AudioAsset describes encoded source, channel interpretation and clip/stream
+preparation. AudioClip and active voices are realizations, not catalog definitions.
+The audio adapter owns decoding/mixing without depending on the SDL rendering
+cache; see [audio contracts](../audio/README.md).
 
 File sources use lexical/canonical confinement checks, not a filesystem-race
-sandbox. ByteSource owns bytes. Fonts currently use files; images, vectors,
-models and shaders also accept encoded bytes. Mesh assets hold immutable
-MeshHandles. Definitions are not file snapshots: acquisition reads then caches.
+sandbox. ByteSource owns bytes; MountSource retains a mount and validated entry.
+Fonts, images, vectors, models, shaders and encoded audio use the same AssetSource
+contract. Font streams remain alive until all font faces/clones close. Mesh assets
+hold immutable MeshHandles. Loose-file definitions are not file snapshots:
+acquisition reads then caches. Mounted content is immutable and digest-identified.
 Changing disk contents does not invalidate handles; frozen catalogs cannot be
 mutated. New catalogs can explicitly define new revisions without aliasing old
 cache keys. The numeric kind and catalog identity are process-local details.
@@ -88,12 +101,13 @@ ModelAsset owns its ModelImportProps; import variants use distinct IDs. Publishe
 Decoded registry surfaces are charged on adoption by pitch times height; decoder
 private allocations are outside that coverage. General model graphs, shader
 code, strings and font-engine internals are not complete process-heap accounting. Font
-variant keys include catalog identity; clones preserve it unless changing path.
+variant keys include catalog and source identity; clones preserve both unless
+explicitly replacing their source.
 
 AssetRegistry retains its existing name and low-level Text/Vector cache APIs.
 AppContext::resources is typed acquisition; assets is the low-level cache. App
-Assets.hpp files register paths centrally. The obsolete AppContext::assetPath
-shortcut and support/AssetPath.hpp were removed.
+Assets.hpp files register definitions centrally; manifest export uses those
+definitions rather than maintaining a second inventory.
 
 ## Model and shader preparation
 
@@ -108,7 +122,7 @@ SDL_image's bundled stb path disables HDR; stb also inspects PNG/JPEG dimensions
 before SDL_image decoding. KTX2/Basis uses pinned libktx, including glTF
 KHR_texture_basisu sources. Packed format/encoding and mip bytes survive CPU
 preparation; GPU upload remains a separate owner-thread phase. Decoders and mesh
-preparation share the rendering ledger through `PreparationBudget`; retained payloads and temporary
+preparation share the runtime ledger through `PreparationBudget`; retained payloads and temporary
 estimates are different measurements. No font or GPU work runs in the importer.
 
 assets::ModelAsset is a preparation definition; scene::ModelAsset is its immutable
@@ -154,7 +168,7 @@ wakes workers; destruction additionally joins. Never destroy the executor from
 its own job. Owner slots must not be mutated concurrently. A queued job discarded
 by shutdown can yield broken-promise error if its consumer has not canceled.
 
-## Application reconstruction
+## Built-in application reconstruction
 
 Demo owns ViewProps and handles and constructs a candidate via makeDemo2DUI.
 MinesweeperApp owns MinesweeperModel; UI/Grid/Cell borrow it and display its
@@ -182,7 +196,7 @@ catalog IDs own application-facing identity. A file move should only require
 updating its registration, not changing UI nodes or logical IDs. Demo 2D and
 Minesweeper register their assets in their respective `Assets.hpp` files;
 Demo 3D registers its scene assets alongside its app implementation.
-`app/Assets.hpp` owns the font shared by the launcher and demos.
+`app/Assets.hpp` owns the font families shared by the launcher and demos.
 
 Do not move or remove unreferenced study assets just because current catalog
 registrations do not load them. Before distributing content, record its source,
@@ -201,9 +215,11 @@ runtime_executor/model_preparation cover admission, cancellation, supersession,
 worker failure and owner publication. gpu_shaders executes catalog-prepared native
 pipelines. These do not establish arbitrary codec security or global memory budgets.
 
-Disk watching, dependency-triggered reload, UI serialization, plugins, packing and
-general task graphs remain future choices. Build/source/runtime dependency graphs
-must stay distinct if those are added.
+Packing and mounting follow the [package contract](PACKAGES.md).
+[UI serialization](../ui/DOCUMENTS.md) and [executable app loading](DISTRIBUTED_APPS.md)
+remain future capabilities. Disk watching, automatic dependency reload and general
+task graphs are not required for explicit catalog replacement. Build, source and
+runtime dependency graphs remain distinct.
 Preparation reservations are conservative scratch/admission estimates and can
 overlap the lifetime of newly published payload charges. They are not another
 measurement of physical RAM. Packed texture copies acquire their own charge;

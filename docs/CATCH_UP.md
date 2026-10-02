@@ -1,7 +1,9 @@
 # Catching up from the surface-based playground
 
-This is a guided comparison with `5d95005fb5bc4b79718cde528c80fe97648dcd6a`,
-the `tetrass -> playground` commit. It includes the current working-tree cleanup.
+This is a historical guided comparison with `5d95005fb5bc4b79718cde528c80fe97648dcd6a`,
+the `tetrass -> playground` commit, including subsequent migration cleanup.
+It is not a complete inventory of later features; use the
+[documentation index](README.md) for target contracts and explicitly future capabilities.
 It is a learning route, not another specification to memorize. For exact API
 contracts use [UI reference](ui/REFERENCE.md), [UI guide](ui/GUIDE.md), and
 [rendering contracts](render/CONTRACTS.md).
@@ -25,7 +27,7 @@ and rendering math; they are not prerequisites for changing a button label.
 | `561422b` | Retained UI/layout, runtime services, app migration, geometry boundaries, settings and backend-neutral interfaces |
 | `0c0b5eb` | Software/GPU rendering, scenes, resource submission/completion, shaders, import, recovery and profiling |
 | `0d916a0` | Telemetry and scene-boundary corrections |
-| Current cleanup | Classified frame failures, tested host sequencing, creation policy, branch invalidation and private writable targets |
+| Subsequent cleanup | Classified frame failures, tested host sequencing, creation policy, branch invalidation and private writable targets |
 
 RAII, unique ownership, shared cached assets, props/patches, the registry's LRU
 clock and deferred app requests were already in your baseline. The genuinely new

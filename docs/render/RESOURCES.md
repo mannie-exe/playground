@@ -8,10 +8,16 @@ applications supply demand and presentation preferences. CPU simulation remains
 independent of presentation cadence. Runtime policy changes do not rewrite user
 settings or silently select a different renderer or image quality.
 
-`ResourceLedger` is the shared process rendering account. Native resources and
-CPU preparation workers retain accounting tokens, never the host. Separate
+`runtime::ResourceLedger` is the shared managed-storage account consumed by
+rendering, content, audio and networking. Native resources, CPU preparation
+workers and service buffers retain accounting tokens, never the host. Separate
 ledgers support isolated tests and embedded backends; asset adapters use the
 default process ledger. Compatibility domains are not accounting identities.
+Service snapshots expose queue/voice/connection counts separately from byte
+charges. Shared storage is charged once globally even when several apps or mounts
+retain it; per-consumer logical demand is a separate view. Audio render callbacks
+do not call the ledger: control-side admission reserves buffers before playback,
+and acknowledged retirement releases them outside the callback.
 Renderer replacement does not clear outstanding
 charges from the previous domain.
 

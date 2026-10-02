@@ -1,4 +1,44 @@
-# Application composition and runtime direction
+# Application composition
+
+Games and collaborative applications share the same host/service boundaries.
+[Distributed app authoring/loading](DISTRIBUTED_APPS.md) and executable-app
+[permissions/isolation](SECURITY.md) remain explicitly future capabilities.
+
+## Ownership and composition
+
+| Owner | Responsibility |
+|---|---|
+| AppHost | Platform services, one foreground compiled IApp, settings and presentation |
+| IApp | App model, action map, activation lifetime and local simulation policy |
+| Domain model | Stable entities, validated commands, rules, revisions and durable state |
+| Session authority | Participants, command validation, shared state and private views |
+| UIRoot / scene | UI behavior or render descriptions; neither owns gameplay authority |
+| Asset catalog/mount | Immutable definitions, dependency closure and retained source lifetimes |
+| Service scope | App-owned audio, network and asynchronous work independent of local presentation pause |
+
+Models accept domain commands and publish state/events without owning SDL events,
+windows, UI nodes or GPU resources. Local input and network adapters translate to
+the same domain operations; presentation projects accepted state into UI, scenes
+and sound cues. Rebuilding a view or replacing a renderer preserves the model.
+Persistent model IDs, session IDs, asset IDs and transient NodeHandles remain
+separate. Never serialize pointers, callbacks, variant indexes or cache keys.
+
+One app can mount several packs; many apps can share immutable pack storage.
+Mounting data does not create an app instance or grant code execution. Each
+service defines admission, cancellation, deadlines and terminal outcomes; the
+completion mailbox does not replace its byte/voice/connection limits.
+
+Durable model snapshots carry an app identity and schema version. Validate and
+migrate a candidate before atomic replacement; failure preserves the old state.
+Save data belongs to app storage, separate from shared settings and immutable
+packs. Domain commands with durable external effects record their result with
+the state transition before acknowledging success. UI state is persisted only
+through an explicit app view-state policy.
+
+Gameplay worlds use owned model collections and explicit controller/system order.
+Render parenting does not imply physics ownership. Kinematic controllers,
+collision/physics, navigation and character pose production remain separate
+interfaces; a universal ECS or behavior tree is not required by this boundary.
 
 ## Minesweeper screen contract
 
@@ -23,9 +63,10 @@ lifetime of this IApp instance, not across launcher reactivation or process exit
 Tab/Shift+Tab navigate controls; Enter/Space activate ordinary buttons on release.
 Steppers also accept arrows. The game grid has one tab stop, arrows select adjacent
 cells, Enter/Space reveal and Shift+Enter/Space flag. Focus follows the selected
-cell and keyboard navigation scrolls only enough to reveal it. Escape returns
-from game to difficulty, or from difficulty to launcher. Mouse cells retain
-primary reveal/secondary flag on press. Focus is assigned after layout, not during
+cell and keyboard navigation scrolls only enough to reveal it. The Difficulty
+button returns from game to difficulty; the Launcher button leaves difficulty.
+Unhandled Escape opens shared settings; Ctrl/Cmd+Shift+M returns to the launcher.
+Mouse cells retain primary reveal/secondary flag on press. Focus is assigned after layout, not during
 construction, because root focus eligibility requires arranged nodes.
 
 The window fits natural content up to the display work area, including the host's
@@ -56,9 +97,11 @@ simulation. Workers produce owned results; they do not mutate the live scene.
 
 ## Input integration
 
-Launcher selection and demo/game back navigation use named BeforeUI
-actions. Minesweeper's focused cell navigation, reveal/flag operations and button
-activation remain routed UI behavior: these actions depend on focus/hit testing,
+Launcher numeric selection and Q-to-quit use named BeforeUI actions.
+Ctrl/Cmd+Shift+M is a host shortcut; unhandled Escape opens/closes shared settings
+after app/UI routing, preserving local popup/edit cancellation. Minesweeper's
+focused cell navigation, reveal/flag operations and button activation remain
+routed UI behavior: these actions depend on focus/hit testing,
 not an independent second gameplay dispatch. UI text/IME remains separate.
 Apps can add AfterUI gameplay contexts and rebind them through `IApp::input()`.
 Binding persistence, capture UI, gestures and response curves remain future work.
@@ -77,16 +120,17 @@ button labels and numeric bindings:
 | 4 | Rock Paper Scissors |
 | 5 | Snake |
 
-Mouse activation and Tab/Enter/Space use ordinary UI Button routing. Escape or Q
-quits from the launcher; Escape returns from each app. Button callbacks queue an
+Mouse activation and Tab/Enter/Space use ordinary UI Button routing. Q quits
+from the launcher. Escape opens settings after local UI cancellation;
+Ctrl/Cmd+Shift+M returns from an app to the launcher. Button callbacks queue an
 app identity in MenuApp, never capture a temporary AppContext. The event handler
 forwards that intent after routing; AppHost still performs the actual transition
 at its safe boundary. Failed transitions are shown in the launcher's status text.
 
 `demo2d/` owns the surface/UI composition demo; `demo3d/` owns the material/scene
-demo and `assets/demo3d/` its sample content. `app/Assets.hpp` registers the shared
-UI font independently of either demo. Persisted app keys `demo` and `material-lab`
-remain stable for existing settings; their current C++ identities are Demo2D and
+demo and `assets/demo3d/` its sample content. `app/Assets.hpp` registers shared
+font families independently of either demo. Persisted app keys `demo` and
+`material-lab` remain stable for existing settings; their current C++ identities are Demo2D and
 Demo3D. Rock Paper Scissors and Snake are registered study stubs, not implemented
 games; the separate console experiment remains untouched.
 
@@ -99,7 +143,8 @@ the owner thread installs the result and creates native GPU resources. Exit
 cancels outstanding work without capturing the application in the worker.
 
 Arrow keys orbit, W/S zoom, Q/E adjust exposure, L toggles the directional light,
-Space pauses smoke playback and Escape returns to the launcher. See
+Space pauses smoke playback, Escape opens settings and Ctrl/Cmd+Shift+M returns
+to the launcher. See
 [material contracts](../render/MATERIALS.md) and the
 [asset manifest](../../assets/demo3d/README.md). Rigid animation is verified
 with a small synthetic import test rather than implied by the static prop.
@@ -116,10 +161,10 @@ modal/editor ownership blocks AfterUI actions even for otherwise unhandled keys.
 
 ## Manual Minesweeper acceptance
 
-Launch `dist/debug/bin/playground.exe`, select Minesweeper, and try both presets
-and custom 2 x 2 / 30 x 30 boards. Verify the exact flag allowance, New Game reset,
-Difficulty return, and Escape/Launcher distinction. Exercise mouse reveal/flag,
-Tab/Shift+Tab, arrow navigation and Shift+Enter flagging. At small sizes the footer
+Launch `dist/debug/bin/playground` (`playground.exe` on Windows), select
+Minesweeper, and try both presets and custom 2 x 2 / 30 x 30 boards. Verify the exact flag allowance, New Game reset,
+Difficulty return, Escape settings, and Ctrl/Cmd+Shift+M launcher navigation.
+Exercise mouse reveal/flag, Tab/Shift+Tab, arrow navigation and Shift+Enter flagging. At small sizes the footer
 may be wider than the board; at large sizes the window should fill only as much
 of the usable display as needed, then permit overflow scrolling. Keyboard focus
 must remain visible when traversing an overflowing board. Repeat across display

@@ -16,7 +16,8 @@ labels, units, ranges, categories and inactive-feature markers to persistence an
 the standard view. New fields require validation, round-trip tests and a stated
 capability contract. A stored value is not evidence that a renderer implements it.
 
-Settings documents use schema version 5 with an optional `[graphics]` section.
+Settings documents use schema version 6 with an optional `[graphics]` section;
+version 6 adds audio without changing graphics field semantics.
 Enumeration values use stable string choices (for example `linear`, `high`,
 `msaa-4x`); scales are percentages and memory ceilings are MiB.
 One user graphics value replaces the project graphics value; omitted fields in a
@@ -27,7 +28,7 @@ preference object, not a patch over the project object. Without a project graphi
 section, legacy project `[defaults]` render fields
 provide its presentation baseline. When the user graphics section is absent,
 legacy user-wide render preferences still override the project baseline. Legacy
-per-app render overrides do not override shared graphics. Versions 1–4 remain
+per-app render overrides do not override shared graphics. Versions 1–5 remain
 readable; window/session persistence retains its separate schema and ownership.
 
 `SettingsStore::graphics()` returns the resolved shared preferences.
@@ -146,8 +147,8 @@ the view also has a Return to menu button. Local composition, popup and editor
 cancellation precedes the playground host fallback. The reusable UI library
 supports local Escape dismissal for other hosts.
 
-While settings is visible, app input and simulation are paused, worker
-completions still drain, and only the settings UI is rendered. The host cancels
+While settings is visible, local app input and simulation are paused; services,
+session authority and worker completions continue. Only the settings UI renders. The host cancels
 held actions and rebases elapsed time on entry/exit. The view uses reflow layout,
 full composition resolution and the existing window size and resize policy.
 Content reflows within the available viewport; tab bodies and the view scroll
