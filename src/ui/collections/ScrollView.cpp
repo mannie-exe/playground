@@ -93,6 +93,9 @@ bool ScrollView::hitTestOverlay(math::Point2 point) const {
 layout::MeasureResult
 ScrollView::measureContent(MeasureContext &context,
                            const layout::SizeConstraints &offered) {
+  // Descendant measurement plans can depend on the offer; restore the final
+  // offer during arrangement without changing any live scroll state here.
+  _geometryKey.reset();
   if (_props.sizing == ScrollSizing::Fill &&
       ((horizontal() && !offered.width.maximum) ||
        (vertical() && !offered.height.maximum)))
@@ -101,20 +104,28 @@ ScrollView::measureContent(MeasureContext &context,
   layout::SizeConstraints content{
       horizontal() ? layout::AxisConstraints{} : offered.width,
       vertical() ? layout::AxisConstraints{} : offered.height};
-  _extent = children().empty() ? math::Size2{}
-                               : children()[0]->measure(context, content).size;
+  const auto extent = children().empty()
+                          ? math::Size2{}
+                          : children()[0]->measure(context, content).size;
   const auto viewport =
       _props.sizing == ScrollSizing::Content
-          ? offered.clamp(_extent)
+          ? offered.clamp(extent)
           : offered.clamp(
-                {horizontal() ? *offered.width.maximum : _extent.width,
-                 vertical() ? *offered.height.maximum : _extent.height});
-  resolveViewport(context, viewport);
+                {horizontal() ? *offered.width.maximum : extent.width,
+                 vertical() ? *offered.height.maximum : extent.height});
+  // Provisional offers must not change committed scroll geometry or offset.
+  // Gutter resolution and clamping belong to arrangement at the final size.
   return {viewport};
 }
 
 void ScrollView::arrangeChildren(ArrangeContext &context, math::Rect content) {
-  resolveViewport(context, content.size);
+  const GeometryKey key{content.size, measureRevision(),
+                        context.environmentRevision, context.direction,
+                        context.pixelScale};
+  if (_geometryKey != key) {
+    resolveViewport(context, content.size);
+    _geometryKey = key;
+  }
   if (!children().empty())
     children()[0]->arrange(
         context, {{content.x() - _offset.x, content.y() - _offset.y}, _extent});
@@ -258,7 +269,7 @@ void ScrollView::setOffset(math::Vec2f value) {
   _offset = value;
   clampOffset();
   if (previous != _offset)
-    invalidateLayout();
+    invalidateArrange();
 }
 
 void ScrollView::scrollIntoView(math::Rect target,

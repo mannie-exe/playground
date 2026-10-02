@@ -53,5 +53,60 @@ int main() {
                           s->offset() == math::Vec2f{},
                       "removing scroll content clears derived range");
       }
+    // Nested local arrangement must visit both queued nodes even when a
+    // cached intermediate container lets the outer arrangement skip them.
+    auto inner = std::make_unique<ui::ScrollView>(
+        std::make_unique<ui::Box>(
+            layout::BoxProps{.height = layout::SizeRule::fixed(600)}),
+        ui::ScrollProps{},
+        layout::BoxProps{.width = layout::SizeRule::fixed(180),
+                         .height = layout::SizeRule::fixed(150)});
+    auto *inside = inner.get();
+    inside->child()->setHitTestPolicy(ui::HitTestPolicy::SelfAndChildren);
+    auto box = std::make_unique<ui::Box>(
+        layout::BoxProps{.height = layout::SizeRule::fixed(500)});
+    box->setChild(std::move(inner));
+    auto outer = std::make_unique<ui::ScrollView>(std::move(box));
+    auto *outside = outer.get();
+    ui::UIRoot root;
+    root.setContent(std::move(outer));
+    root.flushLayout({200, 200});
+    root.update(0);
+    const auto measured = root.stats().measured;
+    outside->setOffset({0, 5});
+    inside->setOffset({0, 20});
+    root.flushLayout({200, 200});
+    test::require(
+        outside->child()->bounds().y() == -5 &&
+            inside->child()->bounds().y() == -20 &&
+            root.stats().measured == measured,
+        "nested arrangement queues preserve geometry without measurement");
+    const auto offset = inside->offset();
+    const auto viewport = inside->viewportExtent();
+    root.preferredSize({1000, 1000});
+    test::require(inside->offset() == offset &&
+                      inside->viewportExtent() == viewport,
+                  "preferred offers do not mutate nested live scroll state");
+    root.flushLayout({200, 200});
+    const auto point = inside->worldTransform().mapPoint({10, 10});
+    test::require(root.hitTest(point) &&
+                      root.hitTest(point)->target.id() == inside->child()->id(),
+                  "scroll placement updates descendant hit coordinates");
+    ui::UIEvent wheel{
+        .type = ui::EventType::Wheel, .position = point, .delta = {0, 100}};
+    root.dispatch(wheel);
+    root.flushLayout({200, 200});
+    test::require(
+        inside->offset().y == inside->contentExtent().height -
+                                  inside->viewportExtent().height &&
+            outside->offset().y > 5,
+        "nested wheel consumes its range then forwards residual movement");
+    auto smaller = inside->child()->boxProps();
+    smaller.height = layout::SizeRule::fixed(40);
+    inside->child()->setBoxProps(smaller);
+    root.flushLayout({220, 240});
+    test::require(
+        inside->offset().y == 0 && inside->contentExtent().height == 40,
+        "content shrink and resize invalidate cached scroll geometry");
   });
 }

@@ -1,6 +1,7 @@
 #include <platform/sdl/SurfacePainter.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
+#include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Boundaries.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/content/Rectangle.hpp>
@@ -89,5 +90,29 @@ int main() {
         SDL_ReadSurfacePixel(surface.get(), 8, 5, &r, &g, &b, &a) && r == 255 &&
             a == 255,
         "boundary-local geometry changes invalidate the ancestor layer cache");
+    auto stripes = std::make_unique<ui::VStack>();
+    for (auto color :
+         {math::ColorRGBA8{255, 0, 0, 255}, math::ColorRGBA8{0, 255, 0, 255}})
+      stripes->append(std::make_unique<ui::Rectangle>(
+          ui::RectangleProps{color},
+          layout::BoxProps{.width = layout::SizeRule::fill(),
+                           .height = layout::SizeRule::fixed(20)}));
+    auto scroll = std::make_unique<ui::ScrollView>(
+        std::move(stripes),
+        ui::ScrollProps{.scrollbar = ui::ScrollbarPolicy::Never});
+    auto *view = scroll.get();
+    root.setContent(std::make_unique<ui::Layer>(
+        std::move(scroll),
+        ui::LayerProps{.cachePolicy = ui::LayerCachePolicy::WhenUnchanged}));
+    render(layout::LayoutDirection::LeftToRight);
+    test::require(SDL_ReadSurfacePixel(surface.get(), 5, 5, &r, &g, &b, &a) &&
+                      r == 255,
+                  "cached viewport starts at first stripe");
+    view->setOffset({0, 20});
+    render(layout::LayoutDirection::LeftToRight);
+    test::require(
+        SDL_ReadSurfacePixel(surface.get(), 5, 5, &r, &g, &b, &a) && g == 255 &&
+            r == 0,
+        "local scroll arrangement invalidates enclosing cached pixels");
   });
 }

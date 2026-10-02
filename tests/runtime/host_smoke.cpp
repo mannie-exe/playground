@@ -1,5 +1,6 @@
 #include <chrono>
 #include <fstream>
+#include <optional>
 #include <string_view>
 #include <thread>
 
@@ -12,7 +13,13 @@ using namespace playground;
 using namespace std::chrono_literals;
 
 int main() {
-  SDLGuard video{SDL_INIT_VIDEO};
+  std::optional<SDLGuard> video;
+  try {
+    video.emplace(SDL_INIT_VIDEO);
+  } catch (const std::runtime_error &error) {
+    std::cerr << "Skipping native host test: " << error.what() << '\n';
+    return 77;
+  }
   const std::string_view driverName = SDL_GetCurrentVideoDriver();
   if (driverName == "dummy" || driverName == "offscreen")
     return 77;
