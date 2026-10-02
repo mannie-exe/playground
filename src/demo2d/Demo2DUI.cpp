@@ -283,12 +283,14 @@ public:
         choices(), ui::ToggleGroupProps{.name = "Checkbox group"}));
     column->append(label("Managed utilization (example)"));
     column->append(std::make_unique<ui::Meter>(
+        icon(resources.warningIcon), icon(resources.errorIcon),
         ui::MeterProps{.value = 75,
                        .maximum = 100,
                        .warning = 70,
                        .critical = 90,
                        .name = "Example utilization",
                        .unit = "MiB"}));
+    column->append(label("75 / 100 MiB · Warning", ui::TextRole::Caption));
     std::vector<ui::AccordionItem> sections;
     sections.push_back({"first", label("Accordion: first"),
                         label("Single-expansion content")});

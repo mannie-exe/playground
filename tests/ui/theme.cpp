@@ -61,6 +61,11 @@ int main() {
             test::require(
                 contrastRatio(ink, surface) >= 4.5,
                 "built-in semantic text has readable paired surfaces");
+        test::require(
+            contrastRatio(t.colors.onWarning, t.colors.warning) >= 3 &&
+                contrastRatio(t.colors.onError, t.colors.error) >= 3 &&
+                contrastRatio(t.colors.meterOnTrack, t.colors.border) >= 3,
+            "meter inks contrast with each paired background");
         test::require(contrastRatio(t.colors.onAccent, t.colors.accent) >= 4.5,
                       "accent foreground is paired with accent background");
       }

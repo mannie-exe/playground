@@ -80,20 +80,26 @@ void Vector::prepareContent(PrepareContext &context) {
 }
 
 void Vector::paint(PaintContext &context) const {
+  const auto tint =
+      _props.colorTreatment == ColorTreatment::Adaptive
+          ? (isEffectivelyEnabled() ? theme().text : theme().mutedText)
+          : _props.content.paint.tint;
+  paintTinted(context, tint);
+}
+
+void Vector::paintTinted(PaintContext &context, math::ColorRGBA8 tint) const {
   if (!_prepared)
     throw std::logic_error(
         "Vector must be prepared after layout and property changes");
   if (_raster && _resolved.destination.hasArea()) {
     auto paint = _props.content.paint;
-    if (_props.colorTreatment == ColorTreatment::Adaptive) {
-      paint.tint = isEffectivelyEnabled() ? theme().text : theme().mutedText;
-    }
+    paint.tint = tint;
     context.drawImage(_raster, _resolved.source, _resolved.destination, paint);
   }
 }
 
 Vector::Vector(AssetRegistry &assets, VectorProps props, layout::BoxProps box)
-    : Node{box}, _props{std::move(props)}, _assets{assets} {
+    : TintableContent{box}, _props{std::move(props)}, _assets{assets} {
   validate(_props);
   setHitTestPolicy(HitTestPolicy::None);
   setSemanticProps({.role = SemanticRole::Image});

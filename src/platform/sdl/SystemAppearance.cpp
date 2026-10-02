@@ -48,6 +48,7 @@ ui::SystemAppearance systemAppearance() {
       colors.selection = colors.surface;
       colors.scrollbar = colors.border;
       colors.error = colors.warning = colors.success = colors.text;
+      colors.onWarning = colors.onError = colors.meterOnTrack = colors.surface;
       colors.hover = colors.pressed = colors.surface;
       value.contrastPalette = colors;
     }

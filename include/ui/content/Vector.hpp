@@ -7,8 +7,8 @@
 
 #include <support/AssetRegistry.hpp>
 #include <support/Patch.hpp>
-#include <ui/Node.hpp>
 #include <ui/content/ContentTypes.hpp>
+#include <ui/content/TintableContent.hpp>
 
 namespace playground::ui {
 
@@ -34,7 +34,7 @@ struct VectorPatch {
   Patch<ColorTreatment> colorTreatment;
 };
 
-class Vector final : public Node {
+class Vector final : public TintableContent {
   VectorProps _props;
 
   AssetRegistry &_assets;
@@ -75,6 +75,10 @@ public:
   const VectorProps &props() const noexcept { return _props; }
 
   math::Vec2i rasterSize() const noexcept { return _rasterSize; }
+
+  // Draw the prepared image in local coordinates with caller-resolved ink.
+  // Does not apply node transforms/chrome; the composing control owns those.
+  void paintTinted(PaintContext &, math::ColorRGBA8) const override;
 
   void setProps(VectorProps props);
   void applyPatch(const VectorPatch &patch);

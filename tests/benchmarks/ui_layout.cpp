@@ -20,6 +20,8 @@
 #include <ui/UIRoot.hpp>
 #include <ui/collections/ScrollView.hpp>
 #include <ui/containers/Box.hpp>
+#include <ui/content/Vector.hpp>
+#include <ui/controls/Meter.hpp>
 #include <ui/views/SettingsView.hpp>
 
 using namespace playground;
@@ -194,7 +196,8 @@ int main(int argc, char **argv) {
         root.prepare({.images = painter.imagePreparer(),
                       .text = painter.textPreparer()});
         root.render(painter);
-        painter.finish(target->get(), {int(size.width), int(size.height)}, {});
+        painter.finish(target->get(), {int(size.width), int(size.height)},
+                       {0, 0, 0, 0});
         const auto data = test::readPixels(device->device, *target->publish());
         const auto *begin =
             reinterpret_cast<const unsigned char *>(data.data());
@@ -263,6 +266,96 @@ int main(int argc, char **argv) {
     if (!captureDirectory.empty()) {
       screenshots(captureDirectory, assets, resources);
       return;
+    }
+    // A split overlay must equal the corresponding parts of two single-ink
+    // references, including the icon's transparent exclamation cutout.
+    for (unsigned appearance = 0; appearance < 5; ++appearance) {
+      const bool dark = appearance & 1, high = appearance & 2;
+      ui::UIRoot root;
+      if (appearance == 4) {
+        auto theme = ui::defaultThemeDefinition();
+        theme.light.border = {255, 255, 255, 255};
+        theme.light.warning = {0, 0, 0, 255};
+        theme.light.error = {0, 0, 80, 255};
+        theme.light.meterOnTrack = {0, 0, 0, 255};
+        theme.light.onWarning = {255, 255, 255, 255};
+        theme.light.onError = {255, 220, 80, 255};
+        root.setThemeDefinition(theme);
+      }
+      root.setAppearance(dark ? ui::ColorSchemePreference::Dark
+                              : ui::ColorSchemePreference::Light,
+                         high ? ui::ContrastPreference::High
+                              : ui::ContrastPreference::Normal,
+                         {});
+      const auto icon = [&](auto id) {
+        return std::make_unique<ui::Vector>(
+            assets,
+            ui::VectorProps{.source = resources.vector(id),
+                            .colorTreatment = ui::ColorTreatment::Adaptive});
+      };
+      auto meter = std::make_unique<ui::Meter>(icon(demo2d::warningIconAsset),
+                                               icon(demo2d::errorIconAsset));
+      auto *control = meter.get();
+      root.setContent(std::move(meter));
+      const auto sample = [&](std::optional<double> value, bool critical) {
+        control->setProps(
+            {.value = value,
+             .warning = 0,
+             .critical = critical ? std::optional<double>{0} : std::nullopt});
+        root.flushLayout({200, 16});
+        return raster(root, {200, 16});
+      };
+      const auto warningShape = sample(0, false);
+      const auto criticalShape = sample(0, true);
+      test::require(pixelError(warningShape, criticalShape, gpu) > .0001,
+                    "warning and critical SVGs have distinct visible shapes");
+      const auto stride = gpu ? 4 * sizeof(float) : 4;
+      for (const bool critical : {false, true}) {
+        const auto empty = sample(0, critical);
+        const auto full = sample(100, critical);
+        for (unsigned y = 0; y < 16; ++y)
+          for (unsigned x = 192; x < 200; ++x)
+            test::require(
+                std::memcmp(full.data() + (y * 200 + x) * stride,
+                            full.data() + (y * 200 + 100) * stride,
+                            stride) == 0,
+                "status icon leaves eight units of filled track to its right");
+        for (const double value : {75., 90., 92., 95.}) {
+          const auto actual = sample(value, critical);
+          auto expected = empty;
+          const auto filledWidth = std::size_t(value * 2);
+          for (unsigned y = 0; y < 16; ++y)
+            std::memcpy(expected.data() + y * 200 * stride,
+                        full.data() + y * 200 * stride, filledWidth * stride);
+          test::require(
+              pixelError(actual, expected, gpu) <= (gpu ? .002 : 0),
+              "meter overlay clips paired inks exactly at the fill boundary");
+        }
+        const auto over = sample(120, critical);
+        // Over-limit outline may change outer pixels, but not the marker.
+        for (unsigned y = 2; y < 14; ++y)
+          test::require(std::memcmp(over.data() + (y * 200 + 176) * stride,
+                                    full.data() + (y * 200 + 176) * stride,
+                                    16 * stride) == 0,
+                        "over-limit meter retains the filled indicator ink");
+      }
+      const auto unavailable = sample({}, false);
+      for (unsigned y = 2; y < 14; ++y)
+        for (unsigned x = 176; x < 192; ++x)
+          test::require(
+              std::memcmp(unavailable.data() + (y * 200 + x) * stride,
+                          unavailable.data() + (y * 200 + 100) * stride,
+                          stride) == 0,
+              "unavailable meter has no status icon");
+      control->setProps({.value = 20, .warning = 70, .critical = 90});
+      root.flushLayout({200, 16});
+      const auto normal = raster(root, {200, 16});
+      for (unsigned y = 0; y < 16; ++y)
+        for (unsigned x = 176; x < 200; ++x)
+          test::require(std::memcmp(normal.data() + (y * 200 + x) * stride,
+                                    normal.data() + (y * 200 + 100) * stride,
+                                    stride) == 0,
+                        "normal meter keeps a full-width track with no marker");
     }
     auto font = resources.font(app::fontAsset, {.style = {.size = 18}});
     std::cout << "scene,width,repeat,full_layout,first_layout_ms,median_ms,p95_"

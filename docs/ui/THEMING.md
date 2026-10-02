@@ -50,6 +50,11 @@ scene output remain authored content; surrounding controls remain adaptive.
 ThemeMetrics owns stock control geometry: padding, minimum height, spacing,
 stepper buttons, indicators, glyphs, focus/borders, sliders, progress/meters,
 text editors, scrollbars, popup limits, tooltip timing and toast spacing.
+Meter threshold indicators use `meterMarker` sizing and `meterMarkerInset`
+(default 8 logical units) inside the track. `meterOnTrack`, `onWarning` and
+`onError` pair icon ink with the track, warning and critical backgrounds. Custom
+palettes supply contrasting pairs; built-in pairs meet 3:1. Native forced colors
+use the native window background as ink over the native foreground-colored track.
 ControlLayout identifies shared layout recipes. ControlStyle provides optional
 padding, minimum height, width and gap overrides. An explicit zero remains zero.
 resolvedControlStyle() reports effective values. BoxProps remains caller-owned

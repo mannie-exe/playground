@@ -1,5 +1,5 @@
 #pragma once
-#include <ui/Node.hpp>
+#include <ui/content/TintableContent.hpp>
 
 namespace playground::ui {
 struct MeterProps {
@@ -11,14 +11,31 @@ struct MeterProps {
 
 class Meter final : public Node {
   MeterProps _props;
+  TintableContent *_warningIcon{}, *_criticalIcon{};
+
+  bool critical() const noexcept {
+    return _props.value && _props.critical && *_props.value >= *_props.critical;
+  }
+
+  bool warning() const noexcept {
+    return _props.value && _props.warning && *_props.value >= *_props.warning;
+  }
+
+  math::Rect markerBounds() const noexcept;
+  math::Rect trackBounds() const noexcept;
+  void paintMarker(PaintContext &, math::ColorRGBA8) const;
 
 protected:
   layout::MeasureResult
   measureContent(MeasureContext &, const layout::SizeConstraints &) override;
-  void paint(PaintContext &) const override;
+  void arrangeChildren(ArrangeContext &, math::Rect) override;
+  void paintSubtree(PaintContext &) const override;
 
 public:
   explicit Meter(MeterProps = {}, layout::BoxProps = {});
+  Meter(std::unique_ptr<TintableContent> warningIcon,
+        std::unique_ptr<TintableContent> criticalIcon, MeterProps = {},
+        layout::BoxProps = {});
   void setProps(MeterProps);
 
   const MeterProps &props() const noexcept { return _props; }

@@ -38,6 +38,8 @@ struct ThemePalette {
   math::ColorRGBA8 error{180, 35, 35, 255}, warning{130, 85, 0, 255},
       success{20, 110, 55, 255};
   math::ColorRGBA8 scrollbar{116, 130, 151, 255}, backdrop{0, 0, 0, 100};
+  math::ColorRGBA8 onWarning{255, 255, 255, 255}, onError{255, 255, 255, 255},
+      meterOnTrack{255, 255, 255, 255};
   bool operator==(const ThemePalette &) const = default;
 };
 
@@ -95,7 +97,7 @@ struct ThemeMetrics {
   float iconSize{16}, chevronWidth{12}, chevronHeight{8};
   float sliderLength{160}, sliderBreadth{24}, sliderTrack{4};
   float sliderThumbLength{16}, sliderThumbBreadth{20};
-  float meterLength{160}, meterHeight{16}, meterMarker{12};
+  float meterLength{160}, meterHeight{16}, meterMarker{16}, meterMarkerInset{8};
   float inputWidth{240}, inputPadding{4}, caretWidth{1}, textAreaLines{5};
   float scrollbarThickness{8}, scrollbarMinimumThumb{16};
   float popupGap{4}, popupPadding{8}, popupMaximumHeight{320};

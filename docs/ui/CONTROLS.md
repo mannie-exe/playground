@@ -151,8 +151,15 @@ without hover.
 Meter displays a current measurement relative to limits, not task completion.
 It supports units, thresholds and unavailable measurements. Over-limit readings
 retain the actual value in text/semantics while visual fill saturates.
-Warning and critical thresholds add distinct shape markers and semantic text;
-high contrast does not erase the distinction.
+Warning and critical states overlay distinct markers inside the track, with a
+themed right inset; the track keeps its full width in every state. Optional
+monochrome `TintableContent` icons (`Vector` for SVGs) replace the built-in
+triangle/cross. The meter owns icon
+visibility, placement and tint. Each marker is clipped at the fill boundary and
+painted using `onWarning`/`onError` over the fill and `meterOnTrack` over the empty
+track. No backing square or background sampling is required. High contrast keeps
+paired inks and distinct shapes. Demo 2D uses filled Material warning/error SVGs
+and a visible value/status readout.
 ProgressBar represents task completion; unknown progress is indeterminate, never
 zero. Neither is adjustable or sequentially focusable.
 

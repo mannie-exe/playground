@@ -486,9 +486,15 @@ intrinsicSize=nullopt, content defaults, rasterScale=1,
 maximumRasterPixels=16×1024², colorTreatment=PreserveArtwork. Selecting Adaptive replaces paint
 tint with theme text/mutedText (including disabled ancestors); use white monochrome
 SVGs for icons. It does not replace arbitrary SVG fills or recolor artwork intelligently.
+
 Raster size follows final dimensions and display
 density; pure movement reuses the raster. Tint is whole-output modulation;
 [styles](#svg-styling) edits supported element properties in an immutable variant.
+
+`TintableContent::paintTinted`, implemented by `Vector`, draws prepared content
+in local coordinates with explicit ink. Composing controls own transforms/clips and call it only after preparation;
+it does not render node chrome or children. Meter uses this to draw a monochrome
+status SVG across two independently colored regions without changing props.
 
 Shared [ContentStyle](../../include/ui/content/ContentTypes.hpp):
 fit=Contain, alignment=Center/Center, paint.tint=opaque white,

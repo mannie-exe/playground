@@ -4,6 +4,7 @@
 #include <ui/UIRoot.hpp>
 #include <ui/content/Rectangle.hpp>
 #include <ui/content/Text.hpp>
+#include <ui/content/Vector.hpp>
 #include <ui/controls/ChoiceStepper.hpp>
 #include <ui/controls/Groups.hpp>
 #include <ui/controls/Meter.hpp>
@@ -505,6 +506,59 @@ int main() {
       test::require(meter.semanticState().description.value->find("critical") !=
                         std::string::npos,
                     "critical boundary must have a distinct description");
+    });
+    check("meter marker layout", [&] {
+      AssetRegistry assets;
+      ui::UIRoot root;
+      const auto icon = [&] {
+        return std::make_unique<ui::Vector>(
+            assets,
+            ui::VectorProps{
+                .source = std::make_shared<const SVGDocument>(
+                    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="white" d="M2 2h20v20H2z"/></svg>)")});
+      };
+      auto warning = icon(), critical = icon();
+      auto *warningNode = warning.get();
+      auto *criticalNode = critical.get();
+      auto meter = std::make_unique<ui::Meter>(
+          std::move(warning), std::move(critical),
+          ui::MeterProps{.value = 20, .warning = 70, .critical = 90});
+      auto *control = meter.get();
+      root.setContent(std::move(meter));
+      root.flushLayout({200, 16});
+      const auto slot = warningNode->bounds();
+      test::require(
+          slot.right() == 192 && slot.w() == 16,
+          "meter overlays a theme-sized icon with an eight-unit inset");
+      test::require(warningNode->visibility() == ui::Visibility::Hidden &&
+                        criticalNode->visibility() == ui::Visibility::Hidden,
+                    "normal meter hides both status icons");
+      control->setProps({.value = 75, .warning = 70, .critical = 90});
+      root.flushLayout({200, 16});
+      test::require(
+          warningNode->bounds() == slot && warningNode->isInert() &&
+              warningNode->visibility() == ui::Visibility::Visible &&
+              criticalNode->visibility() == ui::Visibility::Hidden,
+          "warning keeps marker geometry and excludes decorative input");
+      control->setProps({.value = 95, .warning = 70, .critical = 90});
+      root.flushLayout({4, 3});
+      test::require(warningNode->visibility() == ui::Visibility::Hidden &&
+                        criticalNode->visibility() == ui::Visibility::Visible &&
+                        criticalNode->bounds().right() <= 4 &&
+                        criticalNode->bounds().bottom() <= 3,
+                    "critical takes priority and fits tiny meter bounds");
+      control->setProps({.value = 95});
+      root.flushLayout({200, 16});
+      test::require(
+          criticalNode->visibility() == ui::Visibility::Hidden &&
+              criticalNode->bounds() == slot,
+          "removing thresholds hides icons without changing geometry");
+      auto theme = ui::defaultThemeDefinition();
+      theme.metrics.meterMarkerInset = 0;
+      root.setThemeDefinition(theme);
+      root.flushLayout({200, 16});
+      test::require(criticalNode->bounds().right() == 200,
+                    "explicit zero marker inset is honored");
     });
     check("focus within boundaries", [&] {
       ui::UIRoot root;

@@ -225,7 +225,7 @@ acceptance remain separate from these deterministic checks.
 codecs, dirty external refresh, Select label/help relationships, nonmodal edit
 dismissal, composite toolbar Tab traversal, specialization invariants, independent
 toast hover/focus pauses, event provenance, slider terminal states, meter threshold
-semantics and focus-within boundaries.
+semantics, inset meter icon geometry, tiny bounds and focus-within boundaries.
 
 ## Rendering workloads
 
@@ -286,6 +286,8 @@ inert input/semantics, presence and
 async publication. `ui_layout_workload` also compares animated opacity/translation
 against static reference pixels on software and GPU and verifies final idle state.
 Native host workloads exercise the session's demand/pacing path with app reveals.
+The layout workload also verifies clipped meter SVG ink against empty/full references
+in all four built-in appearances on software and GPU.
 
 Run `build/debug/bin/playground_ui_host_workload software --motion` or replace
 `software` with `gpu`; add `--burst` for prequeued input. The motion mode caps
