@@ -250,6 +250,55 @@ int main() {
           group.props().selected.size() == 2,
           "CheckboxGroup retains independent selection through base mutation");
     });
+    check("positioned popup width", [&] {
+      ui::ArrangeContext context;
+      auto anchor = content();
+      anchor->arrange(context, math::rect(10, 10, 100, 30));
+      ui::Popup popup{content(),
+                      {.open = true, .position = math::Point2{150, 80}}};
+      popup.present(context, math::rect(0, 0, 400, 300), anchor.get());
+      test::require(popup.bounds().w() == 100 && popup.bounds().x() == 150 &&
+                        popup.bounds().y() == 84,
+                    "explicit position retains anchor-matched width");
+      popup.present(context, math::rect(0, 0, 80, 100), anchor.get());
+      test::require(popup.bounds().w() == 64 && popup.bounds().x() >= 8 &&
+                        popup.bounds().right() <= 72,
+                    "anchor-matched width is clamped to usable viewport");
+      popup.applyPopupPatch(
+          {.width = Patch<ui::PopupWidth>::set(ui::PopupWidth::Content)});
+      popup.present(context, math::rect(0, 0, 400, 300), anchor.get());
+      test::require(popup.bounds().w() == 40,
+                    "content width is independent of anchor width");
+      popup.applyPopupPatch({.width = Patch<ui::PopupWidth>::reset()});
+      popup.present(context, math::rect(0, 0, 400, 300), nullptr);
+      test::require(popup.bounds().w() == 40 && popup.bounds().x() == 150,
+                    "positioned popup without anchor uses content width");
+    });
+    check("toast replacement placement", [&] {
+      ui::UIRoot root;
+      auto host = std::make_unique<ui::ToastHost>(
+          [](const auto &, auto) { return content(); });
+      auto *toasts = host.get();
+      root.setContent(std::move(host));
+      toasts->post({"first", "First", 0});
+      toasts->post({"retained", "Retained", 0});
+      root.update(.01);
+      const auto retained = toasts->children()[1]->id();
+      const layout::StackPlacement placement{.margin = math::Insets::all(7),
+                                             .crossAlignmentOverride =
+                                                 layout::CrossAlignment::End};
+      toasts->setPlacement(retained, placement);
+      toasts->post({"first", "Replacement", 0});
+      root.update(.01);
+      test::require(toasts->children()[1]->id() == retained &&
+                        toasts->children()[0]->semanticProps().name ==
+                            "Replacement",
+                    "replacement retains queue order and unaffected child");
+      test::require(toasts->placementOf(retained) == placement &&
+                        toasts->placementInParent(0) ==
+                            layout::StackPlacement{},
+                    "toast placement follows its child during reordering");
+    });
     check("toast hover and focus", [&] {
       ui::UIRoot root;
       auto host = std::make_unique<ui::ToastHost>([](const auto &, auto) {

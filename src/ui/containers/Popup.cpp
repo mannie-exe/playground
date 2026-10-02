@@ -80,12 +80,14 @@ void Popup::present(ArrangeContext &context, math::Rect viewport,
   const auto inset = std::min(_props.viewportPadding,
                               std::min(viewport.w(), viewport.h()) / 2);
   const auto usable = math::inset(viewport, math::Insets::all(inset));
+  const auto anchorBounds =
+      anchor ? anchor->worldTransform().mapBounds({{}, anchor->bounds().size})
+             : usable;
   const auto target =
       _props.position ? math::rect(_props.position->x, _props.position->y, 0, 0)
-      : anchor ? anchor->worldTransform().mapBounds({{}, anchor->bounds().size})
-               : usable;
+                      : anchorBounds;
   const float width = _props.width == PopupWidth::MatchAnchor && anchor
-                          ? std::min(target.w(), usable.w())
+                          ? std::min(anchorBounds.w(), usable.w())
                           : usable.w();
   const auto offeredWidth = _props.width == PopupWidth::MatchAnchor && anchor
                                 ? layout::AxisConstraints::tight(width)
