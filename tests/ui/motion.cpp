@@ -20,7 +20,7 @@ std::unique_ptr<Node> box() { return std::make_unique<Box>(); }
 } // namespace
 
 int main() {
-  return test::run([] {
+  int result = test::run([] {
     MotionEngine engine;
     MotionValue<float> value{0};
     unsigned notifications = 0;
@@ -400,4 +400,101 @@ int main() {
     test::require(resource->snapshot().status == AsyncStatus::Error,
                   "executor refusal observable");
   });
+  result |= test::run([] {
+    for (unsigned available : {0u, 2u}) {
+      UIRoot root;
+      auto host = std::make_unique<TransitionHost>();
+      auto *view = host.get();
+      root.setContent(std::move(host));
+      view->replace("original", std::make_unique<Button>());
+      root.update(1);
+      auto *original = view->current();
+      root.flushLayout({100, 100});
+      root.requestFocus(original->id());
+      MotionValue<float> occupied{0};
+      Keyframes<float> frames;
+      const unsigned count = 16384 - available;
+      for (unsigned i = 0; i < count; ++i)
+        frames.values.push_back({double(i) / (count - 1), float(i % 2)});
+      auto capacity =
+          root.motion().play(occupied.binding(), frames, {.duration = 100});
+      test::rejects<std::length_error>(
+          [&] { view->replace("candidate", box()); },
+          "replacement exercises animation admission failure");
+      test::require(
+          view->current() == original && view->key() == "original" &&
+              view->children().size() == 1 && !original->isInert(),
+          "animation refusal restores previous usable content and key");
+      root.update(0);
+      test::require(original->hasFocus(),
+                    "replacement rollback restores scheduled focus");
+    }
+  });
+  result |= test::run([] {
+    runtime::Executor executor{{.workers = 1, .maxOutstanding = 2}};
+    std::atomic<bool> running{};
+    auto blocker = executor.submit(
+        [&](std::stop_token stop) noexcept {
+          running = true;
+          while (!stop.stop_requested())
+            std::this_thread::yield();
+        },
+        0);
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!running && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::yield();
+    test::require(running, "worker occupied before queueing request");
+    auto resource = std::make_shared<AsyncResource<int>>();
+    std::atomic<bool> invoked{};
+    resource->start(executor, [&](std::stop_token) {
+      invoked = true;
+      return 1;
+    });
+    UIRoot root;
+    root.setContent(std::make_unique<AsyncView<int>>(
+        resource,
+        AsyncViewProps<int>{.ready = [](int) { return box(); },
+                            .error = [](const auto &) { return box(); }}));
+    root.update(0);
+    executor.close();
+    root.update(.02);
+    root.update(1);
+    test::require(!invoked &&
+                      resource->snapshot().status == AsyncStatus::Cancelled &&
+                      !root.nextUpdateDelay(),
+                  "discarded queued request cancels and stops view polling");
+  });
+  result |= test::run([] {
+    MotionEngine engine;
+    MotionValue<float> opacity{0}, translation{0};
+    MotionBindings bindings;
+    bindings.add(opacity.binding());
+    bindings.add(translation.binding());
+    TimelineSpec spec;
+    spec.at(0, 0, Keyframes<float>{{{0, 0}, {1, 10}}}, {.duration = 1});
+    spec.at(0, 1, Keyframes<float>{{{0, 0}, {1, 10}}}, {.duration = 1});
+    AnimationStatus outcome = AnimationStatus::Running;
+    auto both =
+        engine.play(spec, bindings, [&](auto status) { outcome = status; });
+    engine.advance(.25);
+    engine.sample();
+    auto replacement =
+        engine.transition(opacity.binding(), 20.f, {.duration = 1});
+    close(translation.value(), 2.5f,
+          "partial replacement preserves unrelated presented property");
+    engine.advance(.25);
+    engine.sample();
+    close(translation.value(), 5.f,
+          "unrelated track continues on original clock");
+    test::require(both.status() == AnimationStatus::Running,
+                  "partially replaced timeline remains active");
+    engine.advance(.5);
+    engine.dispatchCompletions();
+    test::require(both.status() == AnimationStatus::Replaced &&
+                      outcome == AnimationStatus::Replaced,
+                  "partial replacement reports interrupted completion after "
+                  "survivors finish");
+  });
+  return result;
 }

@@ -3,7 +3,9 @@
 `AsyncResource<T>` owns request generation, cooperative cancellation and a durable
 result slot. Workers produce data through the bounded `runtime::Executor`; they
 never access UI nodes, resource registries or renderers. Owner-thread publication
-rejects superseded results. Executor refusal is an observable error. Completion
+rejects superseded results. Executor refusal is an observable error. A stopped task ticket makes queued
+work discarded by executor shutdown observable as Cancelled, even if its loader
+never ran. Completion
 queue saturation cannot discard the only result copy.
 
 `AsyncSnapshot<T>` exposes Pending, Ready, Error or Cancelled and an optional

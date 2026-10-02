@@ -116,8 +116,12 @@ public:
     if (!_request)
       return {AsyncStatus::Cancelled, _generation, _previous, {}};
     std::lock_guard lock{_request->mutex};
-    return {_request->status, _generation,
-            _request->value ? _request->value : _previous, _request->error};
+    const auto status = _request->status == AsyncStatus::Pending && _ticket &&
+                                _ticket->isCanceled()
+                            ? AsyncStatus::Cancelled
+                            : _request->status;
+    return {status, _generation, _request->value ? _request->value : _previous,
+            _request->error};
   }
 };
 

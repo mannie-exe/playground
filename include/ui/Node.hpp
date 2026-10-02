@@ -260,6 +260,8 @@ public:
 
   const SemanticProps &semanticProps() const noexcept { return _semanticProps; }
 
+  bool inert() const noexcept { return _inert; }
+
   bool isInert() const noexcept {
     for (auto *node = this; node; node = node->parent())
       if (node->_inert)
