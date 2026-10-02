@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_mouse.h>
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -122,6 +124,9 @@ accesskit_action action(ui::SemanticAction value) {
 
 struct WindowServices::Impl {
   SDL_Window *window;
+  runtime::ActivationToken relativeOwner;
+  std::uint64_t relativeGeneration{};
+  bool relative{};
   // Owner thread only; attachment clears before root destruction.
   ui::UIRoot *root{};
   std::map<ui::UIRoot *, std::size_t> attachments;
@@ -478,7 +483,7 @@ WindowServices::WindowServices(SDL_Window *window)
 #endif
 }
 
-WindowServices::~WindowServices() = default;
+WindowServices::~WindowServices() { releaseRelativeMouse(); }
 
 ui::Connection WindowServices::attach(ui::UIRoot &root) {
   root.services().readClipboard = [] {
@@ -521,6 +526,7 @@ ui::Connection WindowServices::attach(ui::UIRoot &root) {
 }
 
 void WindowServices::cancelInput() {
+  releaseRelativeMouse();
   if (_impl->root) {
     ui::UIEvent cancel{.type = ui::EventType::InputCancel};
     _impl->root->dispatch(cancel);
@@ -529,6 +535,41 @@ void WindowServices::cancelInput() {
   SDL_StopTextInput(_impl->window);
   _impl->composing = false;
   _impl->textOptions.reset();
+}
+
+ui::Connection
+WindowServices::lockRelativeMouse(runtime::ActivationToken owner) {
+  if (!owner.isActive())
+    throw std::logic_error("Relative mouse requires an active app");
+  if (!(SDL_GetWindowFlags(_impl->window) & SDL_WINDOW_INPUT_FOCUS))
+    throw std::logic_error("Relative mouse requires native window focus");
+  releaseRelativeMouse();
+  if (!SDL_SetWindowRelativeMouseMode(_impl->window, true))
+    throw std::runtime_error(std::string{"Cannot lock relative mouse: "} +
+                             SDL_GetError());
+  _impl->relativeOwner = owner;
+  _impl->relative = true;
+  const auto generation = ++_impl->relativeGeneration;
+  return ui::Connection{[weak = std::weak_ptr{_impl}, generation]() noexcept {
+    if (auto self = weak.lock();
+        self && self->relativeGeneration == generation) {
+      SDL_SetWindowRelativeMouseMode(self->window, false);
+      self->relative = false;
+      ++self->relativeGeneration;
+    }
+  }};
+}
+
+void WindowServices::releaseRelativeMouse() noexcept {
+  if (_impl->relative)
+    SDL_SetWindowRelativeMouseMode(_impl->window, false);
+  _impl->relative = false;
+  ++_impl->relativeGeneration;
+}
+
+bool WindowServices::relativeMouseActive() const noexcept {
+  return _impl->relative && _impl->relativeOwner.isActive() &&
+         SDL_GetWindowRelativeMouseMode(_impl->window);
 }
 
 void WindowServices::setMode(ui::AccessibilityMode value) {
@@ -752,6 +793,10 @@ void WindowServices::setWakeCallback(std::function<void()> callback) {
 }
 
 void WindowServices::pump() {
+  if (_impl->relative &&
+      (!_impl->relativeOwner.isActive() ||
+       !(SDL_GetWindowFlags(_impl->window) & SDL_WINDOW_INPUT_FOCUS)))
+    releaseRelativeMouse();
   std::deque<Impl::Request> requests;
   {
     std::lock_guard lock{_impl->mutex};

@@ -38,6 +38,7 @@ class AppHost {
   SDLGuard _sdl;
   TTFGuard _ttf;
   playground::sdl::EventWake _wake;
+  playground::runtime::CompletionQueue _hostCompletions;
   playground::sdl::SDLGamepads _gamepads;
   playground::platform::DirectoryStore _projectFiles;
   playground::platform::DirectoryStore _userFiles;
@@ -188,6 +189,11 @@ public:
     requestRepaint();
   }
 
+  // Host integrations survive app switches; app work uses completions().
+  playground::runtime::CompletionSink hostCompletions() const {
+    return _hostCompletions.sink();
+  }
+
   playground::runtime::ActivationSink completions() {
     return {_activeApp->_completions.sink(), _activeApp->activationToken()};
   }
@@ -222,7 +228,7 @@ private:
   void synchronizeRendererDomain();
   void cleanupApp(IApp &) noexcept;
 
-  void switchTo(AppId appId);
+  void switchTo(AppId appId, AppLaunchProps launch = {});
 
   void registerDefaultApps();
 

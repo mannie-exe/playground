@@ -117,3 +117,17 @@ Applications may associate stable authored shot names with camera source IDs.
 Interactive and recorded intent share controller math; repeatable workloads sample
 `CameraPath` at explicit elapsed time and use the ordinary camera/renderer path.
 They do not require a global active camera or a second playback renderer.
+
+## Native pointer ownership
+
+`WindowServices::lockRelativeMouse(ActivationToken)` requires a focused active
+app and returns a `Connection`. Disconnecting releases SDL relative mode; a stale
+connection cannot release a newer lock. Settings, focus loss, inactive activation
+and teardown release the lock. SDL failures are reported; the adapter never
+pretends acquisition succeeded. Relative mouse mode is window-local, not
+`SDL_CaptureMouse`, and must be changed on the owner thread.
+
+The demo adapter accepts right-click only inside the resolved scene viewport and
+when UI input has not consumed it. Mouse deltas feed the same controller/director
+as keyboard intent. Input ownership stays outside camera math. Benchmark playback
+has higher local camera priority and disables manual intent.

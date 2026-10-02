@@ -68,7 +68,7 @@ public:
   std::optional<playground::runtime::SimulationState> simulationState() const;
   void setSimulationPaused(bool);
 
-  void requestSwitch(AppId appId);
+  void requestSwitch(AppId appId, AppLaunchProps launch = {});
   void requestMenu();
   void requestQuit();
   void requestWindowProps(AppWindowProps config);

@@ -177,3 +177,16 @@ The Bistro benchmark is one app identity with a launch duration (5 seconds,
 camera path. Launch configuration is activation-local, not a persisted graphics
 setting. Settings remain shared across apps; benchmark results record the actual
 settings and invalidate on changes during measurement.
+
+## Host integrations and interruption
+
+`AppHost::hostCompletions()` is a weak, bounded owner-thread delivery endpoint for
+host integrations and automation that must survive app switches. It is not an
+app permission surface. App work uses activation-scoped `completions()` instead.
+Both queues wake the normal scheduler and close with their owner; callbacks run
+at the update boundary, never on producer threads.
+
+`IApp::onActivityInterrupted` is a nonthrowing notification for Settings and focus
+loss. Exclusive interaction and uninterrupted measurements release/invalidate
+there. Scene benchmarks use activation-local `AppLaunchProps::benchmarkSeconds`:
+zero is infinite, absence selects the app default. Ordinary apps reject it.

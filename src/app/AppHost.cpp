@@ -53,6 +53,7 @@ AppHost::AppHost(WindowConfig initialWindow,
   _catalog = std::move(catalog);
   _resources =
       std::make_unique<playground::sdl::AssetResources>(_catalog, _assets);
+  _hostCompletions.setWakeCallback(_wake.callback());
   registerDefaultApps();
   _settings.reload();
   _quality.configure(_settings.graphics());
@@ -71,13 +72,14 @@ void AppHost::request(PendingAppCommand command) {
   }
 }
 
-void AppHost::switchTo(AppId appId) {
+void AppHost::switchTo(AppId appId, AppLaunchProps launch) {
   if (_settingsView)
     showSettings(false);
   AppContext ctx{*this};
 
   // Check the next app's requirements before exiting the current app.
   std::unique_ptr<IApp> nextApp{_registry.create(appId)};
+  nextApp->configureLaunch(launch);
   nextApp->_completions.setWakeCallback(_wake.callback());
   if (_activeApp)
     nextApp->input().inheritHeld(_activeApp->input());
@@ -110,6 +112,7 @@ void AppHost::switchTo(AppId appId) {
       },
       [&] { restore(previous); }, [&](IApp &app) noexcept { cleanupApp(app); });
 
+  _performance.setWorkload(std::string{_activeApp->info().name});
   _quality.reset(_session.renderer()->resourceDomain(),
                  _session.renderer()->supportsGPUTiming());
   _notifiedRendererDomain = {};
@@ -257,8 +260,9 @@ int AppHost::run() {
     const bool updateDue =
         (activity.continuousUpdate && paintDue) ||
         ((activity.continuousUpdate || simulation) && now >= updateAt) ||
-        _updateRequested || _activeApp->_completions.pending() ||
-        demand.updateDue(now) || now >= maintenanceAt;
+        _updateRequested || _hostCompletions.pending() ||
+        _activeApp->_completions.pending() || demand.updateDue(now) ||
+        now >= maintenanceAt;
     if (!updateDue && !paintDue && !_pendingCommand &&
         !SDL_PollEvent(nullptr)) {
       auto deadline =
@@ -374,6 +378,11 @@ int AppHost::run() {
     double frameSeconds{};
     _updateRequested = false;
     if (shouldUpdate) {
+      try {
+        _hostCompletions.drain();
+      } catch (const std::exception &error) {
+        SDL_Log("Host completion failed: %s", error.what());
+      }
       if (_activeApp) {
         try {
           _activeApp->_completions.drain();
@@ -529,8 +538,6 @@ int AppHost::run() {
       terminalOutcome = true;
       _session.observeFrame(outcome, frameSeconds);
       collectRendererTelemetry();
-      if (auto work = _session.renderer()->takePaintWork())
-        _performance.recordPaintWork(*work);
       _renderRuntime.end(FramePhase::Present);
     } catch (const playground::rendering::ResourcePressure &error) {
       blockRendering(error.what(),
@@ -543,6 +550,10 @@ int AppHost::run() {
         _renderRuntime.abandoned();
       _renderRuntime.end(timedPhase);
       recoverRenderer(error.what());
+    }
+    if (auto work = _session.renderer()->takePaintWork()) {
+      _performance.recordPaintWork(*work);
+      _renderRuntime.recordSceneWork(work->scene);
     }
     const auto &sample = _renderRuntime.endIteration();
     if (!_settingsView)
@@ -571,7 +582,8 @@ void AppHost::registerDefaultApps() {
     return std::make_unique<playground::demo3d::Demo3DApp>();
   });
   for (auto kind : {playground::demo3d::DemoKind::Bistro,
-                    playground::demo3d::DemoKind::Chess})
+                    playground::demo3d::DemoKind::Chess,
+                    playground::demo3d::DemoKind::Benchmark})
     _registry.add(playground::demo3d::Demo3DApp::staticInfo(kind), [kind] {
       return std::make_unique<playground::demo3d::Demo3DApp>(kind);
     });
@@ -609,6 +621,11 @@ bool AppHost::handleHostEvent(const SDL_Event &event) {
   _gamepads.handleEvent(event);
   if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
       event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+    _session.windowServices().releaseRelativeMouse();
+    if (_activeApp) {
+      AppContext ctx{*this};
+      _activeApp->onActivityInterrupted(ctx);
+    }
     _inputFocused = false;
     _updateClock.rebase();
   } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
@@ -669,7 +686,7 @@ void AppHost::executeCommand(PendingAppCommand command) {
     _running = false;
     return;
   case AppCommandType::SwitchTo:
-    switchTo(command.target);
+    switchTo(command.target, command.launch);
     return;
   case AppCommandType::ReturnToMenu:
     switchTo(AppId::Menu);
@@ -864,7 +881,11 @@ void AppHost::showSettings(bool visible) {
   if (visible == bool(_settingsView) || (visible && !_settingsViewFactory))
     return;
   AppContext ctx{*this};
+  _performance.setWorkload(visible ? "Settings"
+                                   : std::string{_activeApp->info().name});
   _session.windowServices().cancelInput();
+  if (visible)
+    _activeApp->onActivityInterrupted(ctx);
   _activeApp->input().cancelAll();
   if (_activeApp->_simulation)
     _activeApp->_simulation->setPaused(

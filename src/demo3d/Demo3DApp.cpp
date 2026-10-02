@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -14,11 +15,18 @@
 #include <demo3d/Demo3DApp.hpp>
 #include <platform/sdl/ModelPreparation.hpp>
 #include <platform/sdl/TextureDecode.hpp>
+#include <platform/sdl/WindowServices.hpp>
 #include <ui/containers/Stack.hpp>
 #include <ui/content/Text.hpp>
 
 namespace playground::demo3d {
 namespace {
+double nowSeconds() {
+  return std::chrono::duration<double>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
 const assets::AssetId<assets::ModelAsset> propId{"demo3d.prop"};
 const assets::AssetId<assets::BinaryAsset> smokeId{"demo3d.smoke"},
     environmentId{"demo3d.environment"};
@@ -126,9 +134,10 @@ Demo3DApp::~Demo3DApp() {
 }
 
 AppInfo Demo3DApp::staticInfo(DemoKind kind) {
-  const auto id = kind == DemoKind::Bistro  ? AppId::Bistro
-                  : kind == DemoKind::Chess ? AppId::Chess
-                                            : AppId::Demo3D;
+  const auto id = kind == DemoKind::Benchmark ? AppId::BistroBenchmark
+                  : kind == DemoKind::Bistro  ? AppId::Bistro
+                  : kind == DemoKind::Chess   ? AppId::Chess
+                                              : AppId::Demo3D;
   AppInfo info{.id = id,
                .name = toString(id),
                .window = {.title = std::string{toString(id)}}};
@@ -142,6 +151,8 @@ AppInfo Demo3DApp::staticInfo(DemoKind kind) {
 }
 
 void Demo3DApp::onEnter(AppContext &ctx) {
+  _loadStarted = nowSeconds();
+  _benchmarkSubmitted = ctx.renderRuntimeState().submitted;
   _ui.root().setContent(std::make_unique<ui::Text>(
       ctx.assets(),
       ui::TextProps{
@@ -155,10 +166,12 @@ void Demo3DApp::onEnter(AppContext &ctx) {
       [catalog, promise, kind = _kind](std::stop_token stop) noexcept {
         try {
           Resources result;
-          const auto ids = kind == DemoKind::Material
-                               ? std::vector{propId, flightId, helmetId}
-                           : kind == DemoKind::Bistro ? std::vector{bistroId}
-                                                      : std::vector{chessId};
+          const auto ids =
+              kind == DemoKind::Material
+                  ? std::vector{propId, flightId, helmetId}
+              : (kind == DemoKind::Bistro || kind == DemoKind::Benchmark)
+                  ? std::vector{bistroId}
+                  : std::vector{chessId};
           for (const auto &id : ids) {
             try {
               result.models.push_back(sdl::prepareModel(*catalog, id, stop));
@@ -245,13 +258,18 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
                                   math::Vec3f{0, radius * .35f, -radius * 1.1f},
                       .pitch = -.3f,
                       .unitsPerSecond = radius * .15f};
-    if (_kind == DemoKind::Bistro)
+    if (_kind == DemoKind::Bistro || _kind == DemoKind::Benchmark)
       _initialCamera = {.position = {24.82285f, 3.16055f, 61.64814f},
                         .yaw = -2.81696f,
                         .pitch = -.05827f,
                         .unitsPerSecond = 5};
     _freeCamera.setProps(_initialCamera);
   }
+  _director.setFallback(camera());
+  _interactiveCamera = _director.add({.camera = camera()});
+  if (_kind == DemoKind::Benchmark)
+    _pathCamera =
+        _director.add({.camera = benchmarkPath().sample(0), .priority = 10});
   std::size_t warningCount{};
   for (const auto &model : _resources.models) {
     warningCount += model->warnings().size();
@@ -261,7 +279,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
   }
   auto root = std::make_unique<ui::VStack>(
       layout::StackProps{.childrenAlignment = layout::CrossAlignment::Stretch});
-  root->append(std::make_unique<ui::Text>(
+  auto caption = std::make_unique<ui::Text>(
       ctx.assets(),
       ui::TextProps{
           .value =
@@ -270,13 +288,20 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
                                  "Arrows: orbit | W/S: zoom | Space: smoke"}
                    : std::string{"WASD: fly | Arrows: look | PgUp/PgDn: "
                                  "rise/fall | R: reset"}) +
-              " | Q/E: exposure | L: direct light | Esc: settings" +
+              " | RMB: mouse look | Esc: unlock/settings | Q/E: exposure | L: "
+              "light" +
               (warningCount ? " | Approximate materials (see log)" : ""),
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 16}}),
           .wrap = ui::TextWrap::AvailableInlineSize,
-          .textRole = ui::TextRole::Caption}));
-  ui::SceneViewProps props{
-      .scene = _scene, .camera = camera(), .preferredSize = {900, 650}};
+          .textRole = ui::TextRole::Caption});
+  _caption = caption.get();
+  if (_kind == DemoKind::Benchmark)
+    _caption->applyPatch({.value = Patch<std::string>::set(
+                              "Bistro benchmark: preparing resources")});
+  root->append(std::move(caption));
+  ui::SceneViewProps props{.scene = _scene,
+                           .camera = _director.camera(),
+                           .preferredSize = {900, 650}};
   props.lighting.diffuseEnvironment = _resources.environment.diffuse;
   props.lighting.specularEnvironment = _resources.environment.specular;
   props.lighting.brdf = _resources.environment.brdf;
@@ -285,6 +310,8 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
   props.toneMap = true;
   auto view = std::make_unique<ui::SceneView>(props);
   _view = view.get();
+  if (_kind == DemoKind::Benchmark)
+    restartBenchmark(ctx);
   root->append(std::move(view), {.grow = 1});
   _ui.root().setContent(std::move(root));
 }
@@ -299,13 +326,20 @@ void Demo3DApp::updateView() {
   if (!_view)
     return;
   auto props = _view->props();
-  props.camera = camera();
+  _director.update(_interactiveCamera, {.camera = camera()});
+  props.camera = _director.camera();
   props.exposure = _exposure;
   props.lighting.irradiance = _lighting ? math::Vec3f{3, 3, 3} : math::Vec3f{};
   _view->setProps(std::move(props));
 }
 
-void Demo3DApp::onActions(AppContext &, const input::InputSnapshot &actions) {
+void Demo3DApp::onActions(AppContext &ctx,
+                          const input::InputSnapshot &actions) {
+  if (_kind == DemoKind::Benchmark) {
+    if (actions["reset"].pressed && _view)
+      restartBenchmark(ctx);
+    return;
+  }
   _navigation = actions;
   if (actions["pause"].pressed)
     _playback.setPaused(!_playback.isPaused());
@@ -333,7 +367,54 @@ void Demo3DApp::onActions(AppContext &, const input::InputSnapshot &actions) {
 
 EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
   synchronize(ctx);
-  return _ui.handleEvent(event);
+  if (_kind == DemoKind::Benchmark) {
+    if (_benchmark.traversing() &&
+        (event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+         event.type == SDL_EVENT_WINDOW_RESIZED ||
+         event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+         (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)))
+      _benchmark.invalidate();
+    return _ui.handleEvent(event);
+  }
+  auto &window = ctx.windowServices();
+  if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE &&
+      window.relativeMouseActive()) {
+    _mouseLock.disconnect();
+    window.releaseRelativeMouse();
+    input().cancelAll();
+    _navigation = {};
+    return EventResult::Consumed;
+  }
+  if (event.type == SDL_EVENT_MOUSE_MOTION && window.relativeMouseActive()) {
+    const math::Vec2f delta{event.motion.xrel * .003f,
+                            -event.motion.yrel * .003f};
+    if (_kind == DemoKind::Material)
+      _camera.update({.radians = {-delta.x, delta.y}});
+    else
+      _freeCamera.advance({.radians = delta}, 0);
+    updateView();
+    return EventResult::Consumed;
+  }
+  const auto result = _ui.handleEvent(event);
+  if (result != EventResult::Ignored)
+    return result;
+  if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+      event.button.button == SDL_BUTTON_RIGHT && _view && _view->viewport() &&
+      !_ui.inputClaims().pointer &&
+      _view->viewport()->normalizedPosition(
+          _ui.mapping().toLogical({event.button.x, event.button.y}))) {
+    if (window.relativeMouseActive())
+      _mouseLock.disconnect();
+    else {
+      try {
+        _mouseLock = window.lockRelativeMouse(ctx.activationToken());
+      } catch (const std::exception &error) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+      }
+    }
+    return EventResult::Consumed;
+  }
+  return result;
 }
 
 void Demo3DApp::update(AppContext &ctx, float dt) {
@@ -358,7 +439,9 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
     }
     _task.reset();
   }
-  if (_view && _kind != DemoKind::Material) {
+  if (_view && _kind == DemoKind::Benchmark)
+    updateBenchmark(ctx);
+  if (_view && _kind != DemoKind::Material && _kind != DemoKind::Benchmark) {
     auto held = [&](const char *key) { return float(_navigation[key].held); };
     _freeCamera.advance(
         {.movement = {held("strafe-right") - held("strafe-left"),
@@ -391,12 +474,214 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
   _ui.update(dt);
 }
 
+void Demo3DApp::configureLaunch(const AppLaunchProps &props) {
+  if (_kind != DemoKind::Benchmark) {
+    IApp::configureLaunch(props);
+    return;
+  }
+  _benchmark = runtime::BenchmarkRun{props.benchmarkSeconds.value_or(15)};
+}
+
+const scene::CameraPath &Demo3DApp::benchmarkPath() {
+  static const scene::CameraPath path{
+      15,
+      {{0,
+        {.eye = {24.82285f, 3.16055f, 61.64814f},
+         .target = {24.50443f, 3.10232f, 60.70198f},
+         .nearPlane = .02f,
+         .farPlane = 5000}},
+       {5,
+        {.eye = {22, 3.3f, 53},
+         .target = {20, 3.1f, 48},
+         .nearPlane = .02f,
+         .farPlane = 5000}},
+       {10,
+        {.eye = {20, 3.4f, 45},
+         .target = {24, 3.1f, 57},
+         .nearPlane = .02f,
+         .farPlane = 5000}}}};
+  return path;
+}
+
+void Demo3DApp::restartBenchmark(AppContext &ctx) {
+  _benchmark = runtime::BenchmarkRun{_benchmark.duration()};
+  _benchmarkSubmitted = ctx.renderRuntimeState().submitted;
+  _seenCPU = ctx.renderRuntimeState().cpuSamples;
+  _seenGPU.clear();
+  _benchmarkReported = false;
+  _benchmarkWork = ctx.renderRuntimeState().sceneWork;
+  _director.update(_pathCamera,
+                   {.camera = benchmarkPath().sample(0), .priority = 10});
+  auto props = _view->props();
+  props.camera = _director.camera();
+  _view->setProps(std::move(props));
+  _caption->applyPatch(
+      {.value = Patch<std::string>::set("Bistro benchmark: preparing resources "
+                                        "| Esc: settings | R: restart")});
+}
+
+void Demo3DApp::updateBenchmark(AppContext &ctx) {
+  using runtime::BenchmarkPhase;
+  const auto now = nowSeconds();
+  const auto state = ctx.renderRuntimeState();
+  const auto telemetry = ctx.renderTelemetry();
+  const auto available = std::min<std::uint64_t>(state.cpuSamples - _seenCPU,
+                                                 telemetry.cpu.size());
+  if (_benchmark.phase() == BenchmarkPhase::Measuring)
+    _benchmark.omittedCPU += state.cpuSamples - _seenCPU - available;
+  for (std::size_t i = telemetry.cpu.size() - available;
+       i < telemetry.cpu.size(); ++i)
+    _benchmark.record(telemetry.cpu[i]);
+  _seenCPU = state.cpuSamples;
+  decltype(_seenGPU) seen;
+  for (const auto &sample : telemetry.gpu) {
+    auto key = std::tuple{sample.domain.value, sample.collectionGeneration,
+                          sample.sequence};
+    seen.insert(key);
+    if (!_seenGPU.contains(key) && sample.domain == _benchmarkDomain)
+      _benchmark.record(sample);
+  }
+  _seenGPU = std::move(seen);
+  auto before = _benchmark.phase();
+  if (before == BenchmarkPhase::Loading &&
+      state.submitted > _benchmarkSubmitted) {
+    if (!_loadedSeconds)
+      _loadedSeconds = now - _loadStarted;
+    _benchmark.ready(now);
+    _benchmarkGraphics = ctx.graphicsState().requested;
+    _benchmarkPixels = ctx.windowState().drawableSize;
+    _benchmarkDomain =
+        ctx.rendererState().selected.backend == rendering::RendererKind::SDLGPU
+            ? state.gpu.domain
+            : rendering::ResourceDomainId{};
+  }
+  if (_benchmark.traversing() &&
+      (ctx.graphicsState().requested != _benchmarkGraphics ||
+       ctx.windowState().drawableSize != _benchmarkPixels ||
+       state.gpu.domain != _benchmarkDomain))
+    _benchmark.invalidate();
+  if (_benchmark.phase() == BenchmarkPhase::Measuring &&
+      ctx.graphicsState().sceneScale != _benchmarkScale)
+    _benchmark.invalidate();
+  _benchmark.advance(now, state.admitted,
+                     state.outstandingFrames || state.gpu.pending);
+  if (before != BenchmarkPhase::Measuring &&
+      _benchmark.phase() == BenchmarkPhase::Measuring) {
+    _benchmarkWork = state.sceneWork;
+    _benchmarkScale = ctx.graphicsState().sceneScale;
+    _measuredSubmitted = state.submitted;
+    _finalSubmitted = 0;
+    _queryDrops = state.gpu.queryDrops;
+    _bufferDiscards = state.gpu.bufferDiscards;
+    _lastReport = now;
+  }
+  if (before == BenchmarkPhase::Measuring &&
+      _benchmark.phase() == BenchmarkPhase::Draining)
+    _finalSubmitted = state.submitted;
+  if (_benchmark.traversing()) {
+    _director.update(_pathCamera,
+                     {.camera = benchmarkPath().sample(_benchmark.elapsed(now)),
+                      .priority = 10});
+    auto props = _view->props();
+    props.camera = _director.camera();
+    _view->setProps(std::move(props));
+  }
+  if (before != _benchmark.phase()) {
+    _caption->applyPatch(
+        {.value = Patch<std::string>::set(std::format(
+             "Bistro benchmark: {} | warm-up 15s | run {}s (0=infinite) | R: "
+             "restart | Esc: settings",
+             runtime::toString(_benchmark.phase()), _benchmark.duration()))});
+    SDL_Log("Benchmark phase: %s",
+            std::string{runtime::toString(_benchmark.phase())}.c_str());
+  }
+  if (_benchmark.finished() && !_benchmarkReported) {
+    reportBenchmark(ctx, true);
+    _benchmarkReported = true;
+  } else if (!_benchmark.duration() &&
+             _benchmark.phase() == BenchmarkPhase::Measuring &&
+             now - _lastReport >= 5) {
+    reportBenchmark(ctx, false);
+    _lastReport = now;
+  }
+}
+
+void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
+  const auto state = ctx.renderRuntimeState();
+  const auto &cpu = _benchmark.cpu[std::size_t(rendering::CPUPhase::Render)];
+  const auto &gpu = _benchmark.gpuScene;
+  const auto pixels =
+      _view->viewport() ? _view->viewport()->pixelSize : math::Vec2i{};
+  auto message = std::format(
+      "BenchmarkJSON "
+      "{{\"scene\":\"demoscene.bistro@1\",\"path\":\"bistro-street-v1\","
+      "\"phase\":\"{}\",\"final\":{},\"requested_seconds\":{},\"measured_"
+      "seconds\":{:.6f},\"load_seconds\":{:.6f},\"warmup_seconds\":15,"
+      "\"domain\":{},\"width\":{},\"height\":{},\"vsync\":{},\"scene_scale\":{}"
+      ",\"cpu_render_samples\":{},\"cpu_render_p50_ms\":{:.6f},\"cpu_render_"
+      "p95_ms\":{:.6f},\"cpu_render_p99_ms\":{:.6f},\"cpu_render_max_ms\":{:."
+      "6f},\"gpu_scene_samples\":{},\"gpu_scene_mean_ms\":{:.6f},\"uploads\":{}"
+      ",\"upload_bytes\":{},\"cpu_omitted\":{},\"drain_timed_out\":{}}}",
+      runtime::toString(_benchmark.phase()), final, _benchmark.duration(),
+      _benchmark.measuredSeconds(), _loadedSeconds, _benchmarkDomain.value,
+      pixels.x, pixels.y, _benchmarkGraphics.presentation.vsync,
+      ctx.graphicsState().sceneScale, cpu.count, cpu.percentile(.5),
+      cpu.percentile(.95), cpu.percentile(.99), cpu.maximum, gpu.count,
+      gpu.count ? gpu.total / gpu.count : 0,
+      state.sceneWork.uploads - _benchmarkWork.uploads,
+      state.sceneWork.uploadBytes - _benchmarkWork.uploadBytes,
+      _benchmark.omittedCPU, _benchmark.drainTimedOut);
+  message.pop_back();
+#ifdef NDEBUG
+  constexpr auto build = "Release";
+#else
+  constexpr auto build = "Debug";
+#endif
+  message += std::format(
+      ",\"build\":\"{}\",\"renderer\":\"sdl-gpu/vulkan\",\"platform\":\"{}\","
+      "\"content_sha256\":"
+      "\"fa23f764061fa5c1feadfbf38ca07c87f56d610ebf89cf4e1b816399de293c83\","
+      "\"submitted_frames\":{},\"gpu_query_drops\":{},\"gpu_buffer_discards\":{"
+      "},"
+      "\"managed_cpu_peak_bytes\":{},\"managed_gpu_peak_bytes\":{},\"cpu_"
+      "phases\":{{",
+      build, SDL_GetPlatform(),
+      (_finalSubmitted ? _finalSubmitted : state.submitted) -
+          _measuredSubmitted,
+      state.gpu.queryDrops >= _queryDrops ? state.gpu.queryDrops - _queryDrops
+                                          : 0,
+      state.gpu.bufferDiscards >= _bufferDiscards
+          ? state.gpu.bufferDiscards - _bufferDiscards
+          : 0,
+      state.resources.memory[0].peak, state.resources.memory[1].peak);
+  constexpr std::array names{"poll", "update", "render", "present", "total"};
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    const auto &stats = _benchmark.cpu[i];
+    message += std::format("{}\"{}\":{{\"samples\":{},\"p50_ms\":{},\"p95_ms\":"
+                           "{},\"p99_ms\":{},\"max_ms\":{}}}",
+                           i ? "," : "", names[i], stats.count,
+                           stats.percentile(.5), stats.percentile(.95),
+                           stats.percentile(.99), stats.maximum);
+  }
+  message += "}}";
+  SDL_Log("%s", message.c_str());
+}
+
 void Demo3DApp::render(AppContext &ctx, rendering::RenderFrame &frame) {
   synchronize(ctx);
   _ui.render(frame);
 }
 
-void Demo3DApp::onExit(AppContext &) {
+void Demo3DApp::onExit(AppContext &ctx) {
+  if (_kind == DemoKind::Benchmark && _view && !_benchmarkReported) {
+    _benchmark.invalidate();
+    reportBenchmark(ctx, true);
+  }
+  _mouseLock.disconnect();
+  if (_pathCamera)
+    _director.remove(std::exchange(_pathCamera, 0));
+  if (_interactiveCamera)
+    _director.remove(std::exchange(_interactiveCamera, 0));
   if (_task)
     _task->cancel();
   _task.reset();
@@ -404,6 +689,7 @@ void Demo3DApp::onExit(AppContext &) {
   _navigation = {};
   _ui.clear();
   _view = nullptr;
+  _caption = nullptr;
   _scene.reset();
   _resources = {};
 }

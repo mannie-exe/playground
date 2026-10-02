@@ -2,7 +2,7 @@
 
 ## Launcher and ownership
 
-The launcher groups applications under Demo 2D, Demo 3D and Play. Group titles
+The launcher groups applications under Demo 2D, Demo 3D, Benchmark and Play. Group titles
 are noninteractive; buttons use ordinary focus, activation and scrolling.
 
 | Group | Entry | Persisted app key |
@@ -79,7 +79,10 @@ Controllers consume typed intent and produce CameraProps independently of SDL,
 UI nodes and rendering. Material inspection keeps keyboard orbit/zoom. Scene
 navigation adds a free camera with explicit movement/angular rates and resettable
 framing. WASD moves, arrows look, Page Up/Down changes elevation, R resets,
-Q/E changes exposure and L toggles direct light. Bistro starts at its source
+Right-click inside the viewport toggles relative mouse look; Escape first
+unlocks the mouse, then opens Settings on a subsequent press. Relative motion
+is angular displacement, not multiplied by frame time. Q/E changes exposure and
+L toggles direct light. Bistro starts at its source
 street camera; Chess starts framed around the board. Future camera selection and
 bookmarks are viewport-local; named shots contain pose and lens values, never
 projection matrices or borrowed scene pointers.

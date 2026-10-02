@@ -32,7 +32,7 @@ void MenuApp::synchronize(AppContext &ctx) { _ui.synchronize(ctx); }
 
 void MenuApp::launchPending(AppContext &ctx) {
   if (const auto target = std::exchange(_pending, std::nullopt))
-    ctx.requestSwitch(*target);
+    ctx.requestSwitch(*target, std::exchange(_launch, {}));
 }
 
 void MenuApp::onEnter(AppContext &ctx) {
@@ -40,7 +40,10 @@ void MenuApp::onEnter(AppContext &ctx) {
       ctx.assets(),
       ctx.resources().font(app::fontAsset, {.style = {.size = 22}}),
       ctx.resources().font(app::fontAsset, {.style = {.size = 34}}),
-      [this](AppId app) { _pending = app; });
+      [this](AppId app, AppLaunchProps launch) {
+        _pending = app;
+        _launch = launch;
+      });
   _view = view.get();
   _ui.root().setContent(std::move(view));
   synchronize(ctx);

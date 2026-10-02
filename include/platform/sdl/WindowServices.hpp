@@ -6,6 +6,7 @@
 #include <SDL3/SDL_video.h>
 
 #include <platform/Presentation.hpp>
+#include <runtime/ActivationLifetime.hpp>
 #include <ui/UIRoot.hpp>
 
 namespace playground::sdl {
@@ -24,6 +25,9 @@ public:
   void pump();
   // Cancel active UI gestures/composition while retaining logical focus.
   void cancelInput();
+  ui::Connection lockRelativeMouse(runtime::ActivationToken owner);
+  void releaseRelativeMouse() noexcept;
+  bool relativeMouseActive() const noexcept;
   void setMode(ui::AccessibilityMode);
   void setWakeCallback(std::function<void()> callback);
 };

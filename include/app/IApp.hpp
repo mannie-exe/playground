@@ -24,6 +24,11 @@ public:
 
   virtual AppInfo info() const = 0;
 
+  virtual void configureLaunch(const AppLaunchProps &props) {
+    if (props.benchmarkSeconds)
+      throw std::invalid_argument("App does not accept benchmark options");
+  }
+
   virtual playground::runtime::ActivityProps activityProps() const {
     return {};
   }
@@ -45,6 +50,9 @@ public:
   std::optional<playground::runtime::SimulationState> simulationState() const {
     return _simulation ? std::optional{_simulation->state()} : std::nullopt;
   }
+
+  // Host overlays and focus loss interrupt exclusive interaction/workloads.
+  virtual void onActivityInterrupted(AppContext &) noexcept {}
 
   virtual void onActions(AppContext &,
                          const playground::input::InputSnapshot &) {}

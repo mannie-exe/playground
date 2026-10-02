@@ -41,6 +41,8 @@ public:
 
   const ui::UIRoot &root() const noexcept { return _root; }
 
+  const platform::ViewportMapping &mapping() const noexcept { return _mapping; }
+
   void synchronize(AppContext &context);
   void synchronize(platform::WindowMetrics metrics,
                    const platform::ViewportProps &props,

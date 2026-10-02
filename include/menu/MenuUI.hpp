@@ -16,7 +16,7 @@ class MenuUI final : public ui::Box {
 
 public:
   MenuUI(AssetRegistry &, FontHandle font, FontHandle titleFont,
-         std::function<void(AppId)> launch);
+         std::function<void(AppId, AppLaunchProps)> launch);
   void setStatus(std::string value);
 };
 } // namespace playground::menu
