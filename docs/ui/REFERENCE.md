@@ -1019,7 +1019,7 @@ instrumented plan's capacity, not total live memory or all heap allocations.
 `UIRoot::workSample()` includes its stable diagnostic root identity and optional
 root-phase timings. UISession supplies deltas to PerformanceMonitor when given
 its borrowed monitor in `synchronize`; bounded frame history keeps roots separate.
-`reportEveryFrames` controls reporting, not sampling. UI timings overlap host
+`reportEverySeconds` controls reporting, not sampling. UI timings overlap host
 CPU phases and one another; never add them to the total frame duration.
 LayoutDiagnostics retains at most 256 entries: node ID, phase, issue, message.
 Invalid inputs generally throw. Ordinary sizing conflicts diagnose and apply their

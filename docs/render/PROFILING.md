@@ -29,7 +29,8 @@ arrive in a later poll, so consumers retain domain/sequence identity.
 ## Workload reports
 
 The reporting contract groups completed samples by resource domain, collection
-generation, stable workload label and optional source/target pixel extents.
+generation, stable workload label/identity, quality revision and optional
+source/target pixel extents.
 Extents describe the primary resource of that submission, not logical UI bounds;
 omit them for uploads or heterogeneous work without one meaningful extent.
 Presentation records the actual acquired swapchain extent, which may differ
@@ -46,8 +47,8 @@ GPU counts cover completed samples **received during** the reporting interval,
 not necessarily submissions from its CPU frames. A report is not a GPU frame
 total or a utilization percentage; command intervals may overlap or contain
 dependencies. Raw GPU context identifies the originating admitted frame, view and
-quality revision; workload groups omit these identities so reporting does not
-create a group per frame or adjustment. CPU iteration
+quality revision. Groups retain view and quality identity but omit frame IDs;
+late GPU completions remain attributable to their originating view. CPU iteration
 measurements can include updates without an admitted frame. No display timestamp
 is inferred.
 

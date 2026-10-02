@@ -22,7 +22,7 @@ int main() {
         runtime.snapshot().cpuSamples == 1 && runtime.cpuHistory().size() == 1,
         "report toggles/resets do not reset baseline runtime telemetry");
     PerformanceMonitor monitor{{.enabled = true,
-                                .reportEveryFrames = 60,
+                                .reportEverySeconds = 1,
                                 .historySize = 2,
                                 .logSummary = false}};
     monitor.end(FramePhase::Render);
@@ -56,7 +56,7 @@ int main() {
     playground::test::require(monitor.config().enabled &&
                                   !monitor.config().logSummary &&
                                   monitor.config().historySize == 2 &&
-                                  monitor.config().reportEveryFrames == 300 &&
+                                  monitor.config().reportEverySeconds == 5 &&
                                   monitor.history().size() == 2,
                               "F11 changes only reporting interval");
     {
@@ -77,7 +77,7 @@ int main() {
       monitor.report();
       playground::test::require(
           captured.message.contains("present unmeasured") &&
-              captured.message.contains("total avg=2.000ms"),
+              captured.message.contains("total samples=3 avg=2.000ms"),
           "summary distinguishes missing phases from measured durations");
     }
     playground::test::require(monitor.history().size() == 2 &&

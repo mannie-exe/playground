@@ -270,7 +270,7 @@ and must not be mistaken for the native GPU scope's execution duration.
 
 F10 toggles optional reporting and detailed UI measurement. While reporting is
 enabled, Shift+F10 reports the current interval. F11 switches the reporting
-interval between 60 and 300 frames while preserving enabled state, logging policy
+interval between one and five monotonic seconds while preserving enabled state, logging policy
 and history budget. Toggling reporting resets only its reporting sample state;
 baseline runtime counters and timing collection continue independently.
 
