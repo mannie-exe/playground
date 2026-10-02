@@ -75,6 +75,8 @@ struct ThemeTypography {
        {FontFamily::Serif, 18, 1.4f, {}}}};
   std::array<FontFamilyHandle, static_cast<std::size_t>(FontFamily::Count)>
       families;
+  // Absent inherits the host defaults; an empty list explicitly disables them.
+  std::optional<std::vector<FontFamilyHandle>> fallbacks;
   float textScale{1};
   void validate() const;
   bool operator==(const ThemeTypography &) const = default;

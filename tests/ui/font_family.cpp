@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <set>
 
@@ -22,6 +23,47 @@ int main() {
     auto definition = ui::defaultThemeDefinition();
     app::configureThemeFonts(definition.typography, resources);
     definition.validate();
+    test::require(definition.typography.fallbacks &&
+                      !definition.typography.fallbacks->empty(),
+                  "host registers an emoji fallback chain");
+    const auto withEmoji = ui::resolveThemeFont(definition.typography,
+                                                ui::TextRole::Body, {}, &cache);
+    auto withoutEmoji = definition.typography;
+    withoutEmoji.fallbacks.emplace();
+    const auto plain =
+        ui::resolveThemeFont(withoutEmoji, ui::TextRole::Body, {}, &cache);
+    test::require(withEmoji != plain && plain->props().fallbacks.empty(),
+                  "fallback chain participates in font cache identity");
+    const auto resized = withEmoji->cloneWith({.size = 32});
+    test::require(resized.props().fallbacks == withEmoji->props().fallbacks,
+                  "font variants retain fallback sources");
+    auto portableTypography = definition.typography;
+    portableTypography.fallbacks =
+        std::vector{definition.typography.fallbacks->back()};
+    const auto portable = ui::resolveThemeFont(portableTypography,
+                                               ui::TextRole::Body, {}, &cache);
+    auto ordered = portable->props();
+    ordered.fallbacks.push_back(
+        {plain->props().path, plain->props().cacheIdentity});
+    const auto firstOrder = cache.getFont(ordered);
+    std::reverse(ordered.fallbacks.begin(), ordered.fallbacks.end());
+    test::require(firstOrder != cache.getFont(ordered),
+                  "fallback ordering participates in cache identity");
+    for (const Font *font : {withEmoji.get(), &resized, portable.get()}) {
+      SDLResource<SDL_Surface, SDL_DestroySurface> surface{
+          TTF_RenderText_Blended(font->get(), "A😀🧑🏽‍💻Z", 0,
+                                 SDL_Color{255, 255, 255, 255})};
+      test::require(bool(surface),
+                    std::string{"render emoji: "} + SDL_GetError());
+      bool color{};
+      for (int y = 0; y < surface->h; ++y)
+        for (int x = 0; x < surface->w; ++x) {
+          Uint8 r{}, g{}, b{}, a{};
+          SDL_ReadSurfacePixel(surface.get(), x, y, &r, &g, &b, &a);
+          color |= a > 128 && (r != g || g != b);
+        }
+      test::require(color, "fallback renders color glyphs, not missing boxes");
+    }
     test::require(app::themeFontAssets().size() == 112,
                   "all static face variants registered");
     std::set<std::string> paths;

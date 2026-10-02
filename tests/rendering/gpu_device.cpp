@@ -211,23 +211,19 @@ static void verifyColoredAtlas(PaintDevice &paint, AssetRegistry &assets,
 }
 
 static void verifyMixedText(PaintDevice &paint, AssetRegistry &assets) {
-  auto emoji = assets.getFont(FontProps{.path = PLAYGROUND_COLOR_FONT,
-                                        .style = {.size = 48},
-                                        .layout = {.lineSpace = 64}});
-  auto normal = assets.getFont(FontProps{
+  auto base = assets.getFont(FontProps{
       .path = std::string{PLAYGROUND_SOURCE_DIR} + "/assets/fonts/LBRITE.TTF",
       .style = {.size = 48},
       .layout = {.lineSpace = 64}});
-  test::require(!TTF_FontHasGlyph(normal->get(), 0x3297),
+  test::require(!TTF_FontHasGlyph(base->get(), 0x3297),
                 "mixed fixture exercises the fallback font");
-  test::require(TTF_AddFallbackFont(normal->get(), emoji->get()),
-                "install color fallback");
-
-  struct FallbackScope {
-    TTF_Font *font, *fallback;
-
-    ~FallbackScope() { TTF_RemoveFallbackFont(font, fallback); }
-  } fallback{normal->get(), emoji->get()};
+  auto normal = assets.getFont(FontProps{
+      .path = std::string{PLAYGROUND_SOURCE_DIR} + "/assets/fonts/LBRITE.TTF",
+      .style = {.size = 48},
+      .layout = {.lineSpace = 64},
+      .fallbacks = {{PLAYGROUND_COLOR_FONT, {}}}});
+  test::require(TTF_FontHasGlyph(normal->get(), 0x3297),
+                "registered fallback supplies the missing glyph");
 
   const std::string value{"A  \xE3\x8A\x97  K"};
   auto engine = std::make_shared<GPUTextEngine>(paint.device);
@@ -634,6 +630,15 @@ int main(int argc, char **argv) {
               .string(),
           'A', "A", TextPreparation::Atlas);
       verifyMixedText(paint, assets);
+      auto emojiText = assets.getFont(FontProps{
+          .path = std::string{PLAYGROUND_SOURCE_DIR} +
+                  "/assets/fonts/Inter/Inter-Regular.ttf",
+          .style = {.size = 24},
+          .fallbacks = {{std::string{PLAYGROUND_SOURCE_DIR} +
+                             "/assets/fonts/NotoEmoji/NotoColorEmoji.ttf",
+                         {}}}});
+      compareColorText(paint, emojiText, "A😀🧑🏽‍💻Z", 0,
+                       {255, 255, 255, 255});
 #endif
       {
         auto props =

@@ -146,10 +146,10 @@ supports local Escape dismissal for other hosts.
 While settings is visible, app input and simulation are paused, worker
 completions still drain, and only the settings UI is rendered. The host cancels
 held actions and rebases elapsed time on entry/exit. The view uses reflow layout,
-full composition resolution and a resizable content-fitted window, with an
-820×680 logical-unit preferred minimum subject to display bounds. Tab bodies
-scroll. Closing restores the app's previous window/view policy while preserving
-new shared graphics settings. Fullscreen presentation follows native window
+full composition resolution and the existing window size and resize policy.
+Content reflows within the available viewport; tab bodies and the view scroll
+when necessary. Closing restores the app's previous window/view policy while
+preserving new shared graphics settings. Fullscreen presentation follows native window
 capabilities rather than forcing a new display mode for settings.
 
 ## Verification

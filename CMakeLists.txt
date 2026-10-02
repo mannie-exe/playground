@@ -173,6 +173,13 @@ CPMAddPackage(
 
 # FreeType is mandatory in this SDL_ttf version; HarfBuzz shapes glyph runs,
 # while SDL_ttf's GPU text engine owns atlas generation for the GPU renderer.
+# Bitmap emoji use PNG-compressed glyphs. Reuse SDL_image's managed libraries
+# through FindPNG/FindZLIB instead of discovering host installations.
+set(FT_DISABLE_PNG OFF CACHE BOOL "Enable bitmap color glyphs" FORCE)
+set(FT_REQUIRE_PNG ON CACHE BOOL "Require bitmap color glyph support" FORCE)
+set(PNG_LIBRARY PNG::PNG)
+set(PNG_PNG_INCLUDE_DIR "${SDL_image_SOURCE_DIR}/external/libpng")
+set(ZLIB_LIBRARY ZLIB::ZLIB)
 CPMAddPackage(
     URI "gh:libsdl-org/SDL_ttf#a1ce367@3.2.2"
     OPTIONS
@@ -287,9 +294,7 @@ install(FILES ${spirv_reflect_SOURCE_DIR}/LICENSE
 install(FILES docs/licenses/UNICODE.txt
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses)
 
-playground_add_sdl_target(playground
-    SOURCES
-    src/main.cpp
+add_library(playground_app STATIC
     src/app/AppHost.cpp
     src/app/AppContext.cpp
     src/app/UISession.cpp
@@ -302,10 +307,11 @@ playground_add_sdl_target(playground
     src/minesweeper/DifficultyUI.cpp
     src/minesweeper/MinesweeperModel.cpp
     src/minesweeper/MinesweeperGrid.cpp
-    src/minesweeper/MinesweeperUI.cpp
-    INCLUDES
-    ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(playground PRIVATE playground_sdl playground_constraints)
+    src/minesweeper/MinesweeperUI.cpp)
+playground_configure_cpp_target(playground_app)
+target_link_libraries(playground_app PUBLIC playground_sdl playground_constraints)
+playground_add_sdl_target(playground SOURCES src/main.cpp)
+target_link_libraries(playground PRIVATE playground_app)
 
 # Compile the guide's additive snippets without adding an example program.
 set(playground_guide_check ${CMAKE_CURRENT_BINARY_DIR}/generated/UIGuideCheck.cpp)

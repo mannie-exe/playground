@@ -9,6 +9,7 @@ directory, including licenses, with the application assets.
 | Inter and Inter Display | [4.1](https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip) | [OFL 1.1](Inter/OFL.txt) |
 | JetBrains Mono | [2.304](https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip) | [OFL 1.1](JetBrainsMono/OFL.txt) |
 | Source Serif 4 | [4.005](https://github.com/adobe-fonts/source-serif/releases/download/4.005R/source-serif-4.005_Desktop.zip) | [OFL 1.1](SourceSerif4/OFL.txt) |
+| Noto Color Emoji | [e20cbc2](https://github.com/googlefonts/noto-emoji/tree/e20cbc2bbec1926686be9f9bee7d1d2cfa1fea0e) | [OFL 1.1](NotoEmoji/OFL.txt) |
 
 Inter and Inter Display include weights 100–900; JetBrains Mono includes 100–800.
 Source Serif 4 includes 200, 300, 400, 600, 700 and 900 in Text, Caption, SmallText,
@@ -19,6 +20,13 @@ patches. Variable and webfont copies are omitted.
 app::themeFontAssets() registers every face by stable logical ID, family, weight,
 slant and optical design. Registration does not open fonts. Theme selection opens
 only requested faces through the existing resource cache.
+
+NotoEmoji/NotoColorEmoji.ttf is the unmodified 2D/fonts/NotoColorEmoji.ttf from
+the pinned Noto revision, registered as app.font.noto-emoji. Its SHA-256 is
+`15671215ab769fdc7162a045d56fd7d7e477c51b04e6b3c761d914d8fdd6cc44`.
+On macOS the installed Apple Color Emoji precedes Noto in the fallback chain;
+it is a system resource and is not bundled. See Apple's
+[macOS license, section 2E](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf).
 
 ## Archive checksums
 

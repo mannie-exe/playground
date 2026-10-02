@@ -27,18 +27,24 @@
 
 AppHost::AppHost(WindowConfig initialWindow,
                  playground::rendering::RenderBackendProps backendProps,
-                 playground::ui::SettingsViewFactory settingsView)
+                 playground::ui::SettingsViewFactory settingsView,
+                 AppHostDirectories directories)
     : _sdl{SDL_INIT_VIDEO | SDL_INIT_GAMEPAD}, _ttf{},
-      _projectFiles{playground::platform::executableDirectory(), false},
-      _userFiles{
-          playground::platform::preferenceDirectory("Playground", "Playground"),
-          true},
+      _projectFiles{directories.project.value_or(
+                        playground::platform::executableDirectory()),
+                    false},
+      _userFiles{directories.user ? *directories.user
+                                  : playground::platform::preferenceDirectory(
+                                        "Playground", "Playground"),
+                 true},
       _settings{_projectFiles, _userFiles},
       _renderRuntime{backendProps.resources},
       _session{initialWindow, backendProps},
       _settingsViewFactory{std::move(settingsView)} {
   auto catalog = std::make_shared<playground::assets::AssetCatalog>(
-      playground::platform::executableDirectory() / "assets");
+      directories.project.value_or(
+          playground::platform::executableDirectory()) /
+      "assets");
   playground::app::registerAssets(*catalog);
   playground::demo2d::registerAssets(*catalog);
   playground::minesweeper::registerAssets(*catalog);
@@ -886,23 +892,11 @@ void AppHost::showSettings(bool visible) {
       auto props = _session.presentation();
       props.viewport = {};
       _session.setPresentation(props);
-      auto policy = _session.viewPolicy();
-      policy.resizable = true;
-      policy.minimumSize = {640, 480};
-      _session.setViewPolicy(policy);
       auto window = _session.windowProps();
       window.mouseGrabbed = false;
       _session.setWindowProps(window);
       _session.applyWindowProps();
       _settingsUI.synchronize(ctx);
-      _session.fitContent(
-          [&](auto maximum, auto density) -> std::optional<math::Size2> {
-            const auto measured =
-                _settingsUI.root().preferredSize(maximum, density);
-            return math::Size2{
-                std::min(maximum.width, std::max(820.f, measured.width)),
-                std::min(maximum.height, std::max(680.f, measured.height))};
-          });
       _settingsWindow = std::move(previous);
     } catch (...) {
       _settingsUI.clear();

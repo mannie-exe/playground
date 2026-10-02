@@ -29,6 +29,10 @@ function(playground_add_test name)
 endfunction()
 
 set(sdl_libraries playground_sdl)
+playground_add_test(host_smoke SOURCE runtime/host_smoke.cpp MODULE runtime
+    LABELS integration settings window LIBRARIES playground_app Threads::Threads TIMEOUT 20)
+target_compile_definitions(playground_host_smoke_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+set_tests_properties(host_smoke PROPERTIES SKIP_RETURN_CODE 77)
 playground_add_test(move_only_function SOURCE support/move_only_function.cpp MODULE runtime LABELS unit ownership)
 playground_add_test(window_transitions SOURCE runtime/window_transitions.cpp MODULE runtime LABELS unit window failure)
 playground_add_test(input_actions SOURCE runtime/input_actions.cpp MODULE runtime LABELS unit input failure LIBRARIES playground_runtime)

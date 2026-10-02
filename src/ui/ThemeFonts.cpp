@@ -50,7 +50,18 @@ FontHandle resolveThemeFont(const ThemeTypography &typography,
     if (selection->slant == FontSlant::Italic)
       props.style.flags |= TTF_STYLE_ITALIC;
   }
-  if (!role && !family && !selection && typography.textScale == 1)
+  if (typography.fallbacks) {
+    props.fallbacks.clear();
+    for (const auto &definition : *typography.fallbacks) {
+      if (!definition)
+        throw std::invalid_argument("Null fallback font family");
+      const auto &face =
+          selectFontFace(*definition, selection.value_or(FontSelection{}));
+      props.fallbacks.push_back({face.path, face.cacheIdentity});
+    }
+  }
+  if (!role && !family && !selection && typography.textScale == 1 && fallback &&
+      props.fallbacks == fallback->props().fallbacks)
     return fallback;
   props.style.size = size * typography.textScale;
   if (lineHeight)

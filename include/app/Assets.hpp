@@ -7,11 +7,14 @@
 
 #include <assets/AssetCatalog.hpp>
 #include <platform/sdl/AssetResources.hpp>
+#include <platform/sdl/SystemFonts.hpp>
 #include <ui/Theme.hpp>
 
 namespace playground::app {
 inline const assets::AssetId<assets::FontAsset> fontAsset{
     "app.font.inter.400.upright.text"};
+inline const assets::AssetId<assets::FontAsset> emojiFontAsset{
+    "app.font.noto-emoji"};
 
 struct ThemeFontAsset {
   ui::FontFamily family;
@@ -82,6 +85,8 @@ inline const std::vector<ThemeFontAsset> &themeFontAssets() {
 }
 
 inline void registerAssets(assets::AssetCatalog &catalog) {
+  catalog.add(emojiFontAsset,
+              assets::FontAsset{{"fonts/NotoEmoji/NotoColorEmoji.ttf"}});
   for (const auto &font : themeFontAssets())
     catalog.add(font.id, assets::FontAsset{{font.path}});
 }
@@ -91,6 +96,21 @@ inline void configureThemeFonts(ui::ThemeTypography &typography,
   constexpr std::array names{"Inter", "Inter Display", "JetBrains Mono",
                              "Source Serif 4"};
   const auto &catalog = resources.catalog();
+  if (!typography.fallbacks) {
+    typography.fallbacks.emplace();
+    if (auto system = sdl::systemEmojiFont())
+      typography.fallbacks->push_back(std::move(system));
+    const auto path = catalog.resolve(catalog.definition(emojiFontAsset).source)
+                          .generic_u8string();
+    typography.fallbacks->push_back(
+        std::make_shared<const ui::FontFamilyDefinition>(
+            "Noto Color Emoji",
+            std::vector<ui::FontFace>{
+                {emojiFontAsset.value,
+                 {reinterpret_cast<const char *>(path.data()), path.size()},
+                 catalog.cacheKey(assets::key(emojiFontAsset)),
+                 {}}}));
+  }
   for (std::size_t index = 0; index < names.size(); ++index) {
     if (typography.families[index])
       continue;

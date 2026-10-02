@@ -1,10 +1,10 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 
 #include <SDL3/SDL_events.h>
 
@@ -29,6 +29,10 @@
 #include <support/AssetRegistry.hpp>
 #include <support/PerformanceMonitor.hpp>
 #include <ui/views/SettingsView.hpp>
+
+struct AppHostDirectories {
+  std::optional<std::filesystem::path> project, user;
+};
 
 class AppHost {
   SDLGuard _sdl;
@@ -90,7 +94,8 @@ public:
   explicit AppHost(WindowConfig initialWindow = WindowConfig{},
                    playground::rendering::RenderBackendProps backendProps = {},
                    playground::ui::SettingsViewFactory settingsView =
-                       playground::ui::makeSettingsView);
+                       playground::ui::makeSettingsView,
+                   AppHostDirectories directories = {});
 
   const WindowState &windowState() const { return _session.windowState(); }
 

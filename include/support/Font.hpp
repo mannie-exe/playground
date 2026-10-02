@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <SDL3_ttf/SDL_ttf.h>
 
@@ -38,6 +39,11 @@ struct FontRenderProps {
   bool kern{true};
 };
 
+struct FontFallback {
+  std::string path, cacheIdentity;
+  bool operator==(const FontFallback &) const = default;
+};
+
 struct FontProps {
   std::string path;
   // Optional catalog-generation identity; copied by font variants.
@@ -46,6 +52,7 @@ struct FontProps {
   FontStyleProps style;
   FontLayoutProps layout;
   FontRenderProps render;
+  std::vector<FontFallback> fallbacks;
 };
 
 struct FontPatch {
@@ -65,11 +72,15 @@ struct FontPatch {
 };
 
 class Font {
+  // Close the primary face before its borrowed SDL_ttf fallback faces.
+  std::vector<FontHandle> _fallbacks;
   FontResource _font;
   FontProps _props;
   int _naturalLineSkip{};
 
   static FontInfo getInfo(const FontResource &font);
+  friend class AssetRegistry;
+  Font(FontProps props, std::vector<FontHandle> fallbacks);
 
 public:
   explicit Font(FontProps props);
@@ -124,24 +135,27 @@ public:
 
   void setLineSpace(std::optional<int> lineSpace);
 
-  void setHinting(TTF_HintingFlags hinting) {
-    TTF_SetFontHinting(_font.get(), hinting);
-    _props.render.hinting = hinting;
-  }
+  void setHinting(TTF_HintingFlags hinting);
 
   void setSDF(bool sdf);
 
-  void setKerning(bool kern) {
-    TTF_SetFontKerning(_font.get(), kern);
-    _props.render.kern = kern;
-  }
+  void setKerning(bool kern);
 
   void applyProps(FontPatch patch);
 
   Font cloneWith(FontPatch patch) const;
 
   Font(Font &&) noexcept = default;
-  Font &operator=(Font &&) noexcept = default;
+
+  Font &operator=(Font &&other) noexcept {
+    // Keep each primary face paired with its fallback owners until teardown.
+    using std::swap;
+    swap(_fallbacks, other._fallbacks);
+    swap(_font, other._font);
+    swap(_props, other._props);
+    swap(_naturalLineSkip, other._naturalLineSkip);
+    return *this;
+  }
 
   Font(const Font &) = delete;
   Font &operator=(const Font &) = delete;

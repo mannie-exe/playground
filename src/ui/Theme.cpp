@@ -55,6 +55,10 @@ const ThemePalette &defaultTheme() {
 }
 
 void ThemeTypography::validate() const {
+  if (fallbacks)
+    for (const auto &family : *fallbacks)
+      if (!family)
+        throw std::invalid_argument("Null fallback font family");
   for (const auto &style : styles)
     style.face.validate();
   if (!std::isfinite(textScale) || textScale <= 0 || textScale > 8)

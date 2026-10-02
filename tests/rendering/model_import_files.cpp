@@ -1,42 +1,15 @@
 #include <bit>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 #include <platform/sdl/ModelImport.hpp>
+#include <support/TemporaryDirectory.hpp>
 #include <support/Test.hpp>
 
 using namespace playground;
 
 namespace {
-class TemporaryDirectory {
-  std::filesystem::path _path;
-
-public:
-  TemporaryDirectory() {
-    const auto stamp =
-        std::chrono::steady_clock::now().time_since_epoch().count();
-    for (int attempt = 0; attempt < 100; ++attempt) {
-      auto candidate = std::filesystem::temp_directory_path() /
-                       ("playground-model-import-" + std::to_string(stamp) +
-                        "-" + std::to_string(attempt));
-      if (std::filesystem::create_directory(candidate)) {
-        _path = std::move(candidate);
-        return;
-      }
-    }
-    throw std::runtime_error("Cannot create isolated model-import directory");
-  }
-
-  ~TemporaryDirectory() {
-    std::error_code error;
-    std::filesystem::remove_all(_path, error);
-  }
-
-  const std::filesystem::path &path() const noexcept { return _path; }
-};
-
 class WorkingDirectory {
   std::filesystem::path _previous{std::filesystem::current_path()};
 
@@ -65,7 +38,7 @@ void writeModel(std::string_view uri) {
 
 int main() {
   return test::run([] {
-    TemporaryDirectory directory;
+    test::TemporaryDirectory directory{"playground-model-import"};
     WorkingDirectory working{directory.path()};
     std::ofstream buffer{"mesh data.bin", std::ios::binary};
     for (const float value : {-1.f, -1.f, 0.f, 1.f, -1.f, 0.f, 0.f, 1.f, 0.f}) {

@@ -19,8 +19,58 @@ int main() {
         assets.getFont({.path = std::string{PLAYGROUND_SOURCE_DIR} +
                                 "/assets/fonts/LBRITE.TTF",
                         .style = {.size = 20}});
-    unsigned themeFailures{};
-    themeFailures += test::run([&] {
+    unsigned failures{};
+    failures += test::run([&] {
+      for (const bool multiline : {false, true}) {
+        ui::UIRoot editorRoot;
+        auto field = std::make_unique<ui::TextField>(
+            ui::TextFieldProps{.font = font,
+                               .editing = {.multiline = multiline}},
+            "asdfk");
+        auto *editor = field.get();
+        editorRoot.setContent(std::move(field));
+        editorRoot.flushLayout({280, 100});
+        editorRoot.requestFocus(editor->id());
+        editorRoot.performAction(editor->id(), ui::TextSelection{5, 5},
+                                 ui::ActionSource::Assistive);
+        editorRoot.flushLayout({280, 100});
+        auto previous = editor->textInputState().caret.x();
+        for (int i = 0; i < 4; ++i) {
+          ui::UIEvent input{.type = ui::EventType::TextInput, .text = " "};
+          editorRoot.dispatch(input);
+          editorRoot.flushLayout({280, 100});
+          const auto caret = editor->textInputState().caret.x();
+          test::require(caret > previous,
+                        "each trailing space advances the editor caret");
+          previous = caret;
+        }
+        test::require(editor->model().value() == "asdfk    ",
+                      "trailing spaces remain in the editable value");
+        for (const auto &run : editor->semanticState().textRuns)
+          for (const auto width : run.widths)
+            test::require(width > 0,
+                          "trailing spaces retain accessible selection bounds");
+        ui::UIEvent letter{.type = ui::EventType::TextInput, .text = "a"};
+        editorRoot.dispatch(letter);
+        editorRoot.flushLayout({280, 100});
+        editorRoot.performAction(editor->id(), ui::TextSelection{9, 9},
+                                 ui::ActionSource::Assistive);
+        editorRoot.flushLayout({280, 100});
+        test::require(
+            editor->textInputState().caret.x() == previous,
+            "space caret before=" + std::to_string(previous) +
+                " after=" + std::to_string(editor->textInputState().caret.x()));
+        for (const auto value : {"    ", "asdfk\t", "שלום    "}) {
+          editor->setValue(value);
+          editorRoot.flushLayout({280, 100});
+          for (const auto &run : editor->semanticState().textRuns)
+            for (const auto width : run.widths)
+              test::require(width > 0,
+                            "blank, tab and bidirectional editor advances");
+        }
+      }
+    });
+    failures += test::run([&] {
       ui::UIRoot themed;
       auto field = std::make_unique<ui::TextField>(
           ui::TextFieldProps{.font = font}, "abc");
@@ -39,7 +89,7 @@ int main() {
       test::require(!runs.empty() && runs.front().bounds.x() == 12,
                     "accessible text follows updated input inset");
     });
-    themeFailures += test::run([&] {
+    failures += test::run([&] {
       ui::UIRoot themed;
       class Parent : public ui::Box {
       public:
@@ -83,7 +133,7 @@ int main() {
       test::require(borderPixel() == 255,
                     "inherited disabled state retains field marker");
     });
-    test::require(themeFailures == 0, "field theme regressions");
+    test::require(failures == 0, "field regressions");
     ui::UIRoot root;
     auto field = std::make_unique<ui::TextField>(
         ui::TextFieldProps{.font = font, .name = "Name"}, "office a\xCC\x81");
