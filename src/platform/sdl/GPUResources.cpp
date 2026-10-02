@@ -81,20 +81,9 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
     transferBytes += level.texels.data().size();
   }
   limits.validateUpload(transferBytes, "GPU material texture upload");
-  if (source.role() == rendering::TextureRole::Color &&
-      _bytes > (std::numeric_limits<std::size_t>::max() - transferBytes) / 2)
-    throw std::length_error("Material preparation estimate overflow");
-  const auto temporaryBytes =
-      source.role() == rendering::TextureRole::Color ? _bytes * 2 : 0;
   const auto preparationLease =
-      resourcePreparationBudget().acquire(transferBytes + temporaryBytes);
-  rendering::TextureHandle prepared;
-  if (source.role() == rendering::TextureRole::Color)
-    prepared = ignoreAlpha
-                   ? rendering::makeOpaqueTexture(source)
-                   : rendering::packTexture(source, first.format(),
-                                            first.encoding(), true, _bytes);
-  const auto &upload = prepared ? *prepared : source;
+      resourcePreparationBudget().acquire(transferBytes);
+  const auto &upload = source.upload(ignoreAlpha);
   auto texture = createTexture(_device, info, rendering::ResourceKind::Texture);
   SDL_GPUTransferBufferCreateInfo transferInfo{
       SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, Uint32(transferBytes)};

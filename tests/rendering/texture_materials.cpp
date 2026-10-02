@@ -34,6 +34,17 @@ int main() {
                                         rendering::TextureRole::Color);
     test::require(alpha->levels()[1].texels[0] == math::Vec4f{0, 1, 0, .5f},
                   "transparent RGB does not bleed into color mips");
+    test::require(&color->upload(false) == color.get() && color->opaque(),
+                  "opaque texture upload aliases validated immutable source");
+    const auto &associated = alpha->upload(false);
+    const auto &preparedOpaque = alpha->upload(true);
+    test::require(
+        &associated == &alpha->upload(false) &&
+            &preparedOpaque == &alpha->upload(true) &&
+            &associated != &preparedOpaque &&
+            associated.alphaMode() == rendering::AlphaMode::Premultiplied &&
+            preparedOpaque.opaque() && !alpha->opaque(),
+        "immutable upload variants are prepared once per alpha policy");
     const auto opaque = rendering::makeOpaqueTexture(*alpha);
     test::require(opaque->levels()[0].texels[0] == math::Vec4f{1, 0, 0, 1} &&
                       opaque->levels()[1].texels[0] ==

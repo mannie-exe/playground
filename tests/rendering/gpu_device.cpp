@@ -698,10 +698,12 @@ int main(int argc, char **argv) {
             scene::MeshDraw{another, {{0, 255, 0, 255}}, {}}};
         auto boundedImage = std::dynamic_pointer_cast<const GPUImage>(
             boundedScene.render({{}, {8, 8}, {0, 0, 0, 255}}, meshDraws));
-        test::require(
-            boundedScene.meshResidentBytes() == meshBytes &&
-                readPixel(limited, *boundedImage, 4, 4)[0] > .99f,
-            "mesh residency eviction retains in-flight prepared geometry");
+        test::require(boundedScene.meshResidentBytes() == meshBytes * 2,
+                      "active draw resources exceed idle retention safely");
+        boundedScene.trimUnused();
+        test::require(boundedScene.meshResidentBytes() == meshBytes &&
+                          readPixel(limited, *boundedImage, 4, 4)[0] > .99f,
+                      "idle eviction preserves in-flight prepared geometry");
       }
       Window window{WindowConfig{.windowedSize = {32, 32}, .hidden = true}};
       const auto kind = rendering::GPUDriver::Vulkan;

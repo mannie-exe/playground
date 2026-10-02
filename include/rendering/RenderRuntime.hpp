@@ -1,5 +1,4 @@
 #pragma once
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -12,6 +11,7 @@
 
 #include <rendering/GPUTiming.hpp>
 #include <rendering/ResourceLedger.hpp>
+#include <rendering/SceneWork.hpp>
 
 namespace playground::rendering {
 
@@ -65,6 +65,7 @@ struct RenderTelemetrySnapshot {
 };
 
 struct RenderRuntimeSnapshot {
+  SceneWork sceneWork;
   ResourceSnapshot resources;
   FramePacingProps pacing;
   std::size_t outstandingFrames{};
@@ -103,7 +104,11 @@ class RenderRuntime {
     return i;
   }
 
+  SceneWork _sceneWork;
+
 public:
+  void recordSceneWork(const SceneWork &work) { _sceneWork.add(work); }
+
   explicit RenderRuntime(
       std::shared_ptr<ResourceLedger> resources = defaultResourceLedger())
       : _resources{std::move(resources)} {
@@ -272,6 +277,7 @@ public:
 
   RenderRuntimeSnapshot snapshot() const {
     auto result = _metrics;
+    result.sceneWork = _sceneWork;
     result.resources = _resources->snapshot();
     if (!_gpuHistory.empty() &&
         _gpuHistory.back().domain == _metrics.gpu.domain &&

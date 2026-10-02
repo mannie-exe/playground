@@ -83,16 +83,22 @@ Texture::Texture(TextureRole role, std::vector<PackedTextureLevel> levels,
         (level.texels.encoding() == ColorEncoding::SRGB &&
          role != TextureRole::Color && role != TextureRole::Emission))
       throw std::invalid_argument("Invalid texture mip chain");
-    for (auto p : level.texels) {
-      if (!math::isFinite(p))
-        throw std::invalid_argument("Nonfinite texture texel");
-      if (role != TextureRole::Data &&
-          (p.x < 0 || p.y < 0 || p.z < 0 || p.w < 0 || p.w > 1))
-        throw std::invalid_argument("Invalid color/normal texture range");
-      if (role == TextureRole::Normal && (p.x > 1 || p.y > 1 || p.z > 1))
-        throw std::invalid_argument(
-            "Normal texture must be encoded in unit channels");
-    }
+    if (level.texels.format() == TextureFormat::RGBA8) {
+      const auto data = level.texels.data();
+      for (std::size_t j = 3; j < data.size(); j += 4)
+        _opaque &= data[j] == std::byte{255};
+    } else
+      for (auto p : level.texels) {
+        _opaque &= p.w == 1;
+        if (!math::isFinite(p))
+          throw std::invalid_argument("Nonfinite texture texel");
+        if (role != TextureRole::Data &&
+            (p.x < 0 || p.y < 0 || p.z < 0 || p.w < 0 || p.w > 1))
+          throw std::invalid_argument("Invalid color/normal texture range");
+        if (role == TextureRole::Normal && (p.x > 1 || p.y > 1 || p.z > 1))
+          throw std::invalid_argument(
+              "Normal texture must be encoded in unit channels");
+      }
     _bytes += level.texels.data().size();
     if (expected == math::Vec2i{1, 1} && i + 1 != _levels.size())
       throw std::invalid_argument("Excess texture mip levels");
@@ -191,12 +197,7 @@ TextureHandle makeOpaqueTexture(const Texture &source) {
   if (source.role() != TextureRole::Color ||
       source.alphaMode() != AlphaMode::Straight)
     throw std::invalid_argument("Opaque preparation requires a color texture");
-  const auto opaque = std::all_of(
-      source.levels().begin(), source.levels().end(), [](const auto &level) {
-        return std::all_of(level.texels.begin(), level.texels.end(),
-                           [](auto p) { return p.w == 1; });
-      });
-  if (opaque)
+  if (source.opaque())
     return std::make_shared<const Texture>(source);
   const auto &first = source.levels().front();
   PackedTextureLevel base{first.size,
@@ -323,5 +324,22 @@ TextureHandle packTexture(const Texture &source, TextureFormat format,
   return std::make_shared<const Texture>(source.role(), std::move(levels),
                                          premultiply ? AlphaMode::Premultiplied
                                                      : AlphaMode::Straight);
+}
+} // namespace playground::rendering
+
+namespace playground::rendering {
+const Texture &Texture::upload(bool ignoreAlpha) const {
+  if (_role != TextureRole::Color || _opaque ||
+      _alpha == AlphaMode::Premultiplied)
+    return *this;
+  std::lock_guard lock{_uploadMutex};
+  auto &cached = ignoreAlpha ? _opaqueUpload : _associatedUpload;
+  if (!cached) {
+    const auto &first = _levels.front().texels;
+    cached = ignoreAlpha ? makeOpaqueTexture(*this)
+                         : packTexture(*this, first.format(), first.encoding(),
+                                       true, _bytes);
+  }
+  return *cached;
 }
 } // namespace playground::rendering
