@@ -110,6 +110,8 @@ class Node {
                                         const layout::AxisConstraints &offered);
 
 protected:
+  std::uint64_t measureRevision() const noexcept { return _revision; }
+
   UIServices *services() const noexcept {
     auto table = _table.lock();
     return table ? table->services : nullptr;
@@ -358,6 +360,11 @@ public:
     invalidate(DirtyFlags::Measure | DirtyFlags::Arrange | DirtyFlags::Paint |
                DirtyFlags::HitTest);
   }
+
+  // Reposition children within unchanged measured bounds. Size-affecting
+  // changes must use invalidateLayout(). Ancestor raster/hit state still
+  // changes.
+  void invalidateArrange() noexcept;
 
   void invalidatePaint() noexcept { invalidate(DirtyFlags::Paint); }
 

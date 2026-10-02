@@ -267,16 +267,8 @@ public:
     const auto boundaries = _table->layoutBoundaries;
     for (const auto id : boundaries)
       if (auto *boundary = resolve(id)) {
-        bool covered = false;
-        for (auto *parent = boundary->parent(); parent;
-             parent = parent->parent())
-          if (std::find(boundaries.begin(), boundaries.end(), parent->id()) !=
-              boundaries.end()) {
-            covered = true;
-            break;
-          }
-        if (covered)
-          continue;
+        // A queued ancestor can skip unchanged intermediate nodes. Visit each
+        // queued identity; arrange() itself skips work already covered above.
         boundary->arrange(_context, boundary->bounds());
         for (auto *parent = boundary->parent(); parent;
              parent = parent->parent())

@@ -189,3 +189,24 @@ target_compile_definitions(playground_ui_font_family_tests PRIVATE PLAYGROUND_SO
 
 get_property(all_tests GLOBAL PROPERTY playground_test_targets)
 add_custom_target(playground_tests DEPENDS ${all_tests})
+
+# Workloads are runnable benchmarks; CTest checks invariants, never timings.
+foreach(workload IN ITEMS layout host)
+    set(target playground_ui_${workload}_workload)
+    add_executable(${target} benchmarks/ui_${workload}.cpp)
+    playground_configure_cpp_target(${target})
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/tests)
+    target_link_libraries(${target} PRIVATE playground_app Threads::Threads)
+    target_compile_definitions(${target} PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+endforeach()
+
+add_test(NAME ui_layout_workload COMMAND playground_ui_layout_workload --verify)
+set_tests_properties(ui_layout_workload PROPERTIES LABELS "ui;integration;layout;pixels" TIMEOUT 90)
+add_dependencies(playground_tests playground_ui_layout_workload)
+
+if(PLAYGROUND_GPU)
+    target_compile_definitions(playground_ui_layout_workload PRIVATE PLAYGROUND_WORKLOAD_GPU)
+    target_include_directories(playground_ui_layout_workload PRIVATE ${PROJECT_SOURCE_DIR}/src/platform/sdl)
+    add_test(NAME ui_layout_workload_gpu COMMAND playground_ui_layout_workload --verify --gpu)
+    set_tests_properties(ui_layout_workload_gpu PROPERTIES LABELS "ui;hardware;gpu;pixels" TIMEOUT 90 SKIP_RETURN_CODE 77)
+endif()

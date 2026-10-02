@@ -52,6 +52,16 @@ class ScrollView : public Node {
   math::Size2 _extent;
   bool _horizontalBar{}, _verticalBar{};
 
+  struct GeometryKey {
+    math::Size2 available;
+    std::uint64_t measureRevision, environmentRevision;
+    layout::LayoutDirection direction;
+    math::Vec2f pixelScale;
+    bool operator==(const GeometryKey &) const = default;
+  };
+
+  std::optional<GeometryKey> _geometryKey;
+
   bool horizontal() const { return _props.axes != ScrollAxes::Vertical; }
 
   bool vertical() const { return _props.axes != ScrollAxes::Horizontal; }

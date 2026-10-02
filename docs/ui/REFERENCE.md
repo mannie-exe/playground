@@ -240,7 +240,12 @@ Invalidation propagates dependency revisions to ancestors. A single measurement
 cache entry includes constraints, local/dependent revision, direction, environment
 revision and pixel scale. A clean flag alone is insufficient.
 Arrangement also invalidates enclosing layer rasters without scheduling endless
-layout passes. Container plans may be recomputed in arrange; no promise
+layout passes. invalidateArrange() queues local child arrangement without
+invalidating measured sizes; use it only when the node's measured bounds are
+unchanged. Moving a node with unchanged size, layout revision and environment
+preserves child-local layout. Ancestor paint caches and hit/semantic geometry
+still update. Size-affecting changes require invalidateLayout().
+Container plans may be recomputed in arrange; no promise
 of a persistent Grid/Flow plan cache is made.
 
 <a id="ownership"></a>
@@ -661,6 +666,10 @@ constraints there. Content sizing reports the child's natural extent clamped to
 the offered constraints and also accepts unbounded measurement. Use Content for
 content-fitting windows: scrolling is needed only after real viewport constraints
 reduce the available size. This does not choose a monitor or resize a window.
+Measurement may update offer-dependent caches but never commits viewport,
+content extent, gutters or offset. Arrangement commits those values and clamps
+the offset. Offset-only changes reuse committed geometry without remeasuring;
+content, constraints, theme, direction or density changes invalidate it.
 Offsets clamp; the entire gutter intercepts hits ahead of content, not only its
 thumb. Track clicks move the thumb toward the pointer and can continue as a drag;
 cancellation releases capture. Nested wheel

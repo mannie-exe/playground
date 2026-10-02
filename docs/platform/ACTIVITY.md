@@ -106,3 +106,19 @@ window transitions continue. Held actions, pointer gestures and composition are
 canceled at the boundary. Settings UI demand and 500 ms meter refreshes drive
 its activity; closing rebases app elapsed time and restores its window policy
 without replacing the renderer. See [GRAPHICS.md](GRAPHICS.md).
+
+## Input fairness
+
+AppHost dispatches at most 64 queued events or four milliseconds of event work
+per iteration, whichever comes first. At least one queued event is dispatched.
+Remaining events stay in FIFO order for the next iteration; update, frame
+admission and presentation get a turn between batches. This is a fairness bound,
+not preemption of one handler or SDL's native event pump. Pending frame revisions
+remain pending until submission; no redraw cooldown keeps a settled UI awake.
+
+Native OS resize/move can block SDL_PollEvent or SDL_WaitEventTimeout even with
+bounded dispatch. Continuous rendering within that modal loop requires SDL main
+callbacks or an owner-thread, reentrancy-safe exposed-event callback; the current
+host does not provide that path. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
+Programmatic window transitions and ordinary queued resize events use the normal
+host loop.

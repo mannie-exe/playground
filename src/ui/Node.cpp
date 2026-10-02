@@ -428,6 +428,28 @@ void Node::invalidate(DirtyFlags flags) noexcept {
   }
 }
 
+void Node::invalidateArrange() noexcept {
+  auto table = _table.lock();
+  if (!table || !_arranged) {
+    invalidateLayout();
+    return;
+  }
+  try {
+    if (std::find(table->layoutBoundaries.begin(),
+                  table->layoutBoundaries.end(),
+                  _id) == table->layoutBoundaries.end())
+      table->layoutBoundaries.push_back(_id);
+  } catch (...) {
+    invalidateLayout();
+    return;
+  }
+  invalidate(DirtyFlags::Paint | DirtyFlags::HitTest);
+  ++_arrangeRevision;
+  _dirty = _dirty | DirtyFlags::Arrange;
+  _pendingChanges = _pendingChanges | DirtyFlags::Arrange;
+  table->layoutDirty = true;
+}
+
 bool Node::hasActiveInputInSubtree() const noexcept {
   if (auto table = _table.lock()) {
     auto within = [this](Node *node) {
@@ -611,10 +633,12 @@ void Node::arrange(ArrangeContext &context, math::Rect bounds) {
     throw std::invalid_argument("Invalid arranged UI rectangle");
   if (context.stats)
     ++context.stats->arrangeRequests;
-  if (_arranged && _bounds == bounds && _arrangedRevision == _arrangeRevision &&
-      _arrangedEnvironment == context.environmentRevision &&
-      _arrangedDirection == context.direction &&
-      _arrangedPixelScale == context.pixelScale) {
+  const bool sameLayout = _arranged && _bounds.size == bounds.size &&
+                          _arrangedRevision == _arrangeRevision &&
+                          _arrangedEnvironment == context.environmentRevision &&
+                          _arrangedDirection == context.direction &&
+                          _arrangedPixelScale == context.pixelScale;
+  if (sameLayout && _bounds.position == bounds.position) {
     if (context.stats)
       ++context.stats->arrangeSkips;
     return;
@@ -628,14 +652,20 @@ void Node::arrange(ArrangeContext &context, math::Rect bounds) {
     _arranged = true;
     return;
   }
-  const auto insets = contentInsets();
-  const math::Rect content{
-      {insets.left, insets.top},
-      {std::max(0.0f, bounds.size.width - insets.left - insets.right),
-       std::max(0.0f, bounds.size.height - insets.top - insets.bottom)}};
-  arrangeChildren(context, content);
-  _layoutResult = {bounds, content, {{}, bounds.size}};
-  refreshOverflow();
+  if (sameLayout) {
+    // Child layout uses local coordinates; moving the parent only changes
+    // world placement. Hit geometry and ancestor raster revisions still change.
+    _layoutResult.borderBounds = bounds;
+  } else {
+    const auto insets = contentInsets();
+    const math::Rect content{
+        {insets.left, insets.top},
+        {std::max(0.0f, bounds.size.width - insets.left - insets.right),
+         std::max(0.0f, bounds.size.height - insets.top - insets.bottom)}};
+    arrangeChildren(context, content);
+    _layoutResult = {bounds, content, {{}, bounds.size}};
+    refreshOverflow();
+  }
   _arranged = true;
   _arrangedRevision = revision;
   _arrangedEnvironment = context.environmentRevision;

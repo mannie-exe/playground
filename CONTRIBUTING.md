@@ -274,12 +274,12 @@ introduce it only if fixtures, parameterization or richer reporting justify it.
 `PLAYGROUND_BUILD_TESTS` defaults ON; turn it OFF for an application-only build.
 Changing this option requires configure, not install.
 Automated testing covers UI and its constituents, plus rendering and scene
-contracts: math, layout, runtime, SDL adapters and resource support. Do not add app/game
-rule tests or executable smoke tests yet. Demo and Minesweeper remain production
-consumers, not test fixtures; generic resource tests may reuse checked-in assets.
-UI viewport/presentation settings are constituents: test their pure mapping,
-schema/merge and failure contracts, not full AppHost startup. Use an in-memory
-FileStore or a fresh test-owned directory; never real user preferences. Ordinary
+contracts: math, layout, runtime, SDL adapters and resource support. Native host
+integration and UI workloads reuse playground_app and AppHostDirectories with
+isolated preferences. Settings and Demo 2D views are rendering workloads, not
+game-rule fixtures. Keep ordinary constituent checks independent of AppHost.
+Use an in-memory FileStore or a fresh test-owned directory; never real user
+preferences. Ordinary
 tests must not change desktop displays, fullscreen modes, or OS settings.
 
 Host transition ordering may be tested through the narrow operations in

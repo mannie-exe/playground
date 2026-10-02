@@ -20,7 +20,7 @@ Tests cover the UI module and its constituents: geometry, layout, retained
 ownership, events, scheduling, SDL adapters, painting and resource support.
 The host_smoke integration test opens/applies/closes Settings against the real
 AppHost using a native window and an isolated temporary user directory. Headless
-dummy/offscreen drivers skip this test.
+dummy/offscreen drivers or unavailable SDL video skip this test.
 AppHostDirectories can override project/assets and user roots; omitted roots
 retain executable-relative assets and the platform preference directory.
 Native rendering/interactive platform behavior and game rules remain separate.
@@ -74,14 +74,14 @@ not overflow into an endpoint jump.
 | Native adapter lifetime | `ui_window_services`: hidden native window attachment, mode changes, detach/replacement and destruction | No screen reader is driven; dummy/offscreen SDL drivers bypass the native adapter portion |
 | Composite controls | `ui_control_variants`: toggles, radio/list selection, Select, Disclosure, Tabs, label/help relationships, Status, Tooltip, ProgressBar | Demo2D supplies a manual gallery; it is not an automated app test |
 | Content-sized scrolling | `ui_content_scroll`: natural sizing, work-area clamps, overflow extent, resizing, offset reset and legacy Fill constraints | Actual OS work-area/window decoration behavior still needs desktop verification |
-| ScrollView | `ui_scroll_variants`, `ui_containers`: all 3 axes × 3 scrollbar policies, offset clamping/invalid input, removal, overlay drag | No complete dedicated matrix of nested residual wheel propagation and scrollIntoView alignments |
+| ScrollView | `ui_scroll_variants`, `ui_containers`: all 3 axes × 3 scrollbar policies, offset clamping/invalid input, removal, overlay drag, nested local placement/hits, provisional measurement and residual wheel propagation | Not every nested scrollIntoView alignment or platform gesture |
 | AdaptiveStack/Repeat | `ui_collections`, `ui_collection_failures`: mode switches, all three Repeat layouts, stable keyed reorder, duplicate keys, null factory, retry, empty model, refreshed model-backed child measurements | Not all partially throwing update/onAttach permutations |
 | VirtualList/VirtualGrid | `ui_collections`, `ui_collection_failures`, `ui_virtual_list_scale`: fixed/estimated, horizontal/vertical, RTL, indexed scroll, focus pinning/removal, million-item bounded realization; update-then-erase | Not all variable-height anchor changes under arbitrary model edits or captured-pointer pinning combinations |
 | Extent index | `ui_extent_index`: 100 updates, every prefix versus linear sum, boundary/search sweep versus linear lookup, zeros, invalid reset/update preservation | Extreme double-sum overflow/cancellation not exhaustively exercised; production virtual-list boundary also validates representable totals |
 | Content fit | `ui_content_fit`: all 5 fit × 3 horizontal × 3 vertical alignment × 2 directions × 2 target shapes = 180 cases; empty/invalid modes | No enormous/subnormal input-domain proof |
 | Text | `ui_content_resources`: all 4 methods × 2 wraps × 2 fits × 3 paragraph alignments × 2 directions = 96 cases, actual SDL pixels, empty text, required-font Reset | LBRITE + short Latin text is not Unicode shaping/fallback/script conformance testing |
 | Image/Vector | `ui_content_resources`: natural density/crop validation, required-handle Reset, final-size/DPI raster requests, failed loads, budgets, density-only failure/readiness, recovery, zero area | Element styles have separate tests; limited asset corpus, not all decoder failures |
-| Clip/Layer/Painter | `ui_clip`, `ui_content`, `ui_layer_cache`: content clip/hits, singular-hit diagnostic, opacity pixels, axis-aligned and affine pixel checks, cache invalidation, root/per-layer budget refusal/release | No injected SDL allocation failure at every stage |
+| Clip/Layer/Painter | `ui_clip`, `ui_content`, `ui_layer_cache`: content clip/hits, singular-hit diagnostic, opacity pixels, axis-aligned and affine pixel checks, cache invalidation including local scrolling beneath a cached ancestor, root/per-layer budget refusal/release | No injected SDL allocation failure at every stage |
 | AssetRegistry | `ui_asset_cache`: sharing, request-recency eviction, live-handle pinning, byte estimates, failing/null factories, retry, clear with external owner | Memory estimates omit allocator/font/GPU overhead; eviction is not a hard memory cap |
 | SDL event adapter | `ui_sdl_input`: event-result combination/termination/formatting, supported key map, key metadata, mouse buttons, all four touch event types, wheel flip, unknown host event | Synthetic events do not establish real-device/platform behavior or multiple-device interaction |
 | SDL errors | `sdl_errors`: std::exception catch, context/detail, consumed error state, null and valid resource | No process-wide failure injector |
@@ -224,3 +224,50 @@ codecs, dirty external refresh, Select label/help relationships, nonmodal edit
 dismissal, composite toolbar Tab traversal, specialization invariants, independent
 toast hover/focus pauses, event provenance, slider terminal states, meter threshold
 semantics and focus-within boundaries.
+
+## Rendering workloads
+
+Build and run the maintained harnesses with the release preset. A CMake target
+here is the executable to build; no install or private compile-command parser
+is required.
+
+```sh
+cmake --preset release
+cmake --build --preset release --target playground_ui_layout_workload playground_ui_host_workload
+./build/release/bin/playground_ui_layout_workload --verify
+./build/release/bin/playground_ui_layout_workload --verify --gpu
+./build/release/bin/playground_ui_layout_workload --verify --full-layout
+./build/release/bin/playground_ui_host_workload software
+./build/release/bin/playground_ui_host_workload gpu
+./build/release/bin/playground_ui_host_workload software --burst
+./build/release/bin/playground_ui_host_workload gpu --burst
+```
+
+The layout workload uses actual Settings and Demo 2D views at 408×480 and
+900×480, three fresh trees each. It reports first-layout time separately from
+12 warmed scroll updates, actual measurements, text layouts and arrangements.
+Assets remain cached within a process; first-layout time is not a cold-disk or
+whole-startup measurement. --full-layout invalidates every node before each
+update. --verify checks pixels against full layout, provisional-size round trips,
+zero offset-only measurement and return to idle. --gpu runs the same comparisons
+within Vulkan with a 1/1024 channel tolerance for RGBA16F rounding; software
+pixels compare exactly. It does not compare software gamma arithmetic with GPU
+arithmetic. Missing Vulkan support skips the GPU check.
+CTest runs correctness checks, without timing thresholds.
+
+The native workload uses isolated preferences, a non-resizable 408×480 window and 80 synthetic
+scrollbar moves eight milliseconds apart; --burst queues them without spacing.
+It waits for the final input to be painted and rejects changed window geometry
+or a non-overflowing fixture. It reports enqueue-to-owner-dispatch and enqueue-to-UI-paint latency, submitted
+frame counts, CPU poll durations and menu idle frames. These are not scanout or
+input-to-photon measurements. Native tests require a desktop; software and GPU
+runs must be sequential. Keep the machine idle, alternate baseline/candidate
+order and retain raw output, source revisions, build type, OS, CPU and backend.
+Do not compare timings from different geometry, fonts or build configurations.
+
+These workloads do not automate OS title-bar dragging, IME, physical input,
+screen readers, or all app transitions. Existing frame admission/activity tests
+cover deferred/skipped submission and paint-time invalidation independently.
+
+The recorded baseline/candidate comparison is in
+[RENDERING_MEASUREMENTS.md](RENDERING_MEASUREMENTS.md).
