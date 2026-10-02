@@ -260,3 +260,16 @@ instrumented buffer growth is not a count of every allocation. Optional root-pha
 timings are overlapping breakdowns of host phases, never additional frame time.
 Acceptance uses deterministic counter/behavior checks, not wall-clock thresholds.
 The test inventory records the corresponding checks and coverage boundaries.
+
+## Motion and loading
+
+Motion specifications are values; live bindings resolve owner-thread targets.
+Keep playback handles alive, use direct setters to replace effects, and defer
+structural changes from notifications. Presentation overrides do not change
+measured layout. Presence/replacement exclude outgoing content from input and
+accessibility while retaining it for painting. See [MOTION.md](MOTION.md).
+
+Explicit async resources publish immutable results by request generation. A
+notification never owns the only result copy. Views build nodes on the owner
+thread; loading correctness is independent of reveal animation. See
+[ASYNC.md](ASYNC.md). Audio remains [planned](../audio/README.md).

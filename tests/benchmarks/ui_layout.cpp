@@ -19,6 +19,7 @@
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/collections/ScrollView.hpp>
+#include <ui/containers/Box.hpp>
 #include <ui/views/SettingsView.hpp>
 
 using namespace playground;
@@ -203,6 +204,55 @@ int main(int argc, char **argv) {
 #endif
       return pixels(root, size);
     };
+    // Compare animation samples to independently authored static scenes on
+    // both software and GPU painters; include compositing and geometry.
+    {
+      ui::UIRoot animated, reference;
+      auto moving = std::make_unique<ui::Box>();
+      auto still = std::make_unique<ui::Box>();
+      auto *a = moving.get();
+      auto *b = still.get();
+      a->setBackground(math::ColorRGBA8{240, 80, 30, 255});
+      b->setBackground(math::ColorRGBA8{240, 80, 30, 255});
+      animated.setContent(std::move(moving));
+      reference.setContent(std::move(still));
+      animated.flushLayout({32, 32});
+      reference.flushLayout({32, 32});
+      auto fade = animated.motion().transition(ui::motion::opacity(a->handle()),
+                                               0.f, {.duration = 1});
+      auto move =
+          animated.motion().transition(ui::motion::translation(a->handle()),
+                                       math::Vec2f{16, 0}, {.duration = 1});
+      auto scale =
+          animated.motion().transition(ui::motion::scale(a->handle()),
+                                       math::Vec2f{.7f, 1.1f}, {.duration = 1});
+      auto rotate = animated.motion().transition(
+          ui::motion::rotation(a->handle()), .25f, {.duration = 1});
+      const auto measured = animated.stats().measured;
+      for (int step = 0; step <= 4; ++step) {
+        if (step)
+          animated.update(.25);
+        animated.motion().sample();
+        b->setMotionValue(ui::MotionProperty::Opacity, 1.f - step * .25f);
+        b->setMotionValue(ui::MotionProperty::Translation,
+                          math::Vec2f{step * 4.f, 0});
+        b->setMotionValue(ui::MotionProperty::Scale,
+                          math::Vec2f{1.f - step * .075f, 1.f + step * .025f});
+        b->setMotionValue(ui::MotionProperty::Rotation, step * .0625f);
+        const auto actual = raster(animated, {32, 32});
+        const auto expected = raster(reference, {32, 32});
+        test::require(
+            pixelError(actual, expected, gpu) <= (gpu ? .002 : 0),
+            "animated opacity/translation match static reference pixels");
+      }
+      test::require(animated.stats().measured == measured,
+                    "presentation animation does not remeasure layout");
+      animated.update(0);
+      test::require(!animated.motion().needsFrame() &&
+                        !animated.motion().nextDelay() &&
+                        !animated.needsPaint(),
+                    "finished motion returns to idle after final render");
+    }
     AssetRegistry assets;
     auto catalog = std::make_shared<assets::AssetCatalog>(
         std::filesystem::path{PLAYGROUND_SOURCE_DIR} / "assets");

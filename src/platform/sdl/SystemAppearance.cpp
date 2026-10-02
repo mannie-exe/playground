@@ -25,6 +25,9 @@ ui::SystemAppearance systemAppearance() {
   if (scheme != SDL_SYSTEM_THEME_UNKNOWN)
     value.dark = scheme == SDL_SYSTEM_THEME_DARK;
 #if defined(_WIN32)
+  BOOL animation = TRUE;
+  if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animation, 0))
+    value.reducedMotion = !animation;
   HIGHCONTRASTW contrast{sizeof(HIGHCONTRASTW)};
   if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast,
                             0)) {

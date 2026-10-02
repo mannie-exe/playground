@@ -20,7 +20,6 @@ class Demo2DApp final : public IApp {
 public:
   Demo2DApp() = default;
 
-
   static AppInfo staticInfo() {
     return AppInfo{
         .id = AppId::Demo2D,
@@ -71,7 +70,6 @@ public:
   }
 
   EventResult handleEvent(AppContext &ctx, const SDL_Event &event) override {
-    _ui.update(0);
     _ui.synchronize(ctx);
 
     return _ui.handleEvent(event);

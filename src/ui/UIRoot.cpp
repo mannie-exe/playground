@@ -4,6 +4,7 @@
 
 namespace playground::ui {
 void UIRoot::publishTheme(ResolvedTheme value) {
+  _motion.setThemeMotion(value.motion);
   if (_services.theme == value)
     return;
   _services.theme = std::move(value);
@@ -51,7 +52,7 @@ std::optional<math::Transform2D> UIRoot::inputInverse(Node &node) {
 
 Node *UIRoot::hit(Node &node, math::Point2 local) {
   if (node.visibility() != Visibility::Visible || !node.isArranged() ||
-      !node.isInteractionEnabled())
+      !node.isInteractionEnabled() || node.isInert())
     return nullptr;
   const bool inside = node.containsLocal(local);
   if (node.clipsContent() && !node.containsClip(local))
@@ -84,7 +85,8 @@ Node *UIRoot::hit(Node &node, math::Point2 local) {
 bool UIRoot::acceptsInput(const Node &node) noexcept {
   if (!node.isArranged() || node.visibility() != Visibility::Visible ||
       node.hitTestPolicy() == HitTestPolicy::None ||
-      !node.isInteractionEnabled() || !node.worldTransform().inverse())
+      !node.isInteractionEnabled() || node.isInert() ||
+      !node.worldTransform().inverse())
     return false;
   for (auto *parent = node.parent(); parent; parent = parent->parent()) {
     if (!parent->isArranged() || parent->visibility() != Visibility::Visible ||
@@ -99,7 +101,7 @@ bool UIRoot::acceptsInput(const Node &node) noexcept {
 bool UIRoot::acceptsAction(const Node &node) noexcept {
   for (auto *p = &node; p; p = p->parent())
     if (!p->isArranged() || p->visibility() != Visibility::Visible ||
-        !p->isInteractionEnabled())
+        !p->isInteractionEnabled() || p->isInert())
       return false;
   return true;
 }
@@ -166,6 +168,7 @@ void UIRoot::synchronizeHover(const UIEvent &event) {
 
 UIRoot::UIRoot(UIServices services, runtime::CompletionQueueProps completions)
     : _services{std::move(services)}, _completions{completions} {
+  _services.motion = &_motion;
   if (!_services.scheduler)
     _services.scheduler = &_scheduler;
   _services.defer = [this](support::MoveOnlyFunction<void()> work) {
@@ -338,11 +341,13 @@ void UIRoot::update(double seconds) {
     ~UpdateGuard() { active = false; }
   } guard{_updating};
 
+  _motion.advance(seconds);
   {
     UIWorkTiming::Scope timing{_timing, UIWorkPhase::Completions};
     _completions.drain();
   }
   _services.scheduler->advance(seconds);
+  _motion.dispatchCompletions();
   flushMutations();
   flushChanges();
   if (_environment)

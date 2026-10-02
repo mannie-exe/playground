@@ -1,7 +1,5 @@
 #pragma once
 
-#include <algorithm>
-#include <cmath>
 #include <map>
 #include <span>
 #include <string>
@@ -11,6 +9,7 @@
 #include <rendering/RenderRuntime.hpp>
 #include <rendering/RenderSettings.hpp>
 #include <rendering/RendererTypes.hpp>
+#include <runtime/MotionPreference.hpp>
 
 namespace playground::rendering {
 
@@ -45,6 +44,7 @@ struct QualityPolicy {
 };
 
 struct GraphicsSettings {
+  runtime::MotionPreference motion{runtime::MotionPreference::System};
   RenderSettings presentation;
   RendererPreferences renderer;
   Graphics2D twoD;

@@ -1076,6 +1076,20 @@ Resource preparation and backend ownership details live in
 [GPU.md](../render/GPU.md#resource-contracts). Current dependency choices do not
 change node identity, parent placement or input-routing contracts.
 
+## Motion and asynchronous content
+
+`UIRoot::motion()` owns typed property playback. `MotionSpec`, `Keyframes<T>`,
+`TimelineSpec` and `MotionBindings` separate descriptions from live targets.
+`AnimationHandle` owns cancellation; `MotionValue<T>` supports custom painting.
+Node bindings expose opacity, translation, scale, rotation and paint colors.
+`Presence` retains hidden content; `TransitionHost` replaces keyed content.
+See [MOTION.md](MOTION.md) for ownership, reduced motion and frame demand.
+
+`AsyncResource<T>` publishes request-scoped worker results; `AsyncView<T>` owns
+pending/ready/error factories and optional animated replacement. See
+[ASYNC.md](ASYNC.md). These APIs use the existing bounded Executor and do not
+implement concurrent tree reconciliation.
+
 <a id="integration"></a>
 ## Host integration
 
@@ -1158,7 +1172,7 @@ These additions are not required to use the public API.
 | Throughput | Cached Grid/Flow plans and UI world transforms, broader dirty-subtree scheduling, more efficient eviction; explicit LayoutBoundary scheduling already exists |
 | Allocation | Measured use of PMR/pools/packed storage and lifetime-safe reusable scratch |
 | Resource lifecycle | Asset watching/revisions, broader memory accounting, backend-independent content providers |
-| API/runtime convenience | editProps helpers and animation abstractions; bounded Executor and ModelPreparation already exist, further asynchronous loaders need explicit owner-publication contracts |
+| API/runtime convenience | editProps helpers and further asynchronous loaders with explicit owner-publication contracts |
 | Collection reuse | Opt-in recycling keyed by compatible node kind with explicit rebind/reset and subscription cleanup |
 
 <a id="references"></a>

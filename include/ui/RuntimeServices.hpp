@@ -151,6 +151,7 @@ struct UIServices {
   std::function<std::string()> readClipboard;
   std::function<void(std::string_view)> writeClipboard;
   Scheduler *scheduler{};
+  MotionEngine *motion{};
   std::function<void(std::string)> diagnostic;
   std::function<void(support::MoveOnlyFunction<void()>)> defer;
   std::function<void(NodeId)> focusAfterLayout;

@@ -1553,3 +1553,29 @@ to its owner's attached NodeId, then control setOpen from your own timing policy
 Resolve IDs after attachment, for example during the owner's arrangement, rather
 than storing constructor-time empty IDs. Popup content stays owned by its component;
 never detach and reparent it into a second live tree to display it above a clip.
+
+## Motion ownership
+
+Keep the returned handle in the owning component. Replacing it retargets the
+property; destroying it cancels playback. Direct roots advance with `update()`
+and sample with `motion().sample()` before preparation. UISession performs both
+at the appropriate clock/presentation boundaries. See [MOTION.md](MOTION.md).
+
+```cpp
+#include <ui/Motion.hpp>
+#include <ui/containers/Transitions.hpp>
+
+struct PanelMotion {
+  playground::ui::AnimationHandle playback;
+  void show(playground::ui::UIRoot &root, playground::ui::Node &panel) {
+    playback = root.motion().transition(
+        playground::ui::motion::opacity(panel.handle()), 1.f,
+        panel.resolvedTheme().motion.reveal);
+  }
+};
+```
+
+Use `Presence` when a retained child must become inert during exit and collapse
+when hidden. Use `TransitionHost` for keyed replacement. Both keep visual lifetime
+separate from input/accessibility lifetime. AsyncResource/AsyncView manage explicit
+loading state; their worker results never construct UI nodes off the owner thread.

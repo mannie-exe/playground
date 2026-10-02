@@ -29,14 +29,29 @@ struct Samples {
   std::array<std::atomic<Clock::rep>, moves> sent{};
   std::vector<double> dispatch, paint;
   int dispatched{-1}, painted{-1};
-  std::promise<void> completed;
+  std::promise<void> completed, motionCompleted;
+  bool motion{};
+  unsigned motionPaints{};
 };
 
 class ObservedSettings final : public ui::SettingsView {
   Samples &_samples;
+  ui::MotionValue<float> _progress{0, [this] { invalidatePaint(); }};
+  ui::AnimationHandle _animation;
+  mutable bool _started{};
 
 protected:
   void onEvent(ui::UIEvent &event) override {
+    if (_samples.motion && !_started && _samples.geometry.travel &&
+        event.type == ui::EventType::PointerDown &&
+        event.phase == ui::EventPhase::Capture) {
+      _started = true;
+      _animation = services()->motion->transition(
+          _progress.binding(), 1.f, {.duration = .3}, [this](auto status) {
+            test::require(status == ui::AnimationStatus::Completed,
+                          "native motion completes");
+          });
+    }
     if (event.phase != ui::EventPhase::Capture ||
         event.type != ui::EventType::PointerMove || !_samples.geometry.travel)
       return;
@@ -56,6 +71,16 @@ protected:
 
   void paintSubtree(ui::PaintContext &context) const override {
     ui::SettingsView::paintSubtree(context);
+    if (_samples.motion && _started) {
+      context.fill(math::rect(0, 0, bounds().w() * _progress.value(), 3),
+                   theme().accent);
+      ++_samples.motionPaints;
+      if (_progress.value() == 1.f &&
+          _animation.status() == ui::AnimationStatus::Completed) {
+        _started = false;
+        _samples.motionCompleted.set_value();
+      }
+    }
     const auto index = _samples.dispatched;
     if (index >= 0 && index != _samples.painted) {
       _samples.painted = index;
@@ -87,21 +112,32 @@ void summary(std::string_view name, std::vector<double> values) {
 } // namespace
 
 int main(int argc, char **argv) {
-  if ((argc != 2 && argc != 3) || (std::string_view{argv[1]} != "software" &&
-                                   std::string_view{argv[1]} != "gpu")) {
-    std::cerr << "Usage: playground_ui_host_workload software|gpu [--burst]\n";
+  if (argc < 2 || argc > 4 ||
+      (std::string_view{argv[1]} != "software" &&
+       std::string_view{argv[1]} != "gpu")) {
+    std::cerr << "Usage: playground_ui_host_workload software|gpu [--burst] "
+                 "[--motion]\n";
     return 2;
   }
-  const bool burst = argc == 3 && std::string_view{argv[2]} == "--burst";
-  if (argc == 3 && !burst)
-    return 2;
+  bool burst{}, motion{};
+  for (int i = 2; i < argc; ++i) {
+    if (std::string_view{argv[i]} == "--burst")
+      burst = true;
+    else if (std::string_view{argv[i]} == "--motion")
+      motion = true;
+    else
+      return 2;
+  }
   return test::run([&] {
     test::TemporaryDirectory user{"playground-ui-workload"};
     const bool gpu = std::string_view{argv[1]} == "gpu";
     std::ofstream{user.path() / "settings.toml"}
         << "schema_version = 5\n[graphics]\nrenderer = '"
-        << (gpu ? "sdl-gpu" : "software") << "'\n";
+        << (gpu ? "sdl-gpu" : "software") << "'\n"
+        << (motion ? "frame_cap = 30\nmotion = 'full'\n" : "");
     Samples samples;
+    samples.motion = motion;
+    auto motionCompleted = samples.motionCompleted.get_future();
     auto completed = samples.completed.get_future();
     ObservedSettings *view{};
     AppHost host{{.resizable = false},
@@ -204,6 +240,11 @@ int main(int argc, char **argv) {
             throw std::runtime_error("final queued input was not painted");
         if (stop.stop_requested())
           return;
+        while (motion &&
+               motionCompleted.wait_for(20ms) != std::future_status::ready &&
+               !stop.stop_requested())
+          if (Clock::now() >= deadline)
+            throw std::runtime_error("animation final frame was not painted");
         sink.post([&] {
           std::cout << "backend," << int(host.rendererState().selected.backend)
                     << "\nwindow," << host.windowState().actualSize.x << ','
@@ -214,6 +255,8 @@ int main(int argc, char **argv) {
           for (const auto &sample : host.renderTelemetry().cpu)
             poll.push_back(
                 sample.milliseconds[std::size_t(rendering::CPUPhase::Poll)]);
+          if (motion)
+            std::cout << "motion_paints," << samples.motionPaints << "\n";
           summary("poll_ms", poll);
           summary("enqueue_to_dispatch_ms", samples.dispatch);
           summary("enqueue_to_paint_ms", samples.paint);
@@ -243,6 +286,9 @@ int main(int argc, char **argv) {
     producer.join();
     if (failure)
       std::rethrow_exception(failure);
+    if (motion)
+      test::require(samples.motionPaints >= 2,
+                    "paced motion produces intermediate and final frames");
     test::require(result == 0 && samples.painted == moves - 1 &&
                       host.lastCommandError().empty(),
                   "final input is painted and host completes without error");

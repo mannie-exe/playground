@@ -237,7 +237,7 @@ SemanticSnapshot UIRoot::semanticSnapshot() {
       return *s.description.value;
     std::string text;
     for (const auto &child : node.children()) {
-      if (child->visibility() != Visibility::Visible ||
+      if (child->isInert() || child->visibility() != Visibility::Visible ||
           child->semanticProps().exposure == SemanticExposure::HiddenSubtree)
         continue;
       auto part = self(self, *child);
@@ -253,7 +253,7 @@ SemanticSnapshot UIRoot::semanticSnapshot() {
                          bool enabled) -> void {
     auto state = node.semanticState();
     const auto exposure = state.description.exposure;
-    if (node.visibility() != Visibility::Visible ||
+    if (node.isInert() || node.visibility() != Visibility::Visible ||
         exposure == SemanticExposure::HiddenSubtree)
       return;
     enabled &= state.description.enabled;

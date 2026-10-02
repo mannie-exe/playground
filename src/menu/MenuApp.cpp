@@ -72,7 +72,6 @@ void MenuApp::onActions(AppContext &ctx, const input::InputSnapshot &actions) {
 }
 
 EventResult MenuApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
-  _ui.update(0);
   synchronize(ctx);
   const auto result = _ui.handleEvent(event);
   launchPending(ctx);

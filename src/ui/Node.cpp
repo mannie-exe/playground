@@ -13,6 +13,8 @@ const ResolvedTheme &Node::resolvedTheme() const noexcept {
       value.metrics = *_theme.metrics;
     if (_theme.typography)
       value.typography = *_theme.typography;
+    if (_theme.motion)
+      value.motion = *_theme.motion;
     if (_theme.stepper)
       value.metrics.stepper = *_theme.stepper;
     const auto &root = services() ? services()->theme : defaultResolvedTheme();
@@ -140,6 +142,9 @@ void Node::detach() noexcept {
       }
     }
   }
+  if (_motion)
+    for (auto &value : _motion->displayed)
+      value.reset();
   _table.reset();
   _id = {};
   _queued = false;
@@ -269,6 +274,19 @@ void Node::setSettings(NodeSettings value) {
     changes = changes | DirtyFlags::HitTest | DirtyFlags::Semantics;
   if (value.semantics != _semanticProps)
     changes = changes | DirtyFlags::Semantics;
+  if (_motion) {
+    const auto reset = [&](MotionProperty property) {
+      auto i = static_cast<std::size_t>(property);
+      ++_motion->revisions[i];
+      _motion->displayed[i].reset();
+    };
+    if (value.paint.opacity != _paintStyle.opacity)
+      reset(MotionProperty::Opacity);
+    if (value.paint.background != _paintStyle.background)
+      reset(MotionProperty::Background);
+    if (value.paint.borderColor != _paintStyle.borderColor)
+      reset(MotionProperty::BorderColor);
+  }
   if (!any(changes))
     return;
   _nodeProps = std::move(value.node);
@@ -286,7 +304,34 @@ void Node::setNodeProps(NodeProps value) {
   setSettings(std::move(p));
 }
 
+void Node::replaceMotion(MotionProperty property) {
+  if (!_motion)
+    return;
+  const auto i = static_cast<std::size_t>(property);
+  ++_motion->revisions[i];
+  if (_motion->displayed[i]) {
+    _motion->displayed[i].reset();
+    invalidatePaint();
+  }
+}
+
+void Node::applySettingsPatch(const NodeSettingsPatch &patch) {
+  auto candidate = patched(settings(), patch);
+  validateBoxProps(candidate.box);
+  if (!patch.paint.opacity.isKeep())
+    replaceMotion(MotionProperty::Opacity);
+  if (!patch.paint.background.isKeep())
+    replaceMotion(MotionProperty::Background);
+  if (!patch.paint.borderColor.isKeep())
+    replaceMotion(MotionProperty::BorderColor);
+  setSettings(std::move(candidate));
+}
+
 void Node::setPaintStyle(PaintStyle value) {
+  value.validate();
+  for (auto property : {MotionProperty::Opacity, MotionProperty::Background,
+                        MotionProperty::BorderColor})
+    replaceMotion(property);
   auto p = settings();
   p.paint = value;
   setSettings(std::move(p));
@@ -372,9 +417,10 @@ void Node::setClip(bool value) {
 }
 
 void Node::setBackground(std::optional<math::ColorRGBA8> value) {
-  auto p = _paintStyle;
-  p.background = value;
-  setPaintStyle(p);
+  replaceMotion(MotionProperty::Background);
+  auto p = settings();
+  p.paint.background = value;
+  setSettings(std::move(p));
 }
 
 void Node::invalidate(DirtyFlags flags) noexcept {
@@ -740,36 +786,50 @@ math::Rect Node::paintBounds() const {
 void Node::render(PaintContext &context, bool overlayPresentation) const {
   if (isPortal() && !overlayPresentation)
     return;
-  if (visibility() != Visibility::Visible || !_arranged ||
-      _paintStyle.opacity == 0 || !_visualProps.transform.inverse())
+  auto paint = _paintStyle;
+  paint.opacity = std::get<float>(motionValue(MotionProperty::Opacity));
+  if (_motion) {
+    const auto &background =
+        _motion
+            ->displayed[static_cast<std::size_t>(MotionProperty::Background)];
+    const auto &border =
+        _motion
+            ->displayed[static_cast<std::size_t>(MotionProperty::BorderColor)];
+    if (background)
+      paint.background = std::get<math::ColorRGBA8>(*background);
+    if (border)
+      paint.borderColor = std::get<math::ColorRGBA8>(*border);
+  }
+  if (visibility() != Visibility::Visible || !_arranged || paint.opacity == 0 ||
+      !localTransform().inverse())
     return;
   PaintScope scope{context};
   context.transform(localTransform());
   if (clipsContent())
     applyContentClip(context);
   std::optional<LayerScope> layer;
-  if (_paintStyle.opacity < 1)
-    layer.emplace(context, paintBounds(), _paintStyle.opacity);
-  if (_paintStyle.background)
+  if (paint.opacity < 1)
+    layer.emplace(context, paintBounds(), paint.opacity);
+  if (paint.background)
     context.fill({{}, _bounds.size},
-                 resolveColor(&ThemePalette::surface, _paintStyle.background));
+                 resolveColor(&ThemePalette::surface, paint.background));
   else if (_paintStyle.themeBackground)
     context.fill({{}, _bounds.size}, theme().surface);
-  if (_paintStyle.borderColor) {
+  if (paint.borderColor) {
     const auto b = _box.borderWidths;
     const float w = _bounds.w(), h = _bounds.h();
     context.fill(math::rect(0, 0, w, std::min(h, b.top)),
-                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
+                 resolveColor(&ThemePalette::border, paint.borderColor));
     context.fill(math::rect(0, std::max(b.top, h - b.bottom), w,
                             std::min(std::max(0.0f, h - b.top), b.bottom)),
-                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
+                 resolveColor(&ThemePalette::border, paint.borderColor));
     const float sideHeight = std::max(0.0f, h - b.top - b.bottom);
     context.fill(math::rect(0, b.top, std::min(w, b.left), sideHeight),
-                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
+                 resolveColor(&ThemePalette::border, paint.borderColor));
     context.fill(math::rect(std::max(b.left, w - b.right), b.top,
                             std::min(std::max(0.0f, w - b.left), b.right),
                             sideHeight),
-                 resolveColor(&ThemePalette::border, _paintStyle.borderColor));
+                 resolveColor(&ThemePalette::border, paint.borderColor));
   }
   paintSubtree(context);
   if (layer)
@@ -779,10 +839,22 @@ void Node::render(PaintContext &context, bool overlayPresentation) const {
 }
 
 math::Transform2D Node::localTransform() const noexcept {
+  if (!_motion)
+    return math::Transform2D::translation(math::toVector(_bounds.position)) *
+           math::Transform2D::around({_bounds.w() * _visualProps.pivot.x,
+                                      _bounds.h() * _visualProps.pivot.y},
+                                     _visualProps.transform);
   return math::Transform2D::translation(math::toVector(_bounds.position)) *
-         math::Transform2D::around({_bounds.w() * _visualProps.pivot.x,
-                                    _bounds.h() * _visualProps.pivot.y},
-                                   _visualProps.transform);
+         math::Transform2D::around(
+             {_bounds.w() * _visualProps.pivot.x,
+              _bounds.h() * _visualProps.pivot.y},
+             math::Transform2D::translation(std::get<math::Vec2f>(
+                 motionValue(MotionProperty::Translation))) *
+                 math::Transform2D::rotation(
+                     std::get<float>(motionValue(MotionProperty::Rotation))) *
+                 math::Transform2D::scaling(std::get<math::Vec2f>(
+                     motionValue(MotionProperty::Scale))) *
+                 _visualProps.transform);
 }
 
 void Node::capturePointer(std::uint64_t pointer) {
@@ -814,4 +886,133 @@ void Node::requestFocus() {
     }
 }
 
+MotionDatum Node::motionValue(MotionProperty property) const {
+  auto i = static_cast<std::size_t>(property);
+  if (_motion && i < 6 && _motion->displayed[i])
+    return *_motion->displayed[i];
+  switch (property) {
+  case MotionProperty::Opacity:
+    return _paintStyle.opacity;
+  case MotionProperty::Translation:
+    return _motion ? _motion->translation : math::Vec2f{};
+  case MotionProperty::Scale:
+    return _motion ? _motion->scale : math::Vec2f{1, 1};
+  case MotionProperty::Rotation:
+    return _motion ? _motion->rotation : 0.f;
+  case MotionProperty::Background:
+    return _paintStyle.background.value_or(theme().surface);
+  case MotionProperty::BorderColor:
+    return _paintStyle.borderColor.value_or(theme().border);
+  default:
+    throw std::invalid_argument("Unsupported node motion property");
+  }
+}
+
+void Node::setMotionValue(MotionProperty property, const MotionDatum &value) {
+  if (property < MotionProperty::Opacity || property >= MotionProperty::Custom)
+    throw std::invalid_argument("Unsupported node motion property");
+  std::visit([](auto v) { detail::validateMotionValue(v); }, value);
+  if (!_motion)
+    _motion = std::make_unique<MotionState>();
+  switch (property) {
+  case MotionProperty::Opacity: {
+    auto v = std::get<float>(value);
+    if (v < 0 || v > 1)
+      throw std::invalid_argument("Invalid opacity");
+    _paintStyle.opacity = v;
+    break;
+  }
+  case MotionProperty::Translation:
+    _motion->translation = std::get<math::Vec2f>(value);
+    break;
+  case MotionProperty::Scale:
+    _motion->scale = std::get<math::Vec2f>(value);
+    break;
+  case MotionProperty::Rotation:
+    _motion->rotation = std::get<float>(value);
+    break;
+  case MotionProperty::Background:
+    _paintStyle.background = std::get<math::ColorRGBA8>(value);
+    break;
+  case MotionProperty::BorderColor:
+    _paintStyle.borderColor = std::get<math::ColorRGBA8>(value);
+    break;
+  default:
+    break;
+  }
+  auto i = static_cast<std::size_t>(property);
+  ++_motion->revisions[i];
+  _motion->displayed[i].reset();
+  invalidate(DirtyFlags::Paint | DirtyFlags::HitTest);
+}
+
+void Node::presentMotion(MotionProperty property,
+                         std::optional<MotionDatum> value) {
+  if (property < MotionProperty::Opacity || property >= MotionProperty::Custom)
+    throw std::invalid_argument("Unsupported node motion property");
+  if (value) {
+    if (value->index() != motionValue(property).index())
+      throw std::invalid_argument("Incorrect motion value type");
+    std::visit([](auto v) { detail::validateMotionValue(v); }, *value);
+    if (property == MotionProperty::Opacity &&
+        (std::get<float>(*value) < 0 || std::get<float>(*value) > 1))
+      throw std::invalid_argument("Invalid opacity");
+  }
+  if (!_motion)
+    _motion = std::make_unique<MotionState>();
+  auto &current = _motion->displayed[static_cast<std::size_t>(property)];
+  if (current == value)
+    return;
+  current = std::move(value);
+  const auto authoredRevision = _sourceRevision;
+  invalidate(DirtyFlags::Paint | DirtyFlags::HitTest);
+  _sourceRevision = authoredRevision;
+  for (auto *node = parent(); node; node = node->parent())
+    node->refreshOverflow();
+}
+
+void Node::setInert(bool value) {
+  if (_inert == value)
+    return;
+  _inert = value;
+  if (value) {
+    auto table = _table.lock();
+    if (table)
+      ++table->traversals;
+
+    struct Guard {
+      std::shared_ptr<detail::NodeTable> table;
+
+      ~Guard() {
+        if (table)
+          --table->traversals;
+      }
+    } guard{table};
+
+    if (table)
+      if (auto *focus = table->resolve(table->focused);
+          focus && focus->isInert() && table->requestFocus)
+        table->requestFocus({});
+    const auto cancel = [&](auto &&self, Node &node) -> void {
+      UIEvent event;
+      event.type = EventType::InputCancel;
+      node.onEvent(event);
+      node.onDefaultEvent(event);
+      if (auto table = node._table.lock()) {
+        if (table->focused == node.id()) {
+          UIEvent blur;
+          blur.type = EventType::FocusLost;
+          node.onDefaultEvent(blur);
+          table->focused = {};
+        }
+        std::erase_if(table->captures,
+                      [&](auto &capture) { return capture.node == node.id(); });
+      }
+      for (auto &child : node._children)
+        self(self, *child);
+    };
+    cancel(cancel, *this);
+  }
+  invalidate(DirtyFlags::HitTest | DirtyFlags::Semantics | DirtyFlags::Paint);
+}
 } // namespace playground::ui

@@ -34,7 +34,7 @@ Demand-driven apps construct UISession with `UISessionTiming::Monotonic`;
 the default `CallerDelta` retains deterministic/caller-controlled stepping and
 does not provide wall-clock activity deadlines. Monotonic updates advance its
 scheduler with elapsed time.
-The built-in apps advance it before dispatching input, so newly scheduled tooltip,
+UISession advances it before dispatching input, so newly scheduled tooltip,
 caret and repeat timers do not inherit time spent idle before the input. The host
 does not drop timer time, while repeating UI timers deliberately fire at most once
 per advance. Continuous sessions continue accepting the caller-supplied delta.
@@ -74,7 +74,7 @@ storage are deferred. Idle decisions use revision/queue/deadline summaries, not
 whole-tree comparisons or screen-pixel comparisons.
 
 This does not yet suppress arbitrary custom node preparation independently of
-rendering, infer animation deadlines from application code, pause continuous apps
+rendering, infer deadlines from arbitrary application code, pause continuous apps
 when minimized, or implement regional repaint. Those need their own contracts.
 
 ## Runtime frame admission
@@ -122,3 +122,7 @@ owner-thread, reentrancy-safe exposed-event callback; the current host does not
 provide that path. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
 Programmatic window transitions and ordinary queued resize events use the normal
 host loop.
+
+UI motion separates clock advancement from presentation sampling. Active tracks
+request admitted frames; input dispatch does not sample the entire motion engine.
+See [MOTION.md](../ui/MOTION.md) for pause, deadlines and final-frame ownership.

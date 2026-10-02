@@ -213,3 +213,11 @@ source-preserving semantic actions, IME, nested dismissal, changing/removed focu
 targets, read-only/disabled behavior, and settings apply boundaries. Verify layout
 at different text scales, RTL and high contrast. Native assistive checks supplement
 semantic tests; semantic tests alone do not verify a screen reader.
+
+## Motion feedback
+
+Buttons interpolate hover/press background color using `ThemeMotion::feedback`;
+focus indicators remain immediate and high-contrast colors snap directly.
+App UI roots reveal with `ThemeMotion::reveal`. Demo 2D includes a reversible
+Presence panel. Custom controls can own `MotionValue<T>` and playback handles;
+[the motion contract](MOTION.md) defines lifetime and reduced-motion behavior.

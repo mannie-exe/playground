@@ -4,6 +4,8 @@
 
 namespace playground::sdl {
 void platformContrast(ui::SystemAppearance &value) {
+  value.reducedMotion =
+      [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion];
   value.highContrast = [[NSWorkspace sharedWorkspace]
       accessibilityDisplayShouldIncreaseContrast];
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -11,6 +12,7 @@
 #include <layout/LayoutPrimitives.hpp>
 #include <rendering/GraphicsSettings.hpp>
 #include <rendering/PaintContext.hpp>
+#include <ui/Motion.hpp>
 #include <ui/UITypes.hpp>
 
 namespace playground::scene {
@@ -56,6 +58,19 @@ class Node {
     layout::MeasureResult result;
   };
 
+  struct MotionState {
+    std::array<std::optional<MotionDatum>,
+               static_cast<std::size_t>(MotionProperty::Custom)>
+        displayed;
+    std::array<std::uint64_t, static_cast<std::size_t>(MotionProperty::Custom)>
+        revisions{};
+    math::Vec2f translation{}, scale{1, 1};
+    float rotation{};
+  };
+
+  std::unique_ptr<MotionState> _motion;
+  bool _inert{};
+  void replaceMotion(MotionProperty);
   Node *_parent{};
   std::weak_ptr<detail::NodeTable> _table;
   NodeId _id;
@@ -245,6 +260,26 @@ public:
 
   const SemanticProps &semanticProps() const noexcept { return _semanticProps; }
 
+  bool isInert() const noexcept {
+    for (auto *node = this; node; node = node->parent())
+      if (node->_inert)
+        return true;
+    return false;
+  }
+
+  void setInert(bool value);
+  MotionDatum motionValue(MotionProperty) const;
+
+  std::uint64_t motionRevision(MotionProperty property) const noexcept {
+    return _motion && property >= MotionProperty::Opacity &&
+                   property < MotionProperty::Custom
+               ? _motion->revisions[static_cast<std::size_t>(property)]
+               : 0;
+  }
+
+  void setMotionValue(MotionProperty, const MotionDatum &);
+  void presentMotion(MotionProperty, std::optional<MotionDatum>);
+
   bool isEffectivelyEnabled() const noexcept {
     for (const Node *node = this; node; node = node->parent())
       if (!node->isInteractionEnabled())
@@ -327,9 +362,7 @@ public:
 
   void setSettings(NodeSettings value);
 
-  void applySettingsPatch(const NodeSettingsPatch &patch) {
-    setSettings(patched(settings(), patch));
-  }
+  void applySettingsPatch(const NodeSettingsPatch &patch);
 
   void setNodeProps(NodeProps value);
   void setPaintStyle(PaintStyle value);
