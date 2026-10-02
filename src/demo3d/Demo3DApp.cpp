@@ -371,11 +371,9 @@ EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
   synchronize(ctx);
   if (_kind == DemoKind::Benchmark) {
     if (_benchmark.traversing() &&
-        (event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
-         event.type == SDL_EVENT_WINDOW_RESIZED ||
-         event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
-         (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)))
-      _benchmark.invalidate();
+        (event.type == SDL_EVENT_WINDOW_RESIZED ||
+         event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED))
+      _benchmark.invalidate(runtime::BenchmarkInterruption::Window);
     return _ui.handleEvent(event);
   }
   auto &window = ctx.windowServices();
@@ -514,6 +512,7 @@ void Demo3DApp::restartBenchmark(AppContext &ctx) {
   _caption->setBoxProps({.height = layout::SizeRule::fixed(64)});
   _measuredSubmitted = ctx.renderRuntimeState().submitted;
   _finalSubmitted = 0;
+  _benchmarkTargetPixels = {};
   _benchmarkWork = ctx.renderRuntimeState().sceneWork;
   _director.update(_pathCamera,
                    {.camera = benchmarkPath().sample(0), .priority = 10});
@@ -530,6 +529,14 @@ void Demo3DApp::updateBenchmark(AppContext &ctx) {
   const auto now = nowSeconds();
   const auto state = ctx.renderRuntimeState();
   const auto telemetry = ctx.renderTelemetry();
+  if (_view->viewport()) {
+    const auto pixels = _view->viewport()->pixelSize;
+    if (_benchmark.phase() == BenchmarkPhase::Measuring &&
+        pixels != _benchmarkTargetPixels)
+      _benchmark.invalidate(runtime::BenchmarkInterruption::Window);
+    if (!_benchmark.firstFrame)
+      _benchmarkTargetPixels = pixels;
+  }
   const auto available = std::min<std::uint64_t>(state.cpuSamples - _seenCPU,
                                                  telemetry.cpu.size());
   if (_benchmark.phase() == BenchmarkPhase::Measuring)
@@ -560,14 +567,17 @@ void Demo3DApp::updateBenchmark(AppContext &ctx) {
             ? state.gpu.domain
             : rendering::ResourceDomainId{};
   }
-  if (_benchmark.traversing() &&
-      (ctx.graphicsState().requested != _benchmarkGraphics ||
-       ctx.windowState().drawableSize != _benchmarkPixels ||
-       state.gpu.domain != _benchmarkDomain))
-    _benchmark.invalidate();
+  if (_benchmark.traversing()) {
+    if (ctx.graphicsState().requested != _benchmarkGraphics)
+      _benchmark.invalidate(runtime::BenchmarkInterruption::Graphics);
+    else if (ctx.windowState().drawableSize != _benchmarkPixels)
+      _benchmark.invalidate(runtime::BenchmarkInterruption::Window);
+    else if (state.gpu.domain != _benchmarkDomain)
+      _benchmark.invalidate(runtime::BenchmarkInterruption::Device);
+  }
   if (_benchmark.phase() == BenchmarkPhase::Measuring &&
       ctx.graphicsState().sceneScale != _benchmarkScale)
-    _benchmark.invalidate();
+    _benchmark.invalidate(runtime::BenchmarkInterruption::Quality);
   _benchmark.advance(now, state.admitted,
                      state.outstandingFrames || state.gpu.pending);
   if (before != BenchmarkPhase::Measuring &&
@@ -615,19 +625,20 @@ void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
   const auto state = ctx.renderRuntimeState();
   const auto &cpu = _benchmark.cpu[std::size_t(rendering::CPUPhase::Render)];
   const auto &gpu = _benchmark.gpuScene;
-  const auto pixels =
-      _view->viewport() ? _view->viewport()->pixelSize : math::Vec2i{};
+  const auto pixels = _benchmarkTargetPixels;
   auto message = std::format(
       "BenchmarkJSON "
       "{{\"scene\":\"demoscene.bistro@1\",\"path\":\"bistro-street-v1\","
-      "\"phase\":\"{}\",\"final\":{},\"requested_seconds\":{},\"measured_"
+      "\"phase\":\"{}\",\"interruption\":\"{}\",\"final\":{},\"requested_"
+      "seconds\":{},\"measured_"
       "seconds\":{:.6f},\"load_seconds\":{:.6f},\"warmup_seconds\":15,"
       "\"domain\":{},\"width\":{},\"height\":{},\"vsync\":{},\"scene_scale\":{}"
       ",\"cpu_render_samples\":{},\"cpu_render_p50_ms\":{:.6f},\"cpu_render_"
       "p95_ms\":{:.6f},\"cpu_render_p99_ms\":{:.6f},\"cpu_render_max_ms\":{:."
       "6f},\"gpu_scene_samples\":{},\"gpu_scene_mean_ms\":{:.6f},\"uploads\":{}"
       ",\"upload_bytes\":{},\"cpu_omitted\":{},\"drain_timed_out\":{}}}",
-      runtime::toString(_benchmark.phase()), final, _benchmark.duration(),
+      runtime::toString(_benchmark.phase()),
+      runtime::toString(_benchmark.interruption), final, _benchmark.duration(),
       _benchmark.measuredSeconds(), _loadedSeconds, _benchmarkDomain.value,
       pixels.x, pixels.y, _benchmarkGraphics.presentation.vsync,
       ctx.graphicsState().sceneScale, cpu.count, cpu.percentile(.5),
@@ -648,7 +659,8 @@ void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
       "\"fa23f764061fa5c1feadfbf38ca07c87f56d610ebf89cf4e1b816399de293c83\","
       "\"submitted_frames\":{},\"gpu_query_drops\":{},\"gpu_buffer_discards\":{"
       "},"
-      "\"managed_cpu_peak_bytes\":{},\"managed_gpu_peak_bytes\":{},\"cpu_"
+      "\"pending_gpu_queries\":{},\"managed_cpu_peak_bytes\":{},\"managed_gpu_"
+      "peak_bytes\":{},\"cpu_"
       "phases\":{{",
       build, SDL_GetPlatform(),
       (_finalSubmitted ? _finalSubmitted : state.submitted) -
@@ -658,7 +670,8 @@ void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
       state.gpu.bufferDiscards >= _bufferDiscards
           ? state.gpu.bufferDiscards - _bufferDiscards
           : 0,
-      state.resources.memory[0].peak, state.resources.memory[1].peak);
+      state.gpu.pending, state.resources.memory[0].peak,
+      state.resources.memory[1].peak);
   constexpr std::array names{"poll", "update", "render", "present", "total"};
   for (std::size_t i = 0; i < names.size(); ++i) {
     const auto &stats = _benchmark.cpu[i];
@@ -674,9 +687,11 @@ void Demo3DApp::reportBenchmark(AppContext &ctx, bool final) {
     _caption->setBoxProps({});
     _caption->applyPatch(
         {.value = Patch<std::string>::set(std::format(
-             "Bistro benchmark: {} | CPU render p50 {:.2f}ms / p95 {:.2f}ms | "
+             "Bistro benchmark: {} ({}) | CPU render p50 {:.2f}ms / p95 "
+             "{:.2f}ms | "
              "GPU scene {:.2f}ms ({} samples) | uploads {} | R: restart",
-             runtime::toString(_benchmark.phase()), cpu.percentile(.5),
+             runtime::toString(_benchmark.phase()),
+             runtime::toString(_benchmark.interruption), cpu.percentile(.5),
              cpu.percentile(.95), gpu.count ? gpu.total / gpu.count : 0,
              gpu.count, state.sceneWork.uploads - _benchmarkWork.uploads))});
   }

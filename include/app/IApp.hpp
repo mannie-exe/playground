@@ -52,7 +52,7 @@ public:
   }
 
   // Host overlays and focus loss interrupt exclusive interaction/workloads.
-  virtual void onActivityInterrupted(AppContext &) noexcept {}
+  virtual void onActivityInterrupted(AppContext &, AppInterruption) noexcept {}
 
   virtual void onActions(AppContext &,
                          const playground::input::InputSnapshot &) {}

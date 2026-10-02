@@ -30,7 +30,11 @@ int main() {
       if (!duration) {
         test::require(run.phase() == runtime::BenchmarkPhase::Measuring,
                       "infinite run remains measuring across loops");
-        run.invalidate();
+        run.invalidate(runtime::BenchmarkInterruption::Settings);
+        run.invalidate(runtime::BenchmarkInterruption::Window);
+        test::require(run.interruption ==
+                          runtime::BenchmarkInterruption::Settings,
+                      "first interruption reason remains stable");
       } else {
         test::require(run.phase() == runtime::BenchmarkPhase::Draining,
                       "finite duration enters completion drain");

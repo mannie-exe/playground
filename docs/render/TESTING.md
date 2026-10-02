@@ -59,6 +59,7 @@ cmake --build --preset debug --target playground_scene_host_workload --parallel 
 ./build/debug/bin/playground_scene_host_workload benchmark 5
 ./build/debug/bin/playground_scene_host_workload benchmark 15
 ./build/debug/bin/playground_scene_host_workload benchmark 0
+./build/debug/bin/playground_scene_host_workload infinite
 ```
 
 Material/Bistro/Chess workloads allow 30 seconds for preparation before measuring;
@@ -66,7 +67,9 @@ scene workloads inject held look intent to exercise camera redraws. Camera mode
 checks native lock/unlock, relative motion, Settings, focus cancellation and app
 exit. Keep that window focused; focus enforcement is part of the contract.
 Benchmark mode uses the launcher's full-loop warm-up and emits `BenchmarkJSON`.
-Zero duration runs until quit. Interruptions produce invalid results, not a score.
+Zero duration runs until quit. `infinite` verifies two periodic reports and then
+automatically cancels; interruption reasons distinguish cancellation, focus,
+Settings, window, graphics, device and quality changes. Interruptions produce invalid results, not a score.
 Each invocation uses temporary settings and leaves user settings untouched.
 
 Replace `debug` with `release` in configure/build commands and executable paths

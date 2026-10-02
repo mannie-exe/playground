@@ -15,20 +15,32 @@ struct Log {
   SDL_LogOutputFunction previous{};
   void *userdata{};
   std::atomic<bool> finished{}, invalid{};
+  std::atomic<unsigned> periodic{};
+  bool allowCancellation{};
 
   static void write(void *data, int category, SDL_LogPriority priority,
                     const char *message) {
     auto &log = *static_cast<Log *>(data);
     log.previous(log.userdata, category, priority, message);
     const std::string_view text{message};
+    if (text.starts_with("BenchmarkJSON ") &&
+        text.contains("\"final\":false")) {
+      ++log.periodic;
+      if (text.contains("\"width\":0,") || text.contains("\"height\":0,"))
+        log.invalid = true;
+    }
     if (text.starts_with("BenchmarkJSON ") && text.contains("\"final\":true")) {
-      log.invalid = !text.contains("\"phase\":\"complete\"") ||
-                    text.contains("\"drain_timed_out\":true");
+      const bool complete = text.contains("\"phase\":\"complete\"");
+      const bool cancelled = text.contains("\"interruption\":\"cancelled\"");
+      log.invalid = log.invalid ||
+                    (!complete && !(log.allowCancellation && cancelled)) ||
+                    text.contains("\"drain_timed_out\":true") ||
+                    (complete && text.contains("\"cpu_render_samples\":0"));
       log.finished = true;
     }
   }
 
-  Log() {
+  explicit Log(bool allow = false) : allowCancellation{allow} {
     SDL_GetLogOutputFunction(&previous, &userdata);
     SDL_SetLogOutputFunction(write, this);
   }
@@ -40,13 +52,14 @@ struct Log {
 int main(int argc, char **argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: playground_scene_host_workload "
-                 "material|bistro|chess|benchmark|camera [seconds]\n";
+                 "material|bistro|chess|benchmark|infinite|camera [seconds]\n";
     return 2;
   }
   SDL_setenv_unsafe("MVK_CONFIG_LOG_LEVEL", "2", 0);
   return test::run([&] {
     const std::string_view scene{argv[1]};
-    const bool benchmark = scene == "benchmark";
+    const bool infinite = scene == "infinite";
+    const bool benchmark = scene == "benchmark" || infinite;
     const bool camera = scene == "camera";
     const auto id = benchmark                         ? AppId::BistroBenchmark
                     : (scene == "material" || camera) ? AppId::Demo3D
@@ -61,15 +74,15 @@ int main(int argc, char **argv) {
     std::ofstream{user.path() / "settings.toml"}
         << "schema_version = 5\n[graphics]\nrenderer = 'sdl-gpu'\nvsync = "
            "false\n";
-    Log log;
+    Log log{infinite};
     AppHost host{{.resizable = false},
                  {},
                  ui::makeSettingsView,
                  {.project = PLAYGROUND_SOURCE_DIR, .user = user.path()}};
-    host.request(
-        {.type = AppCommandType::SwitchTo,
-         .target = id,
-         .launch = benchmark ? AppLaunchProps{seconds} : AppLaunchProps{}});
+    host.request({.type = AppCommandType::SwitchTo,
+                  .target = id,
+                  .launch = benchmark ? AppLaunchProps{infinite ? 0 : seconds}
+                                      : AppLaunchProps{}});
     const auto sink = host.hostCompletions();
     const auto started = std::chrono::steady_clock::now();
     bool timedOut{};
@@ -104,6 +117,8 @@ int main(int argc, char **argv) {
             raised = true;
           }
           if (benchmark) {
+            if (infinite && log.periodic >= 2)
+              host.request({.type = AppCommandType::Quit});
             if (log.finished || (seconds && elapsed > seconds + 150)) {
               timedOut = !log.finished;
               host.request({.type = AppCommandType::Quit});
@@ -239,6 +254,11 @@ int main(int argc, char **argv) {
     host.run();
     clock.request_stop();
     clock.join();
+    if (benchmark)
+      test::require(log.finished, "benchmark emitted a final result");
+    if (infinite)
+      test::require(log.periodic >= 2 && log.finished,
+                    "infinite benchmark loops, reports and cancels explicitly");
     test::require(!timedOut && !log.invalid,
                   "scene workload finishes without timeout or invalidation");
   });

@@ -57,6 +57,8 @@ struct AppInfo {
   playground::rendering::RendererRequirements rendererRequirements;
 };
 
+enum class AppInterruption { Focus, Settings };
+
 struct AppLaunchProps {
   // Zero selects an unbounded benchmark; absent uses the app default.
   std::optional<double> benchmarkSeconds;

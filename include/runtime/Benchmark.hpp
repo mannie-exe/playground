@@ -11,6 +11,39 @@
 #include <rendering/RenderRuntime.hpp>
 
 namespace playground::runtime {
+enum class BenchmarkInterruption {
+  None,
+  Focus,
+  Settings,
+  Window,
+  Graphics,
+  Device,
+  Quality,
+  Cancelled
+};
+
+inline std::string_view toString(BenchmarkInterruption reason) {
+  switch (reason) {
+  case BenchmarkInterruption::None:
+    return "none";
+  case BenchmarkInterruption::Focus:
+    return "focus";
+  case BenchmarkInterruption::Settings:
+    return "settings";
+  case BenchmarkInterruption::Window:
+    return "window";
+  case BenchmarkInterruption::Graphics:
+    return "graphics";
+  case BenchmarkInterruption::Device:
+    return "device";
+  case BenchmarkInterruption::Quality:
+    return "quality";
+  case BenchmarkInterruption::Cancelled:
+    return "cancelled";
+  }
+  return "unknown";
+}
+
 enum class BenchmarkPhase {
   Loading,
   Warmup,
@@ -77,6 +110,7 @@ public:
   BenchmarkDistribution gpuScene;
   std::uint64_t firstFrame{}, lastFrame{}, omittedCPU{}, omittedGPU{};
   bool drainTimedOut{};
+  BenchmarkInterruption interruption{BenchmarkInterruption::None};
 
   explicit BenchmarkRun(double duration = 15, double warmup = 15)
       : _duration{duration}, _warmup{warmup} {
@@ -149,9 +183,12 @@ public:
       gpuScene.add(sample.milliseconds);
   }
 
-  void invalidate() {
-    if (!finished())
+  void invalidate(BenchmarkInterruption reason =
+                      BenchmarkInterruption::Cancelled) noexcept {
+    if (!finished()) {
+      interruption = reason;
       _phase = BenchmarkPhase::Invalid;
+    }
   }
 };
 } // namespace playground::runtime

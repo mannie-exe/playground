@@ -624,7 +624,7 @@ bool AppHost::handleHostEvent(const SDL_Event &event) {
     _session.windowServices().releaseRelativeMouse();
     if (_activeApp) {
       AppContext ctx{*this};
-      _activeApp->onActivityInterrupted(ctx);
+      _activeApp->onActivityInterrupted(ctx, AppInterruption::Focus);
     }
     _inputFocused = false;
     _updateClock.rebase();
@@ -885,7 +885,7 @@ void AppHost::showSettings(bool visible) {
                                    : std::string{_activeApp->info().name});
   _session.windowServices().cancelInput();
   if (visible)
-    _activeApp->onActivityInterrupted(ctx);
+    _activeApp->onActivityInterrupted(ctx, AppInterruption::Settings);
   _activeApp->input().cancelAll();
   if (_activeApp->_simulation)
     _activeApp->_simulation->setPaused(

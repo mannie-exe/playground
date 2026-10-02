@@ -48,7 +48,7 @@ class Demo3DApp final : public IApp {
   std::uint64_t _benchmarkSubmitted{}, _seenCPU{};
   std::set<std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>> _seenGPU;
   rendering::GraphicsSettings _benchmarkGraphics;
-  math::Vec2i _benchmarkPixels;
+  math::Vec2i _benchmarkPixels, _benchmarkTargetPixels;
   rendering::ResourceDomainId _benchmarkDomain;
   rendering::SceneWork _benchmarkWork;
   double _loadStarted{}, _loadedSeconds{}, _lastReport{};
@@ -84,10 +84,13 @@ public:
 
   void configureLaunch(const AppLaunchProps &) override;
 
-  void onActivityInterrupted(AppContext &) noexcept override {
+  void onActivityInterrupted(AppContext &,
+                             AppInterruption reason) noexcept override {
     _mouseLock.disconnect();
     if (_kind == DemoKind::Benchmark)
-      _benchmark.invalidate();
+      _benchmark.invalidate(reason == AppInterruption::Focus
+                                ? runtime::BenchmarkInterruption::Focus
+                                : runtime::BenchmarkInterruption::Settings);
   }
 
   runtime::ActivityProps activityProps() const override {
