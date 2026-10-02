@@ -298,14 +298,7 @@ int AppHost::run() {
     _renderRuntime.beginIteration();
     _renderRuntime.begin(FramePhase::Poll);
 
-    // Give update and presentation a turn under sustained input. Preserve FIFO
-    // order and leave the remainder queued; this cannot preempt one expensive
-    // handler or an operating-system modal resize inside SDL_PollEvent.
-    const auto eventDeadline = Clock::now() + std::chrono::milliseconds{4};
-    for (unsigned events = 0;
-         events < 64 && (events == 0 || Clock::now() < eventDeadline) &&
-         SDL_PollEvent(&event);
-         ++events) {
+    while (SDL_PollEvent(&event)) {
       receivedEvent = true;
       const bool hostHandled{handleHostEvent(event)};
 

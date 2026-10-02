@@ -107,18 +107,18 @@ canceled at the boundary. Settings UI demand and 500 ms meter refreshes drive
 its activity; closing rebases app elapsed time and restores its window policy
 without replacing the renderer. See [GRAPHICS.md](GRAPHICS.md).
 
-## Input fairness
+## Event dispatch
 
-AppHost dispatches at most 64 queued events or four milliseconds of event work
-per iteration, whichever comes first. At least one queued event is dispatched.
-Remaining events stay in FIFO order for the next iteration; update, frame
-admission and presentation get a turn between batches. This is a fairness bound,
-not preemption of one handler or SDL's native event pump. Pending frame revisions
+AppHost drains each SDL poll cycle before updating and presenting. SDL's
+default-enabled poll sentinel ends the cycle even when new events keep arriving;
+the host adds no event-count or elapsed-time cap. This preserves FIFO ordering
+and avoids rendering intermediate states within a queued input batch. A large
+batch or expensive handler can still delay updates. Pending frame revisions
 remain pending until submission; no redraw cooldown keeps a settled UI awake.
 
-Native OS resize/move can block SDL_PollEvent or SDL_WaitEventTimeout even with
-bounded dispatch. Continuous rendering within that modal loop requires SDL main
-callbacks or an owner-thread, reentrancy-safe exposed-event callback; the current
-host does not provide that path. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
+Native OS resize/move can block SDL_PollEvent or SDL_WaitEventTimeout.
+Continuous rendering within that modal loop requires SDL main callbacks or an
+owner-thread, reentrancy-safe exposed-event callback; the current host does not
+provide that path. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
 Programmatic window transitions and ordinary queued resize events use the normal
 host loop.

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <string_view>
 
 #include <app/Assets.hpp>
@@ -97,7 +98,16 @@ int main(int argc, char **argv) {
   }
   bool unsupported{};
   const auto result = test::run([&] {
-    SDLGuard sdl{gpu ? SDL_INIT_VIDEO : 0};
+    std::optional<SDLGuard> sdl;
+    try {
+      sdl.emplace(gpu ? SDL_INIT_VIDEO : 0);
+    } catch (const std::runtime_error &error) {
+      if (!gpu)
+        throw;
+      std::cerr << "Skipping GPU workload: " << error.what() << '\n';
+      unsupported = true;
+      return;
+    }
     TTFGuard ttf;
 #ifdef PLAYGROUND_WORKLOAD_GPU
     std::unique_ptr<sdl::gpu_detail::PaintDevice> device;

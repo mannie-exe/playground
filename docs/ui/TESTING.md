@@ -268,6 +268,3 @@ Do not compare timings from different geometry, fonts or build configurations.
 These workloads do not automate OS title-bar dragging, IME, physical input,
 screen readers, or all app transitions. Existing frame admission/activity tests
 cover deferred/skipped submission and paint-time invalidation independently.
-
-The recorded baseline/candidate comparison is in
-[RENDERING_MEASUREMENTS.md](RENDERING_MEASUREMENTS.md).
