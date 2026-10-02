@@ -169,6 +169,7 @@ void UIRoot::synchronizeHover(const UIEvent &event) {
 UIRoot::UIRoot(UIServices services, runtime::CompletionQueueProps completions)
     : _services{std::move(services)}, _completions{completions} {
   _services.motion = &_motion;
+  _motion.setThemeMotion(_services.theme.motion);
   if (!_services.scheduler)
     _services.scheduler = &_scheduler;
   _services.defer = [this](support::MoveOnlyFunction<void()> work) {

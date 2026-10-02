@@ -11,9 +11,12 @@ an application scheme override never disables system high contrast. Only an
 explicit user contrast preference does so. Unknown platform preferences use a
 documented fallback rather than masquerading as detected normal contrast.
 
-`Theme.hpp` owns these values; `AppViewPolicy::colorScheme` is the app baseline.
+`runtime/AppearancePreference.hpp` defines the preferences, re-exported by
+`ui/Theme.hpp`; `AppViewPolicy::colorScheme` is the app baseline.
 Settings schema 4 adds `color_scheme` and `contrast`. `SettingsStore` honors
-contrast overrides only from the user document. UISession calls
+contrast overrides only from the user document. Shared General controls expose
+these overrides, UI motion and text size; see
+[SETTINGS.md](../platform/SETTINGS.md#shared-graphics-and-settings-view). UISession calls
 `UIRoot::setAppearance` with policy and native observation; the installed
 ThemeDefinition remains authoritative for application styling. Unknown scheme
 falls back to light; unknown contrast to normal. Observation runs on the owner

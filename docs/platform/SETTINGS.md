@@ -71,7 +71,8 @@ project/user/app precedence applies. Disabling a navigation fallback does not
 disable a control's editing keys or a native assistive action.
 
 `color_scheme` accepts system/light/dark (default system); normal app/project/user
-precedence applies. `contrast` accepts system/normal/high (default system), but
+precedence applies until shared user appearance is supplied below. `contrast`
+accepts system/normal/high (default system), but
 only user-file overrides participate in effective contrast resolution. Project
 or app appearance cannot suppress an OS high-contrast request. `userContrast` on
 the resolved AppViewPolicy is a settings result, not an app preference. Native
@@ -368,7 +369,29 @@ Apply/Save behavior, inactive future features and automatic scene resolution.
 These preferences apply across sub-apps. Escape opens the host settings view;
 Ctrl/Cmd+Shift+M returns to the launcher.
 
-`graphics.motion` stores the shared UI motion preference (`system`, `full`,
-`reduced`, `none`). The General settings tab uses
-the existing Apply/Save transaction. System resolves the native desktop preference
-when available; changing it affects live UI playback, not simulation or timers.
+General owns shared appearance and accessibility preferences; the 2D tab owns
+raster quality and image reconstruction. General exposes:
+
+| Key in `[graphics]` | Choices / default | Effect |
+|---|---|---|
+| `color_scheme` | system/light/dark; system | UI palette |
+| `contrast` | system/normal/high; system | UI contrast, independently of color scheme |
+| `motion` | system/full/reduced/none; system | Live UI playback, not simulation or timers |
+| `text_scale` | 50–300%; 100 | Theme text size, independent of raster resolution and OS display scale |
+
+These controls use the existing draft Apply/Save/Revert transaction. Apply affects
+all app and settings UIs for this run; Save also persists it. OS settings are never
+modified. System follows native changes; unavailable preferences resolve to light,
+normal contrast and full motion. Explicit choices override the corresponding OS
+preference. High contrast uses native forced colors when supplied by the OS;
+Normal explicitly opts out. Text scale preserves control identity and editing
+state while remeasuring layout. It is an application multiplier, not an OS text
+size override; scrollable settings remain usable at enlarged sizes.
+
+Shared user graphics appearance overrides legacy per-app appearance. Without a
+user graphics section, legacy user/app overrides still apply. Missing appearance
+keys in an older graphics section inherit that document's legacy `[defaults]`
+values; absent values use System. Project contrast cannot suppress OS contrast:
+only user preferences can override it. General displays shared preferences rather
+than legacy per-app exceptions. Saving General adopts the shared values for every
+app. Existing settings documents remain schema version 5.

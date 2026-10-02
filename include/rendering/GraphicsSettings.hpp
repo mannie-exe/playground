@@ -9,6 +9,7 @@
 #include <rendering/RenderRuntime.hpp>
 #include <rendering/RenderSettings.hpp>
 #include <rendering/RendererTypes.hpp>
+#include <runtime/AppearancePreference.hpp>
 #include <runtime/MotionPreference.hpp>
 
 namespace playground::rendering {
@@ -44,6 +45,10 @@ struct QualityPolicy {
 };
 
 struct GraphicsSettings {
+  runtime::ColorSchemePreference colorScheme{
+      runtime::ColorSchemePreference::System};
+  runtime::ContrastPreference contrast{runtime::ContrastPreference::System};
+  float textScale{1};
   runtime::MotionPreference motion{runtime::MotionPreference::System};
   RenderSettings presentation;
   RendererPreferences renderer;

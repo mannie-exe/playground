@@ -338,6 +338,15 @@ SettingsDocument parseSettings(std::string_view text) {
     } else
       throw std::invalid_argument("Unknown settings document section");
   }
+  if (result.graphics) {
+    const auto &shared = *root["graphics"].as_table();
+    if (!shared.contains("color_scheme"))
+      result.graphics->colorScheme = result.defaults.colorScheme.value_or(
+          ui::ColorSchemePreference::System);
+    if (!shared.contains("contrast"))
+      result.graphics->contrast =
+          result.defaults.contrast.value_or(ui::ContrastPreference::System);
+  }
   return result;
 }
 
@@ -424,7 +433,13 @@ SettingsStore::graphics(const SettingsDocument &user) const {
     _project.defaults.apply(p, v);
     result.presentation = p.render;
     result.renderer = p.renderer;
+    result.colorScheme = v.colorScheme;
   }
+  // Project contrast is not user consent to override native accessibility.
+  result.contrast =
+      user.defaults.contrast.value_or(ui::ContrastPreference::System);
+  if (user.defaults.colorScheme)
+    result.colorScheme = *user.defaults.colorScheme;
   // A new project schema must not erase existing user-wide render preferences.
   if (user.defaults.renderer)
     result.renderer.backend = *user.defaults.renderer;
@@ -485,10 +500,16 @@ void SettingsStore::resolveWithUser(std::string_view app,
                                     AppViewPolicy &v) const {
   auto presentation = p;
   auto policy = v;
+  if (_project.graphics)
+    policy.colorScheme = _project.graphics->colorScheme;
   _project.apply(app, presentation, policy);
   policy.userContrast = ui::ContrastPreference::System;
   user.apply(app, presentation, policy);
   const auto shared = graphics(user);
+  if (user.graphics) {
+    policy.colorScheme = shared.colorScheme;
+    policy.userContrast = shared.contrast;
+  }
   presentation.render = shared.presentation;
   presentation.renderer = shared.renderer;
   presentation.validate();
