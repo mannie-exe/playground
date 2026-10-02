@@ -78,7 +78,7 @@ void ToastHost::rebuild() {
     for (std::size_t j = i; j < children().size(); ++j)
       if (children()[j]->id() == _entries[i].node) {
         if (i != j)
-          moveChildAt(j, i);
+          moveChild(j, i);
         break;
       }
   _timer.disconnect();
