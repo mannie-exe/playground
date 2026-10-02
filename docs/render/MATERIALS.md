@@ -103,10 +103,12 @@ it no longer universally narrows float32 to half-float. CPU filtering decodes
 working values; GPU sRGB sampling decodes before interpolation. Associated RGB
 is calculated in linear space before encoding. The shader ABI is unchanged.
 
-GPU material texture residency has a separate byte-budgeted
-LRU; bytes include all levels. `maxMaterialTextureBytes` bounds one realized chain;
-`maxMaterialResidentBytes` bounds cached ownership, not all live caller/in-flight
-allocations. Transfer-offset alignment is charged to staging, not resident payload.
+GPU material texture residency separates active scene ownership from reusable
+idle storage; bytes include all levels. Active scene working sets retain their
+realizations across camera changes and frame boundaries. Only unpinned entries
+are eligible for LRU eviction. `maxMaterialTextureBytes` bounds one realized chain;
+`maxMaterialResidentBytes` targets idle retention, not active scene or in-flight
+allocations. Active allocations remain bounded by the shared resource ledger. Transfer-offset alignment is charged to staging, not resident payload.
 A full 4K RGBA8 chain is about 85 MiB on both CPU and GPU, compared with 341 MiB
 float32 or 171 MiB half-float. Opaque and blend representations still require
 separate resident copies when both are requested. Eviction never invalidates
@@ -228,3 +230,18 @@ and refusal of unsupported tone mapping/PBR.
 `mesh_preparation` covers seams, order, deterministic remapping and atomic failure;
 `ktx_texture` covers synthetic containers, malformed input, limits and ETC1S/UASTC
 fixtures from the pinned dependency (no network during tests).
+
+## Preparation and reuse
+
+Before native uploads, deduplicate the requested scene's mesh and texture keys,
+including material alpha interpretation. Plan missing resource bytes and reject
+an impossible working set before partial uploads. A scene-view lifetime owns its
+active resource set; scene changes replace that set, and destroyed views release
+it. Device replacement invalidates native realizations, not immutable CPU assets.
+
+Opacity metadata and immutable upload variants are derived once from source
+identity and alpha policy. Already opaque payloads upload directly. Straight,
+associated and opaque variants preserve existing filtering/color contracts;
+opaque conversion cannot discard source RGB at zero alpha. CPU preparation is
+reusable across native-resource recreation and remains accounted. Rendering
+unchanged resources performs no repeated conversion, mip construction or upload.
