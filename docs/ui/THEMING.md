@@ -85,6 +85,23 @@ optical designs. Faces open on demand. OpenType shaping uses renderer defaults;
 arbitrary feature switches and variable axes are not exposed by this contract.
 No scene serialization or editor is required to enumerate or select these faces.
 
+ThemeTypography.fallbacks is an ordered list of immutable font families for
+missing glyphs. Absence lets the host supply defaults; an empty list disables
+fallback. A subtree typography override can replace the list. Selection uses
+the same weight/slant/optical request as the primary face. FontProps.fallbacks
+stores the resolved paths and cache identities; font variants preserve the list
+and open matching-size faces owned by the primary font. Order and source identity
+participate in font caching. SDL_ttf shapes missing-glyph spans with the chain on
+both rendering backends; fallback does not replace glyphs already in the primary
+font or promise complete language/emoji-presentation coverage.
+
+On macOS the host first uses the installed Apple Color Emoji font, then bundled
+Noto Color Emoji. Other platforms use Noto. Apple fonts are neither copied into
+assets nor distributed. The bundled font and its OFL license follow the ordinary
+CMake asset installation. FreeType shares SDL_image's managed PNG/zlib libraries
+for bitmap color glyphs. Missing or invalid explicitly configured font files are
+reported as font-loading errors rather than silently ignored.
+
 | Roles | Bundled family | Use |
 | --- | --- | --- |
 | Display, Title, Heading, Label | Inter Display | Titles, buttons, tabs and control labels |

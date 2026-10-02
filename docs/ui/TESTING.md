@@ -18,7 +18,12 @@ Minesweeper game rules or declare asynchronous layout safe.
 
 Tests cover the UI module and its constituents: geometry, layout, retained
 ownership, events, scheduling, SDL adapters, painting and resource support.
-Complete programs, AppHost smoke tests and game rules are outside this scope.
+The host_smoke integration test opens/applies/closes Settings against the real
+AppHost using a native window and an isolated temporary user directory. Headless
+dummy/offscreen drivers skip this test.
+AppHostDirectories can override project/assets and user roots; omitted roots
+retain executable-relative assets and the platform preference directory.
+Native rendering/interactive platform behavior and game rules remain separate.
 Resource tests may read checked-in assets without treating their owning game
 as a fixture.
 
@@ -26,6 +31,11 @@ CTest runs independent executables; assertions use runtime checks that survive
 NDEBUG or compile-time static_assert. Build the selected targets before running
 CTest. A successful application build verifies compilation of consumers, not
 their runtime behavior.
+
+ui_text_field checks trailing-space/tab and bidirectional caret geometry.
+ui_font_family checks ordered emoji fallback, cache identity, variants and
+colored raster output, including the portable Noto chain. These do not establish
+complete Unicode shaping or emoji-sequence coverage.
 
 ## Contract inventory
 

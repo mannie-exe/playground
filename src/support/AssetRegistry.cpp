@@ -78,19 +78,23 @@ AssetRegistry::getVector(const playground::VectorSource &source,
 }
 
 std::string AssetRegistry::fontKey(const FontProps &props) {
-  return std::to_string(props.cacheIdentity.size()) + ":" +
-         props.cacheIdentity + ":" + std::to_string(props.path.size()) + ":" +
-         props.path + ":" +
-         std::to_string(std::bit_cast<std::uint32_t>(props.style.size)) + ":" +
-         std::to_string(props.style.flags) + ":" +
-         std::to_string(props.style.outline) + ":" +
-         std::to_string(props.layout.alignment) + ":" +
-         std::to_string(props.layout.direction) + ":" +
-         (props.layout.lineSpace ? std::to_string(*props.layout.lineSpace)
-                                 : "auto") +
-         ":" + std::to_string(props.render.hinting) + ":" +
-         std::to_string(props.render.sdf) + ":" +
-         std::to_string(props.render.kern);
+  auto key = std::to_string(props.cacheIdentity.size()) + ":" +
+             props.cacheIdentity + ":" + std::to_string(props.path.size()) +
+             ":" + props.path + ":" +
+             std::to_string(std::bit_cast<std::uint32_t>(props.style.size)) +
+             ":" + std::to_string(props.style.flags) + ":" +
+             std::to_string(props.style.outline) + ":" +
+             std::to_string(props.layout.alignment) + ":" +
+             std::to_string(props.layout.direction) + ":" +
+             (props.layout.lineSpace ? std::to_string(*props.layout.lineSpace)
+                                     : "auto") +
+             ":" + std::to_string(props.render.hinting) + ":" +
+             std::to_string(props.render.sdf) + ":" +
+             std::to_string(props.render.kern);
+  for (const auto &font : props.fallbacks)
+    key += ":" + std::to_string(font.path.size()) + ":" + font.path + ":" +
+           std::to_string(font.cacheIdentity.size()) + ":" + font.cacheIdentity;
+  return key;
 }
 
 FontHandle AssetRegistry::getFont(FontProps props) {
@@ -102,7 +106,17 @@ FontHandle AssetRegistry::getFont(FontProps props) {
     return it->second.value;
   }
 
-  auto font{std::make_shared<Font>(std::move(props))};
+  std::vector<FontHandle> fallbacks;
+  for (const auto &source : props.fallbacks) {
+    if (source.path.empty() || source.path.find('\0') != std::string::npos)
+      throw std::invalid_argument("Invalid fallback font path");
+    auto fallback = props;
+    fallback.path = source.path;
+    fallback.cacheIdentity = source.cacheIdentity;
+    fallback.fallbacks.clear();
+    fallbacks.push_back(getFont(std::move(fallback)));
+  }
+  FontHandle font{new Font(std::move(props), std::move(fallbacks))};
   FontHandle result{font};
   _fonts.emplace(key, Entry<FontHandle>{result, ++_clock});
   return result;

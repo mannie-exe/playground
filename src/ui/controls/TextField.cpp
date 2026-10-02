@@ -307,6 +307,11 @@ void TextField::rebuild(float width) {
           TTF_CreateText(nullptr, font->get(), value.data(), value.size())};
       if (!text)
         throwSDLError("Create editor layout");
+      // Editable whitespace needs advances for caret, selection and hit
+      // testing. SDL_ttf otherwise trims line-ending spaces from substring
+      // geometry.
+      if (!TTF_SetTextWrapWhitespaceVisible(text.get(), true))
+        throwSDLError("Preserve editor whitespace");
       int w{}, h{};
       if (!TTF_GetTextSize(text.get(), &w, &h))
         throwSDLError("Measure editor layout");

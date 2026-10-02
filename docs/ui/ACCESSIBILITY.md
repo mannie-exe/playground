@@ -177,6 +177,8 @@ bounded undo history and separate transient composition. SDL committed text
 events insert text; keycodes perform editing/navigation only. ICU provides
 Unicode boundaries and bidi ordering; SDL_ttf/HarfBuzz shape and measure runs.
 Caret/selection geometry must match the exact displayed layout on both backends.
+Editable spaces and tabs retain their advances at line ends, including blank
+lines; caret stops, selection bounds and accessible text use that same geometry.
 Password controls omit plaintext from semantic snapshots, logs and clipboard
 copy, and disable undo retention. Ordinary changes, commits and programmatic
 setters have distinct notification semantics. Numeric drafts are separate from
