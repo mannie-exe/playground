@@ -123,8 +123,9 @@ They do not require a global active camera or a second playback renderer.
 `WindowServices::lockRelativeMouse(ActivationToken)` requires a focused active
 app and returns a `Connection`. Disconnecting releases SDL relative mode; a stale
 connection cannot release a newer lock. Settings, focus loss, inactive activation
-and teardown release the lock. SDL failures are reported; the adapter never
-pretends acquisition succeeded. Relative mouse mode is window-local, not
+and teardown release the lock. App interruption also clears cached movement
+intent. SDL failures are reported; the adapter never pretends acquisition
+succeeded. Relative mouse mode is window-local, not
 `SDL_CaptureMouse`, and must be changed on the owner thread.
 
 The demo adapter accepts right-click only inside the resolved scene viewport and

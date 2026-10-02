@@ -60,17 +60,26 @@ cmake --build --preset debug --target playground_scene_host_workload --parallel 
 ./build/debug/bin/playground_scene_host_workload benchmark 15
 ./build/debug/bin/playground_scene_host_workload benchmark 0
 ./build/debug/bin/playground_scene_host_workload infinite
+./build/debug/bin/playground_scene_host_workload interrupted
 ```
 
 Material/Bistro/Chess workloads allow 30 seconds for preparation before measuring;
-scene workloads inject held look intent to exercise camera redraws. Camera mode
-checks native lock/unlock, relative motion, Settings, focus cancellation and app
-exit. Keep that window focused; focus enforcement is part of the contract.
+measurement starts after scene upload and requires rendered samples. Scene
+workloads inject held look intent to exercise camera redraws. Camera mode
+checks native lock/unlock, relative motion, held movement across Settings,
+focus cancellation and app exit. Early exit cannot pass unfinished checks. Keep
+that window focused; focus enforcement is part of the contract.
 Benchmark mode uses the launcher's full-loop warm-up and emits `BenchmarkJSON`.
 Zero duration runs until quit. `infinite` verifies two periodic reports and then
 automatically cancels; interruption reasons distinguish cancellation, focus,
-Settings, window, graphics, device and quality changes. Interruptions produce invalid results, not a score.
-Each invocation uses temporary settings and leaves user settings untouched.
+Settings, window, graphics, device and quality changes. `interrupted` verifies
+that focus loss during loading remains invalid after the scene arrives. Only an
+explicit restart clears interruption. Interruptions produce invalid results,
+not a score.
+Each invocation uses temporary settings and requests a nonresizable 960×720
+window; incompatible window-manager placement fails explicitly. Drawable pixels
+still depend on display density and remain part of result identity. User settings
+are untouched.
 
 Replace `debug` with `release` in configure/build commands and executable paths
 for optimized measurements. Do not run competing builds or GPU tests during a

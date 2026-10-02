@@ -245,3 +245,6 @@ associated and opaque variants preserve existing filtering/color contracts;
 opaque conversion cannot discard source RGB at zero alpha. CPU preparation is
 reusable across native-resource recreation and remains accounted. Rendering
 unchanged resources performs no repeated conversion, mip construction or upload.
+Cache misses reserve temporary conversion and mip scratch before allocation;
+published payloads retain persistent storage charges. Cache hits need no scratch
+reservation.

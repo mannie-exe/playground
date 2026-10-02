@@ -59,6 +59,7 @@ class Demo3DApp final : public IApp {
   void updateBenchmark(AppContext &);
   void reportBenchmark(AppContext &, bool final);
   void restartBenchmark(AppContext &);
+  void prepareBenchmark(AppContext &);
   static const scene::CameraPath &benchmarkPath();
   input::InputSnapshot _navigation;
   scene::CameraProps camera() const;
@@ -87,6 +88,7 @@ public:
   void onActivityInterrupted(AppContext &,
                              AppInterruption reason) noexcept override {
     _mouseLock.disconnect();
+    _navigation = {};
     if (_kind == DemoKind::Benchmark)
       _benchmark.invalidate(reason == AppInterruption::Focus
                                 ? runtime::BenchmarkInterruption::Focus

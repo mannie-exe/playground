@@ -16,7 +16,7 @@ struct Log {
   void *userdata{};
   std::atomic<bool> finished{}, invalid{};
   std::atomic<unsigned> periodic{};
-  bool allowCancellation{};
+  std::string_view expectedInterruption;
 
   static void write(void *data, int category, SDL_LogPriority priority,
                     const char *message) {
@@ -31,16 +31,21 @@ struct Log {
     }
     if (text.starts_with("BenchmarkJSON ") && text.contains("\"final\":true")) {
       const bool complete = text.contains("\"phase\":\"complete\"");
-      const bool cancelled = text.contains("\"interruption\":\"cancelled\"");
-      log.invalid = log.invalid ||
-                    (!complete && !(log.allowCancellation && cancelled)) ||
-                    text.contains("\"drain_timed_out\":true") ||
-                    (complete && text.contains("\"cpu_render_samples\":0"));
+      const bool expected =
+          !log.expectedInterruption.empty() &&
+          text.contains(std::string{"\"interruption\":\""} +
+                        std::string{log.expectedInterruption} + "\"");
+      log.invalid =
+          log.invalid ||
+          (log.expectedInterruption.empty() ? !complete : !expected) ||
+          text.contains("\"drain_timed_out\":true") ||
+          (complete && text.contains("\"cpu_render_samples\":0"));
       log.finished = true;
     }
   }
 
-  explicit Log(bool allow = false) : allowCancellation{allow} {
+  explicit Log(std::string_view expected = {})
+      : expectedInterruption{expected} {
     SDL_GetLogOutputFunction(&previous, &userdata);
     SDL_SetLogOutputFunction(write, this);
   }
@@ -52,29 +57,35 @@ struct Log {
 int main(int argc, char **argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: playground_scene_host_workload "
-                 "material|bistro|chess|benchmark|infinite|camera [seconds]\n";
+                 "material|bistro|chess|benchmark|infinite|interrupted|camera "
+                 "[seconds]\n";
     return 2;
   }
   SDL_setenv_unsafe("MVK_CONFIG_LOG_LEVEL", "2", 0);
   return test::run([&] {
     const std::string_view scene{argv[1]};
     const bool infinite = scene == "infinite";
-    const bool benchmark = scene == "benchmark" || infinite;
+    const bool interrupted = scene == "interrupted";
+    const bool benchmark = scene == "benchmark" || infinite || interrupted;
     const bool camera = scene == "camera";
-    const auto id = benchmark                         ? AppId::BistroBenchmark
-                    : (scene == "material" || camera) ? AppId::Demo3D
-                    : scene == "bistro"               ? AppId::Bistro
-                    : scene == "chess"                ? AppId::Chess
-                                                      : AppId::Menu;
+    const auto id = benchmark             ? AppId::BistroBenchmark
+                    : camera              ? AppId::Chess
+                    : scene == "material" ? AppId::Demo3D
+                    : scene == "bistro"   ? AppId::Bistro
+                    : scene == "chess"    ? AppId::Chess
+                                          : AppId::Menu;
     test::require(id != AppId::Menu, "known scene workload");
-    const double seconds = argc == 3 ? std::stod(argv[2]) : 5.;
+    std::size_t parsed{};
+    const double seconds = argc == 3 ? std::stod(argv[2], &parsed) : 5.;
+    test::require(argc != 3 || parsed == std::string_view{argv[2]}.size(),
+                  "duration contains only a number");
     test::require(std::isfinite(seconds) && seconds >= 0 && seconds <= 3600,
                   "duration 0..3600 seconds");
     test::TemporaryDirectory user{"playground-scene-workload"};
     std::ofstream{user.path() / "settings.toml"}
         << "schema_version = 5\n[graphics]\nrenderer = 'sdl-gpu'\nvsync = "
            "false\n";
-    Log log{infinite};
+    Log log{infinite ? "cancelled" : interrupted ? "focus" : ""};
     AppHost host{{.resizable = false},
                  {},
                  ui::makeSettingsView,
@@ -85,11 +96,13 @@ int main(int argc, char **argv) {
                                       : AppLaunchProps{}});
     const auto sink = host.hostCompletions();
     const auto started = std::chrono::steady_clock::now();
-    bool timedOut{};
+    bool timedOut{}, interruptionSent{};
     rendering::SceneWork baseline;
     std::uint64_t baselineSamples{};
     std::vector<double> renderTimes;
-    bool warm{}, raised{};
+    bool warm{}, raised{}, sized{}, completed{};
+    double measuredAt{};
+    std::uint64_t resumedMeshHits{};
     unsigned cameraStage{};
     auto stageAt = started;
     const auto key = [](SDL_Scancode code, bool down) {
@@ -108,7 +121,18 @@ int main(int argc, char **argv) {
                                    std::chrono::steady_clock::now() - started)
                                    .count();
           const auto state = host.renderRuntimeState();
-          if (!raised && elapsed > 2) {
+          if (!sized && host.windowState().title == toString(id) &&
+              host.windowRequestStatus().outcome !=
+                  platform::WindowTransitionOutcome::Pending) {
+            auto policy = host.viewPolicy();
+            policy.resizable = false;
+            policy.initialSizing = platform::InitialWindowSizing::Preferred;
+            policy.preferredWindowSize = math::Vec2i{960, 720};
+            host.request(
+                {.type = AppCommandType::SetViewPolicy, .view = policy});
+            sized = true;
+          }
+          if (!raised && sized && elapsed > 2) {
             int count{};
             auto windows = SDL_GetWindows(&count);
             for (int i = 0; i < count; ++i)
@@ -116,7 +140,24 @@ int main(int argc, char **argv) {
             SDL_free(windows);
             raised = true;
           }
+          if (sized && elapsed > 10 &&
+              host.windowState().title == toString(id) &&
+              host.windowState().actualSize != math::Vec2i{960, 720}) {
+            std::cerr << "Window manager changed the requested 960x720 "
+                         "workload geometry\n";
+            log.invalid = true;
+            host.request({.type = AppCommandType::Quit});
+          }
           if (benchmark) {
+            if (interrupted && !interruptionSent &&
+                host.windowState().title == toString(id)) {
+              test::require(!state.sceneWork.uploads,
+                            "interruption arrives before scene resources");
+              SDL_Event event{};
+              event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+              SDL_PushEvent(&event);
+              interruptionSent = true;
+            }
             if (infinite && log.periodic >= 2)
               host.request({.type = AppCommandType::Quit});
             if (log.finished || (seconds && elapsed > seconds + 150)) {
@@ -166,21 +207,34 @@ int main(int argc, char **argv) {
               require(!host.windowServices().relativeMouseActive() &&
                           !host.settingsVisible(),
                       "first Escape unlocks without settings");
+              resumedMeshHits = state.sceneWork.meshHits;
               mouse();
+              key(SDL_SCANCODE_W, true);
               break;
             case 4:
+              require(state.sceneWork.meshHits > resumedMeshHits,
+                      "held movement redraws the scene before Settings");
               host.requestSettings();
               break;
             case 5:
               require(host.settingsVisible() &&
                           !host.windowServices().relativeMouseActive(),
                       "settings releases mouse lock");
-              host.requestSettings(false);
+              key(SDL_SCANCODE_W, false);
               break;
             case 6:
+              host.requestSettings(false);
+              break;
+            case 7:
+              resumedMeshHits = state.sceneWork.meshHits;
+              break;
+            case 8:
+              require(state.sceneWork.meshHits == resumedMeshHits,
+                      "camera stays stationary after releasing movement in "
+                      "Settings");
               mouse();
               break;
-            case 7: {
+            case 9: {
               require(host.windowServices().relativeMouseActive(),
                       "mouse relocks after settings");
               SDL_Event e{};
@@ -188,7 +242,7 @@ int main(int argc, char **argv) {
               SDL_PushEvent(&e);
               break;
             }
-            case 8: {
+            case 10: {
               require(!host.windowServices().relativeMouseActive(),
                       "focus loss releases mouse lock");
               SDL_Event e{};
@@ -196,18 +250,20 @@ int main(int argc, char **argv) {
               SDL_PushEvent(&e);
               break;
             }
-            case 9:
+            case 11:
               mouse();
               break;
-            case 10:
+            case 12:
               require(host.windowServices().relativeMouseActive(),
                       "mouse relocks after focus restoration");
               host.request({.type = AppCommandType::ReturnToMenu});
               break;
-            case 11:
+            case 13:
               require(!host.windowServices().relativeMouseActive(),
                       "app exit releases mouse lock");
-              std::cout << "CameraWorkflow checks=7 complete=true\n";
+              completed = !log.invalid;
+              std::cout << "CameraWorkflow checks=9 complete=" << completed
+                        << '\n';
               host.request({.type = AppCommandType::Quit});
               break;
             }
@@ -217,6 +273,7 @@ int main(int argc, char **argv) {
               baseline = state.sceneWork;
               baselineSamples = state.cpuSamples;
               warm = true;
+              measuredAt = elapsed;
               if (scene != "material")
                 key(SDL_SCANCODE_RIGHT, true);
             }
@@ -228,7 +285,7 @@ int main(int argc, char **argv) {
               if (telemetry.cpu[i].measured[2])
                 renderTimes.push_back(telemetry.cpu[i].milliseconds[2]);
             baselineSamples = state.cpuSamples;
-            if (seconds && elapsed > 30 + seconds) {
+            if (seconds && elapsed - measuredAt >= seconds) {
               std::sort(renderTimes.begin(), renderTimes.end());
               std::cout << "SceneWorkload scene=" << scene
                         << " render_samples=" << renderTimes.size()
@@ -241,7 +298,10 @@ int main(int argc, char **argv) {
                         << " upload_bytes="
                         << state.sceneWork.uploadBytes - baseline.uploadBytes
                         << '\n';
-              log.invalid = state.sceneWork.uploads != baseline.uploads;
+              log.invalid = log.invalid ||
+                            state.sceneWork.uploads != baseline.uploads ||
+                            renderTimes.empty();
+              completed = !log.invalid;
               host.request({.type = AppCommandType::Quit});
             }
           } else if (elapsed > 150) {
@@ -254,6 +314,9 @@ int main(int argc, char **argv) {
     host.run();
     clock.request_stop();
     clock.join();
+    if (!benchmark)
+      test::require(completed,
+                    "native workload completed its checks and measured frames");
     if (benchmark)
       test::require(log.finished, "benchmark emitted a final result");
     if (infinite)
