@@ -15,9 +15,8 @@ struct TextFieldProps {
   bool enabled{true};
   bool required{};
   std::string name, placeholder, validationMessage;
-  math::ColorRGBA8 foreground{240, 240, 240, 255}, background{35, 35, 35, 255},
-      selection{50, 90, 140, 255};
-  bool useTheme{true};
+  std::optional<math::ColorRGBA8> foreground, background, selection;
+  std::optional<TextRole> textRole;
   bool operator==(const TextFieldProps &) const = default;
 };
 
@@ -26,8 +25,8 @@ struct TextFieldPatch {
   Patch<TextEditProps> editing;
   Patch<bool> enabled, required;
   Patch<std::string> name, placeholder, validationMessage;
-  Patch<math::ColorRGBA8> foreground, background, selection;
-  Patch<bool> useTheme;
+  Patch<std::optional<math::ColorRGBA8>> foreground, background, selection;
+  Patch<std::optional<TextRole>> textRole;
 };
 
 class TextField : public Node,
@@ -42,6 +41,16 @@ class TextField : public Node,
   Signal<std::string> _changed, _committed;
 
   std::unique_ptr<Layout> _layout;
+  mutable FontHandle _themeFont;
+  mutable std::optional<ThemeTypography> _fontTypography;
+  FontHandle resolvedFont() const;
+
+  math::ColorRGBA8 foreground() const {
+    return isEffectivelyEnabled()
+               ? resolveColor(&ThemePalette::text, _props.foreground)
+               : theme().mutedText;
+  }
+
   math::Vec2f _scroll{};
   std::optional<math::Point2> _visualCaret;
   std::optional<std::uint64_t> _drag;

@@ -10,26 +10,26 @@ NumberStepper::NumberStepper(std::unique_ptr<Node> center,
                              std::unique_ptr<Node> decrease,
                              std::unique_ptr<Node> increase,
                              NumberStepperProps props, ButtonProps buttons,
-                             layout::BoxProps box, ControlMetrics metrics)
+                             layout::BoxProps box,
+                             std::optional<ControlMetrics> metrics)
     : Box{box, {layout::Alignment::stretch()}} {
   props.validate();
-  metrics.validate();
+  if (metrics)
+    setThemeOverrides({.stepper = metrics});
   if (!center || !decrease || !increase)
     throw std::invalid_argument(
         "NumberStepper requires center and button content");
   _center = center.get();
   _editor = dynamic_cast<NumericEditor *>(_center);
   auto row = std::make_unique<HStack>(
-      layout::StackProps{.gap = metrics.gap,
-                         .childrenAlignment = layout::CrossAlignment::Stretch});
-  auto left = std::make_unique<Button>(
-      std::move(decrease), buttons,
-      layout::BoxProps{.width = layout::SizeRule::fixed(metrics.buttonWidth),
-                       .minHeight = metrics.minimumHeight});
-  auto right = std::make_unique<Button>(
-      std::move(increase), buttons,
-      layout::BoxProps{.width = layout::SizeRule::fixed(metrics.buttonWidth),
-                       .minHeight = metrics.minimumHeight});
+      layout::StackProps{.childrenAlignment = layout::CrossAlignment::Stretch});
+  row->setControlLayout(ControlLayout::StepperRow);
+  auto left = std::make_unique<Button>(std::move(decrease), buttons,
+                                       layout::BoxProps{});
+  auto right = std::make_unique<Button>(std::move(increase), buttons,
+                                        layout::BoxProps{});
+  left->setControlLayout(ControlLayout::StepperButton);
+  right->setControlLayout(ControlLayout::StepperButton);
   _decrease = left.get();
   _increase = right.get();
   _decreaseConnection =

@@ -147,7 +147,7 @@ public:
 };
 
 struct UIServices {
-  ThemePalette theme{defaultTheme()};
+  ResolvedTheme theme{defaultResolvedTheme()};
   std::function<std::string()> readClipboard;
   std::function<void(std::string_view)> writeClipboard;
   Scheduler *scheduler{};

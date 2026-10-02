@@ -18,9 +18,11 @@ Popup::Popup(std::unique_ptr<Node> content, PopupProps props) {
 void Popup::setPopupProps(PopupProps value) {
   if (value.position && !math::isFinite(*value.position))
     throw std::invalid_argument("Invalid popup position");
-  if (!std::isfinite(value.gap) || value.gap < 0 ||
-      !std::isfinite(value.viewportPadding) || value.viewportPadding < 0 ||
-      !std::isfinite(value.maximumHeight) || value.maximumHeight <= 0 ||
+  if ((value.gap && (!std::isfinite(*value.gap) || *value.gap < 0)) ||
+      (value.viewportPadding && (!std::isfinite(*value.viewportPadding) ||
+                                 *value.viewportPadding < 0)) ||
+      (value.maximumHeight &&
+       (!std::isfinite(*value.maximumHeight) || *value.maximumHeight <= 0)) ||
       value.placement < PopupPlacement::BelowStart ||
       value.placement > PopupPlacement::Center ||
       value.width < PopupWidth::Content ||
@@ -49,7 +51,8 @@ void Popup::applyPopupPatch(const PopupPatch &p) {
        p.dismissOnEscape.appliedTo(_props.dismissOnEscape, d.dismissOnEscape),
        p.closeOnTab.appliedTo(_props.closeOnTab, d.closeOnTab),
        p.autoFocus.appliedTo(_props.autoFocus, d.autoFocus),
-       p.backdrop.appliedTo(_props.backdrop, d.backdrop), _props.position});
+       p.backdrop.appliedTo(_props.backdrop, d.backdrop), _props.position,
+       _props.themeBackdrop});
 }
 
 void Popup::setOpen(bool open) {
@@ -77,7 +80,8 @@ void Popup::dismiss(DismissReason reason) {
 
 void Popup::present(ArrangeContext &context, math::Rect viewport,
                     Node *anchor) {
-  const auto inset = std::min(_props.viewportPadding,
+  const auto effective = effectivePopupProps();
+  const auto inset = std::min(*effective.viewportPadding,
                               std::min(viewport.w(), viewport.h()) / 2);
   const auto usable = math::inset(viewport, math::Insets::all(inset));
   const auto anchorBounds =
@@ -93,11 +97,12 @@ void Popup::present(ArrangeContext &context, math::Rect viewport,
                                 ? layout::AxisConstraints::tight(width)
                                 : layout::AxisConstraints{0, width};
   auto desired =
-      measure(context,
-              {offeredWidth, {0, std::min(usable.h(), _props.maximumHeight)}})
+      measure(context, {offeredWidth,
+                        {0, std::min(usable.h(), *effective.maximumHeight)}})
           .size;
   desired.width = std::min(desired.width, width);
-  desired.height = std::min({desired.height, usable.h(), _props.maximumHeight});
+  desired.height =
+      std::min({desired.height, usable.h(), *effective.maximumHeight});
   if (_props.width == PopupWidth::MatchAnchor && anchor)
     desired.width = width;
   const auto place = [&](PopupPlacement p) {
@@ -111,8 +116,8 @@ void Popup::present(ArrangeContext &context, math::Rect viewport,
         (p == PopupPlacement::AboveEnd || p == PopupPlacement::BelowEnd) !=
         (context.direction == layout::LayoutDirection::RightToLeft);
     return math::rect(end ? target.right() - desired.width : target.x(),
-                      above ? target.y() - _props.gap - desired.height
-                            : target.bottom() + _props.gap,
+                      above ? target.y() - *effective.gap - desired.height
+                            : target.bottom() + *effective.gap,
                       desired.width, desired.height);
   };
   auto bounds = place(_props.placement);

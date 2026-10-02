@@ -26,11 +26,12 @@ makeDemo2DPreview(AssetRegistry &assets, const ViewResources &resources,
                      .content = {.fit = ui::ContentFit::Contain,
                                  .alignment = layout::Alignment::center()}}));
   layers->append(ui::make<ui::Text>(
-      assets, ui::TextProps{.value = props.text,
-                            .font = resources.font,
-                            .foreground = props.textColor,
-                            .fontFit = ui::FontFit::ShrinkToFit,
-                            .useTheme = false}));
+      assets,
+      ui::TextProps{.value = props.text,
+                    .font = resources.font,
+                    .foreground = props.textColor,
+                    .fontFit = ui::FontFit::ShrinkToFit,
+                    .colorTreatment = ui::ColorTreatment::PreserveArtwork}));
 
   return ui::makeBox({.padding = layout::Insets::all(props.padding)},
                      std::move(layers),

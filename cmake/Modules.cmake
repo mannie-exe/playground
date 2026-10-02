@@ -159,6 +159,7 @@ target_sources(playground_sdl PRIVATE
     src/platform/sdl/TextColumns.cpp
     src/ui/views/SettingsView.cpp
     src/ui/content/Text.cpp
+    src/ui/ThemeFonts.cpp
     src/ui/controls/TextField.cpp
     src/ui/content/Vector.cpp)
 target_link_libraries(playground_sdl PUBLIC playground_ui_core playground_ui_resources playground_scene playground_rendering playground_assets

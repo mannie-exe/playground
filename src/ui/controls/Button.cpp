@@ -26,7 +26,7 @@ ActionResult Button::performAction(const UIAction &action,
 }
 
 void ButtonProps::validate() const {
-  if (!std::isfinite(focusWidth) || focusWidth < 0)
+  if (focusWidth && (!std::isfinite(*focusWidth) || *focusWidth < 0))
     throw std::invalid_argument("Invalid button focus width");
 }
 
@@ -35,12 +35,12 @@ void Button::paintSubtree(PaintContext &context) const {
   if (!hasFocus() || !_props.enabled)
     return;
   const auto size = bounds().size;
-  const float t =
-      std::min({_props.focusWidth, size.width / 2, size.height / 2});
+  const float t = std::min(
+      {resolvedFocusWidth(_props.focusWidth), size.width / 2, size.height / 2});
   if (t <= 0)
     return;
   control_paint::outline(context, {{}, size},
-                         _props.useTheme ? theme().focus : _props.focus, t);
+                         resolveColor(&ThemePalette::focus, _props.focus), t);
 }
 
 void Button::cancel() noexcept {
@@ -52,22 +52,22 @@ void Button::cancel() noexcept {
 }
 
 void Button::paint(PaintContext &context) const {
-  if (_props.useTheme) {
-    const auto &t = theme();
-    context.fill({{}, bounds().size}, !_props.enabled ? t.surface
-                                      : isPressed()   ? t.pressed
-                                      : isHovered()   ? t.hover
-                                                      : t.elevated);
-    control_paint::outline(context, {{}, bounds().size},
-                           !_props.enabled ? t.mutedText : t.border,
-                           t.highContrast ? 2.f : 1.f);
+  const auto color =
+      !isEffectivelyEnabled()
+          ? resolveColor(&ThemePalette::surface, _props.disabled)
+      : isPressed() ? resolveColor(&ThemePalette::pressed, _props.pressed)
+      : isHovered() ? resolveColor(&ThemePalette::hover, _props.hover)
+                    : resolveColor(&ThemePalette::elevated, _props.normal);
+  context.fill({{}, bounds().size}, color);
+  if (!isEffectivelyEnabled() && theme().highContrast) {
+    control_paint::disabledOutline(context, {{}, bounds().size}, theme(),
+                                   themeMetrics());
     return;
   }
-  const auto color = !_props.enabled      ? _props.disabled
-                     : (_pointer || _key) ? _props.pressed
-                     : _hovered           ? _props.hover
-                                          : _props.normal;
-  context.fill({{}, bounds().size}, color);
+  control_paint::outline(context, {{}, bounds().size},
+                         !isEffectivelyEnabled() ? theme().mutedText
+                                                 : theme().border,
+                         themeMetrics().borderWidth);
 }
 
 void Button::onDefaultEvent(UIEvent &event) {
@@ -147,6 +147,7 @@ Button::Button(std::unique_ptr<Node> content, ButtonProps props,
                layout::BoxProps box)
     : Box{box, {layout::Alignment::center()}}, _props{props} {
   _props.validate();
+  setControlLayout(ControlLayout::Button);
   setHitTestPolicy(HitTestPolicy::SelfAndChildren);
   setFocusable(true);
   setSemanticProps({.role = SemanticRole::Button, .enabled = props.enabled});
@@ -183,8 +184,7 @@ void Button::applyButtonPatch(const ButtonPatch &p) {
                   p.pressed.appliedTo(_props.pressed, d.pressed),
                   p.disabled.appliedTo(_props.disabled, d.disabled),
                   p.focus.appliedTo(_props.focus, d.focus),
-                  p.focusWidth.appliedTo(_props.focusWidth, d.focusWidth),
-                  p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
+                  p.focusWidth.appliedTo(_props.focusWidth, d.focusWidth)});
 }
 
 } // namespace playground::ui

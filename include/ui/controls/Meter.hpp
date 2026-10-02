@@ -33,7 +33,7 @@ class ControlIcon final : public Node {
 protected:
   layout::MeasureResult
   measureContent(MeasureContext &, const layout::SizeConstraints &) override {
-    return {{16, 16}};
+    return {{themeMetrics().iconSize, themeMetrics().iconSize}};
   }
 
   void paint(PaintContext &) const override;

@@ -11,23 +11,17 @@ namespace playground::ui {
 
 struct ButtonProps {
   bool enabled{true};
-  math::ColorRGBA8 normal{70, 70, 70, 255};
-  math::ColorRGBA8 hover{95, 95, 95, 255};
-  math::ColorRGBA8 pressed{45, 45, 45, 255};
-  math::ColorRGBA8 disabled{60, 60, 60, 255};
-  math::ColorRGBA8 focus{255, 215, 80, 255};
-  float focusWidth{2};
-  bool useTheme{true};
+  std::optional<math::ColorRGBA8> normal, hover, pressed, disabled, focus;
+  std::optional<float> focusWidth;
   void validate() const;
   bool operator==(const ButtonProps &) const = default;
 };
 
 struct ButtonPatch {
   Patch<bool> enabled;
-  Patch<math::ColorRGBA8> normal, hover, pressed, disabled;
-  Patch<math::ColorRGBA8> focus;
-  Patch<float> focusWidth;
-  Patch<bool> useTheme;
+  Patch<std::optional<math::ColorRGBA8>> normal, hover, pressed, disabled;
+  Patch<std::optional<math::ColorRGBA8>> focus;
+  Patch<std::optional<float>> focusWidth;
 };
 
 class Button : public Box {

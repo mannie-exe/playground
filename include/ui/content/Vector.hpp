@@ -1,13 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
-#include <utility>
 
 #include <support/AssetRegistry.hpp>
 #include <support/Patch.hpp>
@@ -23,7 +19,7 @@ struct VectorProps {
   ContentStyle content;
   float rasterScale{1};
   std::size_t maximumRasterPixels{16 * 1024 * 1024};
-  bool useTheme{};
+  ColorTreatment colorTreatment{ColorTreatment::PreserveArtwork};
 
   bool operator==(const VectorProps &) const = default;
 };
@@ -35,7 +31,7 @@ struct VectorPatch {
   Patch<ContentStyle> content;
   Patch<float> rasterScale;
   Patch<std::size_t> maximumRasterPixels;
-  Patch<bool> useTheme;
+  Patch<ColorTreatment> colorTreatment;
 };
 
 class Vector final : public Node {

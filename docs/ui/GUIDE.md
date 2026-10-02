@@ -1536,9 +1536,11 @@ alignment when the complete image must remain visible. A Fill ScrollView occupie
 the offered viewport instead of imposing a fixed preferred page width.
 
 AppViewPolicy's colorScheme defaults to System. UISession resolves the current
-system/user appearance into a palette; ordinary Text and controls inherit it.
+system/user appearance against the installed ThemeDefinition; ordinary Text and
+controls inherit the resolved theme. See [theme contracts](THEMING.md) for
+semantic typography, live metrics and optional control overrides.
 Opt your page root into `setPaintStyle({.themeBackground=true})`. Transparent UI
-over a scene should not opt in. Use `useTheme=false` for deliberately colored
+over a scene should not opt in. Use `colorTreatment=ColorTreatment::PreserveArtwork` for deliberately colored
 artwork; do not hard-code label colors just to obtain readable default controls.
 Local `setTheme` overrides are useful for a themed panel, but system high contrast
 takes priority. Color scheme and contrast are independent settings.

@@ -3,6 +3,42 @@
 #include <ui/containers/Popup.hpp>
 
 namespace playground::ui {
+void UIRoot::publishTheme(ResolvedTheme value) {
+  if (_services.theme == value)
+    return;
+  _services.theme = std::move(value);
+  if (_content)
+    _content->refreshTheme();
+}
+
+void UIRoot::setThemeDefinition(ThemeDefinition value) {
+  auto resolved =
+      resolveTheme(value, _themeScheme, _themeContrast, _systemAppearance);
+  _themeDefinition = std::move(value);
+  publishTheme(std::move(resolved));
+}
+
+void UIRoot::setAppearance(ColorSchemePreference scheme,
+                           ContrastPreference contrast,
+                           SystemAppearance system) {
+  auto resolved = resolveTheme(_themeDefinition, scheme, contrast, system);
+  _themeScheme = scheme;
+  _themeContrast = contrast;
+  _systemAppearance = std::move(system);
+  publishTheme(std::move(resolved));
+}
+
+void UIRoot::setTheme(ThemePalette colors) {
+  auto resolved = _services.theme;
+  resolved.colors = colors;
+  resolved.forcedColors = false;
+  resolved.metrics = _themeDefinition.metrics;
+  if (colors.highContrast) {
+    resolved.metrics.borderWidth = std::max(2.f, resolved.metrics.borderWidth);
+    resolved.metrics.focusWidth = std::max(2.f, resolved.metrics.focusWidth);
+  }
+  publishTheme(std::move(resolved));
+}
 
 std::optional<math::Transform2D> UIRoot::inputInverse(Node &node) {
   auto inverse = node.localTransform().inverse();
@@ -324,8 +360,8 @@ void UIRoot::render(PaintContext &context) const {
   for (auto id : _overlays)
     if (auto *node = dynamic_cast<Portal *>(resolve(id));
         node && node->popupProps().open) {
-      if (node->popupProps().backdrop)
-        context.fill({{}, _viewport}, *node->popupProps().backdrop);
+      if (auto backdrop = node->resolvedBackdrop())
+        context.fill({{}, _viewport}, *backdrop);
       node->render(context, true);
     }
   if (_table->revision == revision) {

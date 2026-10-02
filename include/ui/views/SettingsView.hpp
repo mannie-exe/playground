@@ -26,7 +26,8 @@ public:
 };
 
 // Reusable retained UI, with no filesystem or AppHost dependency. Draft edits
-// have no renderer side effects. Uses inherited ThemePalette and caller fonts.
+// have no renderer side effects. Uses inherited theme roles and a fallback
+// font.
 class SettingsView : public SettingsPanel {
   AssetRegistry &_assets;
   FontHandle _font;
@@ -49,7 +50,8 @@ class SettingsView : public SettingsPanel {
   Tabs *_tabs{};
   Meter *_cpuMeter{}, *_gpuMeter{};
   std::vector<std::function<void()>> _refresh;
-  std::unique_ptr<Text> text(std::string value);
+  std::unique_ptr<Text> text(std::string value,
+                             TextRole role = TextRole::Label);
   void build();
   void edited();
 

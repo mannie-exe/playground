@@ -70,7 +70,7 @@ public:
 };
 
 struct TooltipTiming {
-  double showDelay{.5}, hideDelay{.1};
+  std::optional<double> showDelay, hideDelay;
 };
 
 class TooltipTrigger : public VStack {

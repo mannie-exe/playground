@@ -416,7 +416,7 @@ template <typename PlacementAt> class GridEngine {
       const auto &p = placementInParent(cell.child);
       auto &child = *children()[cell.child];
       layout::SizeConstraints constraints;
-      if (child.boxProps().width.kind() == layout::SizeKind::Percent)
+      if (child.effectiveBoxProps().width.kind() == layout::SizeKind::Percent)
         constraints.width.maximum = offered.width.maximum;
       const auto measured = child.measure(context, constraints);
       contribution(

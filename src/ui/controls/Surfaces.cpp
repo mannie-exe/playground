@@ -85,9 +85,11 @@ TooltipTrigger::TooltipTrigger(std::unique_ptr<Node> owner,
                                std::unique_ptr<Node> help,
                                std::string description, TooltipTiming timing)
     : VStack{{}}, _timing{timing} {
-  if (!owner || !std::isfinite(timing.showDelay) ||
-      !std::isfinite(timing.hideDelay) || timing.showDelay < 0 ||
-      timing.hideDelay < 0)
+  if (!owner ||
+      (timing.showDelay &&
+       (!std::isfinite(*timing.showDelay) || *timing.showDelay < 0)) ||
+      (timing.hideDelay &&
+       (!std::isfinite(*timing.hideDelay) || *timing.hideDelay < 0)))
     throw std::invalid_argument("Invalid tooltip owner/timing");
   _owner = owner.get();
   auto tooltip = std::make_unique<Tooltip>(std::move(help), description);
@@ -111,7 +113,9 @@ void TooltipTrigger::schedule() {
   const bool open = _hovered || _focused;
   auto self = handle<TooltipTrigger>();
   _timer = services()->scheduler->schedule(
-      open ? _timing.showDelay : _timing.hideDelay, [self, open] {
+      open ? _timing.showDelay.value_or(themeMetrics().tooltipShowDelay)
+           : _timing.hideDelay.value_or(themeMetrics().tooltipHideDelay),
+      [self, open] {
         if (auto *node = self.get())
           node->_tooltip->setOpen(open);
       });

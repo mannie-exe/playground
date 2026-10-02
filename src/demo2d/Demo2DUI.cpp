@@ -42,7 +42,7 @@ class ControlsShowcase final : public ui::ZStack {
         _assets, ui::TextProps{.value = std::move(value),
                                .font = _font,
                                .wrap = ui::TextWrap::AvailableInlineSize,
-                               .useTheme = true});
+                               .textRole = ui::TextRole::Label});
   }
 
   void report(std::string value) {
@@ -53,16 +53,17 @@ class ControlsShowcase final : public ui::ZStack {
   }
 
   auto button(std::string name) {
-    auto value = std::make_unique<ui::Button>(
-        label(name), ui::ButtonProps{},
-        layout::BoxProps{.padding = math::Insets::all(10)});
+    auto value = std::make_unique<ui::Button>(label(name), ui::ButtonProps{});
+    value->setControlLayout(ui::ControlLayout::Choice);
     value->setSemanticProps({.name = std::move(name)});
     return value;
   }
 
   auto icon(const SVGDocumentHandle &source) {
     auto node = std::make_unique<ui::Vector>(
-        _assets, ui::VectorProps{.source = source, .useTheme = true},
+        _assets,
+        ui::VectorProps{.source = source,
+                        .colorTreatment = ui::ColorTreatment::Adaptive},
         layout::BoxProps{.width = layout::SizeRule::fixed(24),
                          .height = layout::SizeRule::fixed(24)});
     node->setSemanticProps({.exposure = ui::SemanticExposure::HiddenSubtree});

@@ -57,7 +57,7 @@ inline std::unique_ptr<ui::Text> makeLabel(const ViewResources &resources,
                     .font = std::move(font),
                     .foreground = color,
                     .contentAlignment = layout::Alignment::center(),
-                    .useTheme = false});
+                    .colorTreatment = ui::ColorTreatment::PreserveArtwork});
 }
 
 inline std::unique_ptr<ui::Vector>

@@ -1,5 +1,7 @@
 # UI interfaces and runtime contracts
 
+[Theme contracts and typography](THEMING.md) define shared control presentation.
+
 Control behavior and composition: [CONTROLS.md](CONTROLS.md).
 
 C++ remains the UI authoring language. Reconstructible views receive app-owned
@@ -17,7 +19,7 @@ for signatures. Renderer contracts live in [2D](../render/2D.md),
 ## 1. Responsibility boundaries
 
 Appearance and transient presentation are described in [ACCESSIBILITY.md](ACCESSIBILITY.md).
-The root owns a resolved palette and portal presentation order; nodes retain logical
+The root owns a resolved theme and portal presentation order; nodes retain logical
 ownership, event ancestry and semantic identity. Portal anchors use validated NodeIds.
 UI sessions remain transparent unless an authored node requests a themed background.
 Palette notifications are nonthrowing cache invalidations, not resource acquisition

@@ -3,6 +3,7 @@
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/content/Rectangle.hpp>
+#include <ui/content/Text.hpp>
 #include <ui/controls/ChoiceStepper.hpp>
 #include <ui/controls/Groups.hpp>
 #include <ui/controls/Meter.hpp>
@@ -58,6 +59,43 @@ int main() {
       std::cout << name << '\n';
       failed += test::run(body);
     };
+    check("live theme typography", [&] {
+      ui::UIRoot root;
+      auto column = std::make_unique<ui::VStack>();
+      auto text = std::make_unique<ui::Text>(
+          assets, ui::TextProps{.value = "Theme label",
+                                .font = font,
+                                .textRole = ui::TextRole::Label});
+      auto *label = text.get();
+      column->append(std::move(text));
+      auto input = std::make_unique<ui::NumberField>(
+          ui::TextFieldProps{.font = font, .textRole = ui::TextRole::Label});
+      auto *editor = input.get();
+      column->append(std::move(input));
+      root.setContent(std::move(column));
+      root.flushLayout({600, 400});
+      editor->requestFocus();
+      editor->setValue("-");
+      auto definition = ui::defaultThemeDefinition();
+      definition.typography.textScale = 2;
+      definition.typography.styles[static_cast<unsigned>(ui::TextRole::Label)]
+          .size = 20;
+      root.setThemeDefinition(definition);
+      root.flushLayout({600, 400});
+      test::require(label->effectiveFont()->getSize() == 40 &&
+                        label->props().font == font,
+                    "semantic font resolves once without mutating fallback");
+      test::require(editor->hasFocus() && editor->model().value() == "-" &&
+                        editor->draftDirty(),
+                    "theme reflow preserves focus and numeric draft");
+      definition.typography
+          .families[static_cast<unsigned>(ui::FontFamily::Interface)] = font;
+      root.setThemeDefinition(definition);
+      label->applyPatch({.font = Patch<FontHandle>::reset()});
+      root.flushLayout({600, 400});
+      test::require(label->effectiveFont()->getSize() == 40,
+                    "theme family supports text without explicit fallback");
+    });
     check("numeric publication", [&] {
       ui::NumberField field{{.font = font, .editing = {.maximumBytes = 1}},
                             {.range = {1, 0, 100, 1}}};

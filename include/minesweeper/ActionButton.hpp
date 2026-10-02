@@ -25,6 +25,11 @@ public:
                props.button,
                {.width = playground::layout::SizeRule::fixed(size.width),
                 .height = playground::layout::SizeRule::fixed(size.height)}} {
+    static_cast<playground::ui::Text *>(children().front().get())
+        ->applyPatch(
+            {.colorTreatment =
+                 playground::Patch<playground::ui::ColorTreatment>::set(
+                     playground::ui::ColorTreatment::Adaptive)});
     setContentAlignment(playground::layout::Alignment::stretch());
     auto semantics = semanticProps();
     semantics.name = std::move(label);

@@ -12,9 +12,8 @@ struct ScrollProps {
   ScrollAxes axes{ScrollAxes::Vertical};
   float wheelStep{32};
   ScrollbarPolicy scrollbar{ScrollbarPolicy::Auto};
-  float scrollbarThickness{8};
-  float minimumThumb{16};
-  math::ColorRGBA8 scrollbarColor{160, 160, 160, 220};
+  std::optional<float> scrollbarThickness, minimumThumb;
+  std::optional<math::ColorRGBA8> scrollbarColor;
   ScrollSizing sizing{ScrollSizing::Fill};
   bool operator==(const ScrollProps &) const = default;
 
@@ -23,9 +22,12 @@ struct ScrollProps {
       throw std::invalid_argument("Invalid scroll sizing");
     layout::detail::nonnegative(wheelStep,
                                 "Wheel step must be finite and nonnegative");
-    layout::detail::nonnegative(scrollbarThickness,
-                                "Invalid scrollbar thickness");
-    layout::detail::nonnegative(minimumThumb, "Invalid scrollbar thumb extent");
+    if (scrollbarThickness)
+      layout::detail::nonnegative(*scrollbarThickness,
+                                  "Invalid scrollbar thickness");
+    if (minimumThumb)
+      layout::detail::nonnegative(*minimumThumb,
+                                  "Invalid scrollbar thumb extent");
   }
 };
 
@@ -33,8 +35,8 @@ struct ScrollPatch {
   Patch<ScrollAxes> axes;
   Patch<float> wheelStep;
   Patch<ScrollbarPolicy> scrollbar;
-  Patch<float> scrollbarThickness, minimumThumb;
-  Patch<math::ColorRGBA8> scrollbarColor;
+  Patch<std::optional<float>> scrollbarThickness, minimumThumb;
+  Patch<std::optional<math::ColorRGBA8>> scrollbarColor;
   Patch<ScrollSizing> sizing;
 };
 
@@ -85,6 +87,17 @@ public:
                       layout::BoxProps box = {});
 
   const ScrollProps &props() const noexcept { return _props; }
+
+  ScrollProps effectiveProps() const {
+    auto value = _props;
+    value.scrollbarThickness =
+        value.scrollbarThickness.value_or(themeMetrics().scrollbarThickness);
+    value.minimumThumb =
+        value.minimumThumb.value_or(themeMetrics().scrollbarMinimumThumb);
+    value.scrollbarColor =
+        resolveColor(&ThemePalette::scrollbar, value.scrollbarColor);
+    return value;
+  }
 
   Node *child() const noexcept {
     return children().empty() ? nullptr : children()[0].get();

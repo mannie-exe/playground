@@ -25,9 +25,9 @@ void AnchorLayout::arrangeChildren(ArrangeContext &context, math::Rect bounds) {
       continue;
     const auto &placement = placementInParent(i);
     const bool fixedWidth =
-        child.boxProps().width.kind() == layout::SizeKind::Fixed;
+        child.effectiveBoxProps().width.kind() == layout::SizeKind::Fixed;
     const bool fixedHeight =
-        child.boxProps().height.kind() == layout::SizeKind::Fixed;
+        child.effectiveBoxProps().height.kind() == layout::SizeKind::Fixed;
     if ((fixedWidth && std::holds_alternative<layout::StretchBetween>(
                            placement.horizontal)) ||
         (fixedHeight &&

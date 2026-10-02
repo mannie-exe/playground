@@ -3,9 +3,9 @@
 namespace playground::ui {
 ToastHost::ToastHost(ToastPresenter present, std::size_t limit,
                      layout::BoxProps box)
-    : VStack{{.gap = 8, .childrenAlignment = layout::CrossAlignment::Stretch},
-             box},
+    : VStack{{.childrenAlignment = layout::CrossAlignment::Stretch}, box},
       _present{std::move(present)}, _limit{limit} {
+  setControlLayout(ControlLayout::Group);
   if (!_present || !limit || limit > 64)
     throw std::invalid_argument(
         "ToastHost needs presenter and bounded capacity");

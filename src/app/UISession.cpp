@@ -11,9 +11,8 @@ void UISession::synchronize(AppContext &ctx) {
   _graphics = ctx.graphicsState();
   auto &services = ctx.windowServices();
   _root.setInteractionProps(ctx.viewPolicy().interaction);
-  _root.setTheme(ui::resolveTheme(ctx.viewPolicy().colorScheme,
-                                  ctx.viewPolicy().userContrast,
-                                  systemAppearance()));
+  _root.setAppearance(ctx.viewPolicy().colorScheme,
+                      ctx.viewPolicy().userContrast, systemAppearance());
   if (_windowServices != &services) {
     _root.setWakeCallback(ctx.wakeCallback());
     services.setWakeCallback(ctx.wakeCallback());

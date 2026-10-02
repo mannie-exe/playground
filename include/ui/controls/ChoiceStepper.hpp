@@ -23,7 +23,8 @@ protected:
 public:
   ChoiceStepper(std::unique_ptr<Node> display, std::vector<ChoiceItem>,
                 SelectionProps = {}, ChoiceCenter = ChoiceCenter::Dropdown,
-                bool wrap = false, layout::BoxProps = {}, ControlMetrics = {});
+                bool wrap = false, layout::BoxProps = {},
+                std::optional<ControlMetrics> = {});
   const SelectionProps &selectionProps() const;
   void setSelectionProps(SelectionProps);
   void stepBy(int, ActionSource = ActionSource::Program);

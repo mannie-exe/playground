@@ -149,30 +149,35 @@ int main() {
                         "option hit/background width comes from parent");
         painter.fills.clear();
         root.render(painter);
+        const auto disabledDraws = painter.fills.size();
         test::require(
-            painter.fills.empty(),
-            "resting options have no per-button border or background");
+            contrast == ui::ContrastPreference::High ? disabledDraws > 0
+                                                     : disabledDraws == 0,
+            "only high-contrast disabled options add boundary dashes");
+        for (const auto &fill : painter.fills)
+          test::require(fill.rect.w() < 300,
+                        "disabled boundary uses separated segments");
         rows->performAction(ui::SelectItem{"short"},
                             ui::ActionSource::Keyboard);
         painter.fills.clear();
         root.render(painter);
-        test::require(painter.fills.size() == 2,
+        test::require(painter.fills.size() == 2 + disabledDraws,
                       "selection is a full-row fill and marker, not a border");
         test::require(painter.fills.front().rect.w() == 300,
                       "selected background spans the row");
-        const auto selectedMarker = painter.fills.back().rect;
+        const auto selectedMarker = painter.fills[1].rect;
         rows->highlight("short");
         painter.fills.clear();
         root.render(painter);
         test::require(
-            painter.fills.size() == 2 &&
-                painter.fills.back().rect == selectedMarker &&
-                painter.fills.back().color == rows->theme().focus,
+            painter.fills.size() == 2 + disabledDraws &&
+                painter.fills[1].rect == selectedMarker &&
+                painter.fills[1].color == rows->theme().focus,
             "active selected option has one same-sized focus-colored marker");
         rows->highlight("long");
         painter.fills.clear();
         root.render(painter);
-        test::require(painter.fills.size() == 4 &&
+        test::require(painter.fills.size() == 4 + disabledDraws &&
                           painter.fills[1].rect == painter.fills[3].rect,
                       "different selected and active rows each have one "
                       "consistently sized marker");
@@ -180,8 +185,8 @@ int main() {
         painter.fills.clear();
         root.render(painter);
         test::require(
-            painter.fills.size() == 2 &&
-                painter.fills.back().color == rows->theme().accent,
+            painter.fills.size() == 2 + disabledDraws &&
+                painter.fills[1].color == rows->theme().accent,
             "clearing active preview preserves committed selection styling");
       }
   });

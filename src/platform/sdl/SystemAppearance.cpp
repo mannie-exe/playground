@@ -42,7 +42,9 @@ ui::SystemAppearance systemAppearance() {
       colors.border = color(COLOR_WINDOWTEXT);
       colors.accent = colors.focus = color(COLOR_HIGHLIGHT);
       colors.onAccent = color(COLOR_HIGHLIGHTTEXT);
-      colors.selection = color(COLOR_HIGHLIGHT);
+      colors.selection = colors.surface;
+      colors.scrollbar = colors.border;
+      colors.error = colors.warning = colors.success = colors.text;
       colors.hover = colors.pressed = colors.surface;
       value.contrastPalette = colors;
     }

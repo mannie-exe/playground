@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -8,7 +10,33 @@
 
 namespace playground::ui {
 
+FontHandle Text::resolvedFont() const {
+  const auto &typography = resolvedTheme().typography;
+  if (!_themeFont || !_fontTypography || *_fontTypography != typography) {
+    _themeFont =
+        resolveThemeFont(typography, _props.textRole, _props.font, &_assets);
+    _fontTypography = typography;
+  }
+  return _themeFont;
+}
+
+void Text::onThemeChanged() noexcept {
+  _prepared = false;
+  if (!_fontTypography || *_fontTypography != resolvedTheme().typography) {
+    _themeFont.reset();
+    _layouts = {};
+    _arrangedText.reset();
+    _pixelText.reset();
+  }
+}
+
 void Text::validate(const TextProps &props) {
+  if ((props.textRole && (*props.textRole < TextRole::Display ||
+                          *props.textRole >= TextRole::Count)) ||
+      props.ink < TextInk::Primary || props.ink > TextInk::OnAccent ||
+      props.colorTreatment < ColorTreatment::Adaptive ||
+      props.colorTreatment > ColorTreatment::PreserveArtwork)
+    throw std::invalid_argument("Invalid text appearance role");
   (void)graphemeBoundaries(props.value);
   (void)graphemeBoundaries(props.flow.ellipsis);
   if (props.flow.maximumLines && !*props.flow.maximumLines)
@@ -24,7 +52,7 @@ void Text::validate(const TextProps &props) {
   if (props.flow.writingMode != WritingMode::HorizontalTb &&
       props.method == TextMethod::LCD)
     throw std::invalid_argument("LCD subpixel rendering is horizontal-only");
-  if (!props.font)
+  if (!props.font && !props.textRole)
     throw std::invalid_argument("Text requires a font handle");
   if ((props.method != TextMethod::Blended &&
        props.method != TextMethod::Solid &&
@@ -50,7 +78,7 @@ void Text::validate(const TextProps &props) {
 Text::Measurement Text::atSize(float size,
                                const layout::SizeConstraints &offered,
                                layout::LayoutDirection direction, float scale) {
-  auto fontProps = _props.font->props();
+  auto fontProps = resolvedFont()->props();
   fontProps.style.size = size * scale;
   fontProps.style.outline =
       sdl::checkedPixel(static_cast<double>(fontProps.style.outline) * scale);
@@ -111,7 +139,7 @@ Text::Measurement Text::atSize(float size,
 Text::Measurement Text::measured(const layout::SizeConstraints &offered,
                                  layout::LayoutDirection direction,
                                  UIWorkStats *stats, float scale) {
-  float size = _props.font->getSize();
+  float size = resolvedFont()->getSize();
   if (_props.fontFit == FontFit::None)
     return atSize(size, offered, direction, scale);
   size = std::min(size, _props.maxFontSize);
@@ -216,10 +244,10 @@ SurfaceHandle Text::rasterize(const Measurement &m) const {
         [&](FontHandle font, const std::string &value) {
           return rasterize(Measurement{std::move(font), {}, 0, m.scale, value});
         },
-        _props.method == TextMethod::Shaded ? std::optional{_props.background}
+        _props.method == TextMethod::Shaded ? std::optional{background()}
                                             : std::nullopt);
   }
-  const auto fg = sdl::toSDL(foreground()), bg = sdl::toSDL(_props.background);
+  const auto fg = sdl::toSDL(foreground()), bg = sdl::toSDL(background());
   auto *font = m.font->get();
   auto *text = m.value.data();
   const auto length = m.value.size();
@@ -347,7 +375,7 @@ void Text::prepareContent(PrepareContext &context) {
   auto key = AssetRegistry::fontKey(m.font->props()) + ":" +
              std::to_string(m.wrap) + ":" +
              std::to_string(static_cast<int>(_props.method));
-  for (auto color : {foreground(), _props.background})
+  for (auto color : {foreground(), background()})
     for (auto value : {color.r, color.g, color.b, color.a})
       key += ":" + std::to_string(value);
   key += ":" + std::to_string(static_cast<int>(_props.flow.writingMode)) + ":" +
@@ -367,7 +395,8 @@ void Text::prepareContent(PrepareContext &context) {
     if (!_raster || !_atlasRaster || key != _rasterKey ||
         _rasterDomain != textPreparer->resourceDomain() ||
         _rasterImageDomain != imageDomain) {
-      if (_rasterDomain != textPreparer->resourceDomain() || _rasterImageDomain != imageDomain)
+      if (_rasterDomain != textPreparer->resourceDomain() ||
+          _rasterImageDomain != imageDomain)
         _raster.reset();
       auto raster = rendering::prepareTextImage(
           sdl::FontTextSource{m.font, m.value, m.wrap, foreground()},
@@ -418,13 +447,14 @@ void Text::setProps(TextProps value) {
     return;
   const bool geometry =
       value.value != _props.value || value.font != _props.font ||
-      value.wrap != _props.wrap ||
+      value.wrap != _props.wrap || value.textRole != _props.textRole ||
       value.paragraphAlignment != _props.paragraphAlignment ||
       value.fontFit != _props.fontFit ||
       value.minFontSize != _props.minFontSize ||
       value.maxFontSize != _props.maxFontSize ||
       value.fitStep != _props.fitStep || value.flow != _props.flow;
   _props = std::move(value);
+  _themeFont.reset();
   _prepared = false;
   if (geometry) {
     _layouts = {};
@@ -453,7 +483,7 @@ void Text::setFont(FontHandle font) {
 void Text::applyPatch(const TextPatch &p) {
   const TextProps d;
   setProps({p.value.appliedTo(_props.value, d.value),
-            p.font.appliedTo(_props.font),
+            p.font.appliedTo(_props.font, d.font),
             p.foreground.appliedTo(_props.foreground, d.foreground),
             p.background.appliedTo(_props.background, d.background),
             p.method.appliedTo(_props.method, d.method),
@@ -467,7 +497,9 @@ void Text::applyPatch(const TextPatch &p) {
             p.maxFontSize.appliedTo(_props.maxFontSize, d.maxFontSize),
             p.fitStep.appliedTo(_props.fitStep, d.fitStep),
             p.flow.appliedTo(_props.flow, d.flow),
-            p.useTheme.appliedTo(_props.useTheme, d.useTheme)});
+            p.colorTreatment.appliedTo(_props.colorTreatment, d.colorTreatment),
+            p.textRole.appliedTo(_props.textRole, d.textRole),
+            p.ink.appliedTo(_props.ink, d.ink)});
 }
 
 } // namespace playground::ui

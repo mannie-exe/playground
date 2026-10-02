@@ -11,12 +11,9 @@ ToggleButton::ToggleButton(std::unique_ptr<Node> content, ToggleProps props,
                            ButtonProps button, layout::BoxProps box,
                            SemanticRole role)
     : Button{std::move(content), button, box}, _role{role} {
-  auto insets = boxProps();
-  if (insets.padding == math::Insets{})
-    insets.padding = math::Insets::all(10);
-  if (role == SemanticRole::Checkbox || role == SemanticRole::Switch)
-    insets.padding.left += role == SemanticRole::Switch ? 48.f : 30.f;
-  setBoxProps(insets);
+  setControlLayout(role == SemanticRole::Switch     ? ControlLayout::Switch
+                   : role == SemanticRole::Checkbox ? ControlLayout::Checkbox
+                                                    : ControlLayout::Choice);
   setContentAlignment({layout::Align::Start, layout::Align::Center});
   setProps(std::move(props));
 }
@@ -74,37 +71,55 @@ ActionResult ToggleButton::performAction(const UIAction &action,
 
 void ToggleButton::paint(PaintContext &context) const {
   const auto &t = theme();
-  const auto ink = isEnabled() ? t.accent : t.mutedText;
+  const auto ink = isEffectivelyEnabled() ? t.accent : t.mutedText;
   if (_role == SemanticRole::Button) {
     Button::paint(context);
     if (_props.checked != CheckState::Off)
       control_paint::outline(
-          context, math::inset({{}, bounds().size}, math::Insets::all(3)), ink,
-          3);
+          context,
+          math::inset({{}, bounds().size},
+                      math::Insets::all(themeMetrics().emphasisWidth)),
+          ink, themeMetrics().emphasisWidth);
     return;
   }
-  if (isEnabled() && (isHovered() || isPressed()))
+  if (!isEffectivelyEnabled())
+    control_paint::disabledOutline(context, {{}, bounds().size}, t,
+                                   themeMetrics());
+  if (isEffectivelyEnabled() && (isHovered() || isPressed()))
     context.fill({{}, bounds().size}, isPressed() ? t.pressed : t.hover);
-  const float indicatorY = std::max(0.f, (bounds().h() - 22) / 2);
+  const auto &m = themeMetrics();
+  const float indicatorY = std::max(0.f, (bounds().h() - m.switchHeight) / 2);
   if (_role == SemanticRole::Switch) {
     const bool on = _props.checked == CheckState::On;
-    control_paint::circle(context, math::rect(10, indicatorY, 22, 22),
+    const float h = m.switchHeight, x = m.padding, travel = m.switchWidth - h;
+    const float inset = std::min(m.emphasisWidth, h / 2);
+    control_paint::circle(context, math::rect(x, indicatorY, h, h),
                           on ? ink : t.border);
-    context.fill(math::rect(21, indicatorY, 16, 22), on ? ink : t.border);
-    control_paint::circle(context, math::rect(26, indicatorY, 22, 22),
+    context.fill(math::rect(x + h / 2, indicatorY, travel, h),
+                 on ? ink : t.border);
+    control_paint::circle(context, math::rect(x + travel, indicatorY, h, h),
                           on ? ink : t.border);
     control_paint::circle(context,
-                          math::rect(on ? 29.f : 13.f, indicatorY + 3, 16, 16),
+                          math::rect(x + inset + (on ? travel : 0),
+                                     indicatorY + inset, h - 2 * inset,
+                                     h - 2 * inset),
                           t.elevated);
   } else {
-    const float y = indicatorY + 1;
-    control_paint::outline(context, math::rect(10, y, 20, 20), ink, 2);
+    const float side = m.indicatorSize, x = m.padding;
+    const float y = std::max(0.f, (bounds().h() - side) / 2);
+    control_paint::outline(context, math::rect(x, y, side, side), ink,
+                           m.indicatorStroke);
     if (_props.checked == CheckState::Mixed)
-      context.fill(math::rect(14, y + 8, 12, 4), ink);
+      context.fill(
+          math::rect(x + side * .2f, y + side * .4f, side * .6f, side * .2f),
+          ink);
     if (_props.checked == CheckState::On) {
       math::Path2D path;
-      path.moveTo({14, y + 10}).lineTo({18, y + 14}).lineTo({27, y + 5});
-      context.drawPath(path, {.fill = {}, .stroke = ink, .strokeWidth = 3});
+      path.moveTo({x + side * .2f, y + side * .5f})
+          .lineTo({x + side * .4f, y + side * .7f})
+          .lineTo({x + side * .85f, y + side * .25f});
+      context.drawPath(
+          path, {.fill = {}, .stroke = ink, .strokeWidth = m.emphasisWidth});
     }
   }
 }
@@ -135,28 +150,42 @@ protected:
   void paint(PaintContext &context) const override {
     const auto &p = buttonProps();
     const auto &t = theme();
-    // Options share their parent's surface, not each button's resting chrome.
-    if (isEnabled() && (isPressed() || isHovered() || active || selected))
+    if (!isEffectivelyEnabled())
+      control_paint::disabledOutline(context, {{}, bounds().size}, t,
+                                     themeMetrics());
+    if (isEffectivelyEnabled() &&
+        (isPressed() || isHovered() || active || selected))
       context.fill({{}, bounds().size},
-                   p.useTheme ? (isPressed()             ? t.pressed
-                                 : isHovered() || active ? t.hover
-                                                         : t.selection)
-                              : (isPressed() ? p.pressed : p.hover));
-    const auto ink =
-        p.useTheme ? (isEnabled() ? t.accent : t.mutedText) : p.focus;
-    const auto marker =
-        active && isEnabled() ? (p.useTheme ? t.focus : p.focus) : ink;
+                   isPressed() ? resolveColor(&ThemePalette::pressed, p.pressed)
+                   : isHovered() || active
+                       ? resolveColor(&ThemePalette::hover, p.hover)
+                       : t.selection);
+    const auto ink = isEffectivelyEnabled() ? t.accent : t.mutedText;
+    const auto marker = active && isEnabled()
+                            ? resolveColor(&ThemePalette::focus, p.focus)
+                            : ink;
     if (role == SemanticRole::Radio) {
-      const float y = std::max(0.f, (bounds().h() - 20) / 2);
-      control_paint::circle(context, math::rect(10, y, 20, 20), marker);
-      control_paint::circle(context, math::rect(12, y + 2, 16, 16), t.elevated);
+      const float side = themeMetrics().indicatorSize,
+                  x = themeMetrics().padding;
+      const float y = std::max(0.f, (bounds().h() - side) / 2);
+      const float stroke = std::min(themeMetrics().indicatorStroke, side / 2);
+      control_paint::circle(context, math::rect(x, y, side, side), marker);
+      control_paint::circle(context,
+                            math::rect(x + stroke, y + stroke,
+                                       side - 2 * stroke, side - 2 * stroke),
+                            t.elevated);
       if (selected)
-        control_paint::circle(context, math::rect(15, y + 5, 10, 10), ink);
-    } else if (selected || active)
-      context.fill(math::rect(2, 2,
-                              std::min(3.f, std::max(0.f, bounds().w() - 2)),
-                              std::max(0.f, bounds().h() - 4)),
+        control_paint::circle(
+            context, math::rect(x + side / 4, y + side / 4, side / 2, side / 2),
+            ink);
+    } else if (selected || active) {
+      const float inset = themeMetrics().indicatorStroke;
+      context.fill(math::rect(inset, inset,
+                              std::min(themeMetrics().emphasisWidth,
+                                       std::max(0.f, bounds().w() - inset)),
+                              std::max(0.f, bounds().h() - 2 * inset)),
                    marker);
+    }
   }
 };
 
@@ -175,11 +204,9 @@ ListBox::ListBox(std::vector<ChoiceItem> items, SelectionProps props,
                  : role == SemanticRole::Menu     ? SemanticRole::MenuItem
                                                   : SemanticRole::Option;
     node->setSemanticProps({.name = item.label});
-    auto box = node->boxProps();
-    box.padding = math::Insets::all(10);
-    if (role == SemanticRole::RadioGroup)
-      box.padding.left = 40;
-    node->setBoxProps(box);
+    node->setControlLayout(role == SemanticRole::RadioGroup
+                               ? ControlLayout::Checkbox
+                               : ControlLayout::Choice);
     node->setContentAlignment({layout::Align::Start, layout::Align::Center});
     _connections.push_back(
         node->onInvoke([this, key = item.key](ActionSource source) {

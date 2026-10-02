@@ -68,7 +68,10 @@ class Node {
   VisualProps _visualProps;
   InputProps _inputProps;
   SemanticProps _semanticProps;
-  std::optional<ThemePalette> _theme;
+  ThemeOverrides _theme;
+  mutable std::optional<ResolvedTheme> _resolvedTheme;
+  ControlLayout _controlLayout{ControlLayout::None};
+  ControlStyle _controlStyle;
 
   std::uint64_t _revision{1};
   std::uint64_t _arrangeRevision{1};
@@ -168,29 +171,46 @@ protected:
 public:
   virtual bool isPortal() const noexcept { return false; }
 
-  const ThemePalette &theme() const noexcept {
-    if (services() && services()->theme.highContrast)
-      return services()->theme;
-    if (_theme)
-      return *_theme;
-    if (_parent)
-      return _parent->theme();
-    return services() ? services()->theme : defaultTheme();
+  const ResolvedTheme &resolvedTheme() const noexcept;
+
+  const ThemePalette &theme() const noexcept { return resolvedTheme().colors; }
+
+  const ThemeMetrics &themeMetrics() const noexcept {
+    return resolvedTheme().metrics;
   }
 
-  void setTheme(std::optional<ThemePalette> value) noexcept {
-    if (_theme == value)
-      return;
-    _theme = std::move(value);
-    refreshTheme();
+  const ThemeOverrides &themeOverrides() const noexcept { return _theme; }
+
+  void setThemeOverrides(ThemeOverrides);
+
+  void setTheme(std::optional<ThemePalette> value) {
+    auto next = _theme;
+    next.colors = std::move(value);
+    setThemeOverrides(std::move(next));
   }
 
-  void refreshTheme() noexcept {
-    onThemeChanged();
-    invalidatePaint();
-    for (auto &child : _children)
-      child->refreshTheme();
+  void refreshTheme() noexcept;
+
+  math::ColorRGBA8
+  resolveColor(math::ColorRGBA8 ThemePalette::*role,
+               std::optional<math::ColorRGBA8> authored = {}) const noexcept {
+    return !theme().highContrast && authored ? *authored : theme().*role;
   }
+
+  float resolvedFocusWidth(std::optional<float> authored = {}) const noexcept {
+    return std::max(themeMetrics().focusWidth, authored.value_or(0));
+  }
+
+  void setControlLayout(ControlLayout);
+  void setControlStyle(ControlStyle);
+
+  const ControlStyle &controlStyle() const noexcept { return _controlStyle; }
+
+  ControlStyle resolvedControlStyle() const noexcept {
+    return resolveControlStyle(_controlLayout, themeMetrics(), _controlStyle);
+  }
+
+  layout::BoxProps effectiveBoxProps() const noexcept;
 
   virtual ~Node() { detach(); }
 
@@ -222,6 +242,13 @@ public:
   const InputProps &inputProps() const noexcept { return _inputProps; }
 
   const SemanticProps &semanticProps() const noexcept { return _semanticProps; }
+
+  bool isEffectivelyEnabled() const noexcept {
+    for (const Node *node = this; node; node = node->parent())
+      if (!node->isInteractionEnabled())
+        return false;
+    return true;
+  }
 
   virtual bool isInteractionEnabled() const noexcept {
     return _semanticProps.enabled;

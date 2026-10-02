@@ -1,3 +1,7 @@
+#include <cmath>
+#include <stdexcept>
+#include <utility>
+
 #include <platform/sdl/SDLGeometry.hpp>
 #include <platform/sdl/SurfacePaintImage.hpp>
 #include <ui/content/Vector.hpp>
@@ -5,6 +9,9 @@
 namespace playground::ui {
 
 void Vector::validate(const VectorProps &props) {
+  if (props.colorTreatment < ColorTreatment::Adaptive ||
+      props.colorTreatment > ColorTreatment::PreserveArtwork)
+    throw std::invalid_argument("Invalid vector color treatment");
   if ((std::holds_alternative<std::string>(props.source) &&
        std::get<std::string>(props.source).empty()) ||
       (std::holds_alternative<SVGDocumentHandle>(props.source) &&
@@ -78,11 +85,8 @@ void Vector::paint(PaintContext &context) const {
         "Vector must be prepared after layout and property changes");
   if (_raster && _resolved.destination.hasArea()) {
     auto paint = _props.content.paint;
-    if (_props.useTheme) {
-      bool enabled = true;
-      for (const Node *node = this; node; node = node->parent())
-        enabled = enabled && node->isInteractionEnabled();
-      paint.tint = enabled ? theme().text : theme().mutedText;
+    if (_props.colorTreatment == ColorTreatment::Adaptive) {
+      paint.tint = isEffectivelyEnabled() ? theme().text : theme().mutedText;
     }
     context.drawImage(_raster, _resolved.source, _resolved.destination, paint);
   }
@@ -135,7 +139,8 @@ void Vector::applyPatch(const VectorPatch &patch) {
        patch.rasterScale.appliedTo(_props.rasterScale, defaults.rasterScale),
        patch.maximumRasterPixels.appliedTo(_props.maximumRasterPixels,
                                            defaults.maximumRasterPixels),
-       patch.useTheme.appliedTo(_props.useTheme, defaults.useTheme)});
+       patch.colorTreatment.appliedTo(_props.colorTreatment,
+                                      defaults.colorTreatment)});
 }
 
 } // namespace playground::ui

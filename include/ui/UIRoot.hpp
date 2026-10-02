@@ -46,6 +46,11 @@ public:
 
 class UIRoot {
   Scheduler _scheduler;
+  ThemeDefinition _themeDefinition{defaultThemeDefinition()};
+  ColorSchemePreference _themeScheme{ColorSchemePreference::Light};
+  ContrastPreference _themeContrast{ContrastPreference::Normal};
+  SystemAppearance _systemAppearance;
+  void publishTheme(ResolvedTheme);
   UIServices _services;
   std::shared_ptr<detail::NodeTable> _table{
       std::make_shared<detail::NodeTable>()};
@@ -161,13 +166,19 @@ public:
 
   UIServices &services() noexcept { return _services; }
 
-  void setTheme(ThemePalette value) {
-    if (_services.theme == value)
-      return;
-    _services.theme = std::move(value);
-    if (_content)
-      _content->refreshTheme();
+  void setThemeDefinition(ThemeDefinition value);
+
+  const ThemeDefinition &themeDefinition() const noexcept {
+    return _themeDefinition;
   }
+
+  const ResolvedTheme &resolvedTheme() const noexcept {
+    return _services.theme;
+  }
+
+  void setAppearance(ColorSchemePreference, ContrastPreference,
+                     SystemAppearance);
+  void setTheme(ThemePalette value);
 
   CompletionSink completionSink() const {
     return CompletionSink{_completions.sink()};
