@@ -19,6 +19,7 @@ struct SceneViewProps {
   float exposure{1};
   bool toneMap{};
   bool adaptiveResolution{true};
+  bool operator==(const SceneViewProps &) const = default;
 };
 
 struct SceneViewPatch {
@@ -36,6 +37,7 @@ struct SceneViewPatch {
 
 class SceneView final : public Node {
   SceneViewProps _props;
+  std::shared_ptr<const void> _resourceOwner{std::make_shared<const int>(0)};
 
   rendering::PaintImageHandle _image;
   std::uint64_t _renderedRevision{};

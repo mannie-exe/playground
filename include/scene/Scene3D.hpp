@@ -47,6 +47,7 @@ struct CameraProps {
   float nearPlane{0.1f}, farPlane{1000};
   std::optional<float> orthographicHeight;
 
+  bool operator==(const CameraProps &) const = default;
   CameraView view(float aspect) const;
 };
 

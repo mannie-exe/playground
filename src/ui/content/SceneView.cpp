@@ -76,6 +76,7 @@ void SceneView::prepareContent(PrepareContext &context) {
   scene::SceneRenderProps view{viewport->camera,  pixels,
                                _props.clearColor, _props.lighting,
                                _props.exposure,   _props.toneMap};
+  view.resourceOwner = _resourceOwner;
   view.workloadId = _props.adaptiveResolution ? _workload : 0;
   view.qualityRevision = context.graphics ? context.graphics->revision : 0;
   if (_image && _renderedRevision == _props.scene->revision() &&
@@ -110,12 +111,20 @@ void SceneView::paint(PaintContext &context) const {
 }
 
 void SceneView::setProps(SceneViewProps props) {
+  if (props == _props)
+    return;
   validate(props);
+  const bool layoutChanged = props.preferredSize != _props.preferredSize;
+  if (props.scene != _props.scene)
+    _resourceOwner = std::make_shared<const int>(0);
   _props = std::move(props);
   _image.reset();
   _viewport.reset();
   _prepared = false;
-  invalidateLayout();
+  if (layoutChanged)
+    invalidateLayout();
+  else
+    invalidatePaint();
 }
 
 void SceneView::applyPatch(const SceneViewPatch &patch) {

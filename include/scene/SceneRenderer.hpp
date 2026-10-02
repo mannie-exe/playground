@@ -42,7 +42,9 @@ class Mesh final {
 
 public:
   explicit Mesh(MeshData data);
+
   Mesh(const Mesh &other) : Mesh{other._data} {}
+
   Mesh &operator=(const Mesh &) = delete;
   Mesh &operator=(Mesh &&) = delete;
 
@@ -104,6 +106,7 @@ struct SceneRenderProps {
     math::Vec3f irradiance{3, 3, 3};
     rendering::TextureHandle diffuseEnvironment, specularEnvironment, brdf;
     float environmentIntensity{1};
+    bool operator==(const Lighting &) const = default;
   } lighting;
 
   // Apply exposure to scene RGB on both backends; leave alpha unchanged.
@@ -111,6 +114,7 @@ struct SceneRenderProps {
   // Optional GPU-only compression, after exposure and before UI composition.
   bool toneMap{};
   std::uint64_t workloadId{}, qualityRevision{};
+  std::shared_ptr<const void> resourceOwner;
 };
 
 void generateNormals(MeshData &mesh);

@@ -5,10 +5,12 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <utility>
 #include <vector>
 
 #include "GPUPainter.hpp"
+#include <rendering/SceneWork.hpp>
 #include <scene/SceneRenderer.hpp>
 
 namespace playground::sdl::gpu_detail {
@@ -44,6 +46,22 @@ class GPUSceneRenderer final : public scene::SceneRenderer {
     }
   };
 
+  using MeshKey = std::weak_ptr<const scene::Mesh>;
+
+  struct ResourcePlan {
+    std::set<TextureKey> textures;
+    std::set<MeshKey, std::owner_less<MeshKey>> meshes;
+  };
+
+  std::map<std::weak_ptr<const void>, ResourcePlan,
+           std::owner_less<std::weak_ptr<const void>>>
+      _plans;
+  ResourcePlan _currentPlan;
+  rendering::SceneWork _work;
+  bool pinned(const TextureKey &) const;
+  bool pinned(const MeshKey &) const;
+  void plan(const scene::SceneRenderProps &, std::span<const scene::MeshDraw>);
+  void trim();
   PaintDevice &_device;
   Shader _vertex, _fragment;
   std::array<Pipeline, 9> _pipelines;
@@ -72,12 +90,12 @@ public:
   explicit GPUSceneRenderer(PaintDevice &device);
 
   void trimUnused() {
-    _meshes.clear();
-    _residentBytes = 0;
-    _textures.clear();
-    _textureBytes = 0;
+    pruneResources();
+    trim();
     _uploads.trim();
   }
+
+  rendering::SceneWork takeWork() noexcept { return std::exchange(_work, {}); }
 
   rendering::ResourceDomainId resourceDomain() const noexcept override {
     return _device.device->resourceDomain();

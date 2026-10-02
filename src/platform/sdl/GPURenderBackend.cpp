@@ -278,7 +278,10 @@ void GPURenderBackend::setProfilingEnabled(bool enabled) {
 }
 
 std::optional<rendering::PaintWork> GPURenderBackend::takePaintWork() {
-  return _impl->paint.takeStats();
+  auto result = _impl->paint.takeStats();
+  if (_impl->scenes)
+    result.scene = _impl->scenes->takeWork();
+  return result;
 }
 
 bool GPURenderBackend::supportsGPUTiming() const noexcept {

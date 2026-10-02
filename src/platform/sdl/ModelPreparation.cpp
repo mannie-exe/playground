@@ -39,6 +39,17 @@ scene::ModelHandle prepareModel(const assets::AssetCatalog &catalog,
                                  definition.props.maxResourceBytes);
           }};
   auto model = scene::importGLTF(document, services, definition.props);
+  // Prepare color upload variants once on the model worker, not each frame.
+  for (const auto &node : model->nodes())
+    for (const auto &primitive : node.primitives) {
+      check();
+      const auto &material = primitive.material;
+      const auto &color =
+          material.pbr ? material.pbr->baseColorTexture : material.colorTexture;
+      if (color.texture)
+        color.texture->upload(material.alpha ==
+                              scene::MaterialProps::Alpha::Opaque);
+    }
   check();
   return model;
 }

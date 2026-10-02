@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <limits>
 
@@ -127,27 +128,18 @@ GPUSceneRenderer::texture(const rendering::TextureHandle &source,
   const TextureKey key{
       source, ignoreAlpha && source->role() == rendering::TextureRole::Color};
   if (auto it = _textures.find(key); it != _textures.end()) {
+    ++_work.textureHits;
     it->second.lastUse = ++_clock;
     return it->second.texture;
   }
+  ++_work.textureMisses;
   auto result = std::make_shared<GPUTextureData>(_device.device, *source,
                                                  key.ignoreAlpha);
-  const auto bytes = result->bytes(),
-             budget = _device.device->limits().maxMaterialResidentBytes;
-  if (bytes <= budget) {
-    while (_textureBytes > budget - bytes) {
-      auto oldest = std::min_element(
-          _textures.begin(), _textures.end(), [](const auto &a, const auto &b) {
-            return a.second.lastUse < b.second.lastUse;
-          });
-      if (oldest == _textures.end())
-        break;
-      _textureBytes -= oldest->second.bytes;
-      _textures.erase(oldest);
-    }
-    _textures.emplace(key, TextureEntry{result, bytes, ++_clock});
-    _textureBytes += bytes;
-  }
+  const auto bytes = result->bytes();
+  _textures.emplace(key, TextureEntry{result, bytes, ++_clock});
+  _textureBytes += bytes;
+  ++_work.uploads;
+  _work.uploadBytes += bytes;
   return result;
 }
 
@@ -189,6 +181,8 @@ GPUSceneRenderer::textureSampler(const rendering::SamplerProps &props) {
 }
 
 void GPUSceneRenderer::pruneResources() {
+  std::erase_if(_plans, [](const auto &p) { return p.first.expired(); });
+  _currentPlan = {};
   std::erase_if(_textures, [&](const auto &e) {
     if (!e.first.source.expired())
       return false;
@@ -213,9 +207,11 @@ void GPUSceneRenderer::pruneResources() {
 std::shared_ptr<const GPUSceneRenderer::Mesh>
 GPUSceneRenderer::mesh(scene::MeshHandle source) {
   if (auto it = _meshes.find(source); it != _meshes.end()) {
+    ++_work.meshHits;
     it->second.lastUse = ++_clock;
     return it->second.mesh;
   }
+  ++_work.meshMisses;
   if (source->data().vertices.size() >
           std::numeric_limits<Uint32>::max() / sizeof(scene::Vertex3D) ||
       source->data().indices.size() >
@@ -258,22 +254,125 @@ GPUSceneRenderer::mesh(scene::MeshHandle source) {
   commands.submit();
   auto published = std::make_shared<Mesh>(std::move(result));
   const auto bytes = vertices + indices;
-  const auto budget = _device.device->limits().maxMeshResidentBytes;
-  if (bytes <= budget) {
-    while (_residentBytes > budget - bytes) {
-      auto oldest = std::min_element(
-          _meshes.begin(), _meshes.end(), [](const auto &a, const auto &b) {
-            return a.second.lastUse < b.second.lastUse;
-          });
-      if (oldest == _meshes.end())
-        break;
-      _residentBytes -= oldest->second.bytes;
-      _meshes.erase(oldest);
-    }
-    _meshes.emplace(source, MeshEntry{published, bytes, ++_clock});
-    _residentBytes += bytes;
-  }
+  _meshes.emplace(source, MeshEntry{published, bytes, ++_clock});
+  _residentBytes += bytes;
+  ++_work.uploads;
+  _work.uploadBytes += bytes;
   return published;
+}
+
+bool GPUSceneRenderer::pinned(const TextureKey &key) const {
+  if (_currentPlan.textures.contains(key))
+    return true;
+  for (const auto &[owner, plan] : _plans)
+    if (!owner.expired() && plan.textures.contains(key))
+      return true;
+  return false;
+}
+
+bool GPUSceneRenderer::pinned(const MeshKey &key) const {
+  if (_currentPlan.meshes.contains(key))
+    return true;
+  for (const auto &[owner, plan] : _plans)
+    if (!owner.expired() && plan.meshes.contains(key))
+      return true;
+  return false;
+}
+
+void GPUSceneRenderer::trim() {
+  const auto evict = [&](auto &entries, std::size_t &bytes,
+                         std::size_t target) {
+    std::size_t idle{};
+    for (const auto &[key, entry] : entries)
+      if (!pinned(key))
+        idle += entry.bytes;
+    while (idle > target) {
+      auto oldest = entries.end();
+      for (auto it = entries.begin(); it != entries.end(); ++it)
+        if (!pinned(it->first) && (oldest == entries.end() ||
+                                   it->second.lastUse < oldest->second.lastUse))
+          oldest = it;
+      if (oldest == entries.end())
+        break;
+      idle -= oldest->second.bytes;
+      bytes -= oldest->second.bytes;
+      entries.erase(oldest);
+      ++_work.evictions;
+    }
+  };
+  evict(_textures, _textureBytes,
+        _device.device->limits().maxMaterialResidentBytes);
+  evict(_meshes, _residentBytes, _device.device->limits().maxMeshResidentBytes);
+}
+
+void GPUSceneRenderer::plan(const scene::SceneRenderProps &view,
+                            std::span<const scene::MeshDraw> draws) {
+  ResourcePlan next;
+  const auto texture = [&](const rendering::TextureHandle &t,
+                           bool opaque = false) {
+    if (t)
+      next.textures.insert(
+          {t, opaque && t->role() == rendering::TextureRole::Color});
+  };
+  for (const auto &d : draws) {
+    next.meshes.insert(d.mesh);
+    const auto &m = d.material;
+    const bool opaque = m.alpha == scene::MaterialProps::Alpha::Opaque;
+    texture(m.colorTexture.texture, opaque);
+    if (m.pbr) {
+      texture(m.pbr->baseColorTexture.texture, opaque);
+      texture(m.pbr->normalTexture.texture);
+      texture(m.pbr->metallicRoughnessTexture.texture);
+      texture(m.pbr->occlusionTexture.texture);
+      texture(m.pbr->emissiveTexture.texture);
+    }
+  }
+  texture(view.lighting.diffuseEnvironment);
+  texture(view.lighting.specularEnvironment);
+  texture(view.lighting.brdf);
+  texture(_whiteTexture);
+  texture(_normalTexture);
+  texture(_blackTexture);
+  _currentPlan = std::move(next);
+  if (view.resourceOwner)
+    _plans[view.resourceOwner] = _currentPlan;
+  trim();
+  std::size_t missing{}, required{};
+  const auto add = [&](std::size_t bytes, bool absent) {
+    if (bytes > std::numeric_limits<std::size_t>::max() - required)
+      throw std::overflow_error("Scene resource plan overflow");
+    required += bytes;
+    if (absent)
+      missing += bytes;
+  };
+  for (const auto &key : _currentPlan.textures) {
+    const auto source = key.source.lock();
+    const auto size = source->levels().front().size;
+    const auto &limits = _device.device->limits();
+    if (unsigned(size.x) > limits.maxTextureDimension ||
+        unsigned(size.y) > limits.maxTextureDimension ||
+        source->bytes() > limits.maxMaterialTextureBytes)
+      throw std::length_error("Scene material exceeds allocation policy");
+    add(source->bytes(), !_textures.contains(key));
+  }
+  for (const auto &key : _currentPlan.meshes) {
+    const auto source = key.lock();
+    add(source->data().vertices.size() * sizeof(scene::Vertex3D) +
+            source->data().indices.size() * sizeof(std::uint32_t),
+        !_meshes.contains(key));
+  }
+  _work.workingSetBytes = required;
+  try {
+    // GPU allocation is owner-thread-only. Probe the whole missing set before
+    // uploads; individual creation still reserves its own charge below.
+    if (missing)
+      (void)_device.device->resources()->reserve(
+          rendering::MemoryClass::GPU, rendering::ResourceKind::Texture,
+          missing, "Scene working set");
+  } catch (...) {
+    ++_work.refusedPlans;
+    throw;
+  }
 }
 
 rendering::PaintImageHandle
@@ -285,12 +384,14 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
   _device.device->limits().validateTarget(view.pixelSize, 8 + 4,
                                           "GPU scene color and depth");
   pruneResources();
+  const auto preparationStarted = std::chrono::steady_clock::now();
   // Admit required attachments before mesh/material preparation can submit.
   auto attachments = _device.targets.sceneTargets(
       view.pixelSize, view.toneMap || view.exposure != 1);
   auto target = std::move(attachments.color);
   auto depth = std::move(attachments.depth);
   auto output = std::move(attachments.output);
+  plan(view, draws);
 
   struct Prepared {
     std::shared_ptr<const Mesh> mesh;
@@ -414,6 +515,10 @@ GPUSceneRenderer::render(const scene::SceneRenderProps &view,
       }
     }
   }
+  _work.preparationMilliseconds +=
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - preparationStarted)
+          .count();
   Commands commands{_device.device,
                     "scene3d",
                     {.targetPixels = view.pixelSize,

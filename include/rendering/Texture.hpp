@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <vector>
 
@@ -106,14 +107,25 @@ class Texture final {
   AlphaMode _alpha{AlphaMode::Straight};
   std::vector<PackedTextureLevel> _levels;
   std::size_t _bytes{};
+  bool _opaque{true};
+  mutable std::mutex _uploadMutex;
+  mutable std::shared_ptr<const Texture> _opaqueUpload, _associatedUpload;
 
 public:
   Texture(TextureRole role, std::vector<TextureLevel> levels);
   Texture(TextureRole role, std::vector<PackedTextureLevel> levels,
           AlphaMode alpha = AlphaMode::Straight);
-  Texture(const Texture &) = default;
+
+  Texture(const Texture &other)
+      : _role{other._role}, _alpha{other._alpha}, _levels{other._levels},
+        _bytes{other._bytes}, _opaque{other._opaque} {}
+
   Texture &operator=(const Texture &) = delete;
   Texture &operator=(Texture &&) = delete;
+
+  bool opaque() const noexcept { return _opaque; }
+
+  const Texture &upload(bool ignoreAlpha) const;
 
   TextureRole role() const noexcept { return _role; }
 

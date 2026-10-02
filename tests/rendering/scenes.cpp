@@ -253,9 +253,23 @@ int main() {
     root.prepare({.scenes = &counted});
     root.prepare({.scenes = &counted});
     test::require(counted.calls == 1, "unchanged scene output is reused");
+    auto &sceneView = dynamic_cast<ui::SceneView &>(*root.content());
+    const auto measured = root.stats().measured;
+    sceneView.setProps(sceneView.props());
+    root.flushLayout({32, 32});
+    root.prepare({.scenes = &counted});
+    test::require(counted.calls == 1 && root.stats().measured == measured,
+                  "identical scene props preserve layout and rendered output");
+    auto cameraProps = sceneView.props();
+    cameraProps.camera.eye.x += .1f;
+    sceneView.setProps(cameraProps);
+    root.flushLayout({32, 32});
+    root.prepare({.scenes = &counted});
+    test::require(counted.calls == 2 && root.stats().measured == measured,
+                  "camera changes repaint without remeasuring layout");
     scene->applyPatch(hitObject, {.visible = true});
     root.prepare({.scenes = &counted});
-    test::require(counted.calls == 2,
+    test::require(counted.calls == 3,
                   "model revision invalidates scene output");
   });
 }
