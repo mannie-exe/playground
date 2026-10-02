@@ -108,9 +108,11 @@ GPU completion is collected before a final report; incomplete samples remain
 explicit. Infinite runs repeat the path until stopped and publish periodic
 summaries. Completion retains the scene and results; R restarts the run.
 
-Settings, focus loss, window resizing or graphics-policy changes invalidate a
-measured run rather than silently compare different workloads. Returning to the
-menu cancels preparation and releases activation-owned state. Interactive camera
+Settings and focus loss invalidate a run even during loading; scene readiness
+preserves that outcome until explicit restart. Window resizing or graphics-policy
+changes during traversal also invalidate the run rather than compare different
+workloads silently. Returning to the menu cancels preparation and releases
+activation-owned state. Interactive camera
 input is disabled during automated traversal. Escape still opens settings; the
 normal return-to-menu shortcut remains available.
 

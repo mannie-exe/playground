@@ -313,7 +313,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
   auto view = std::make_unique<ui::SceneView>(props);
   _view = view.get();
   if (_kind == DemoKind::Benchmark)
-    restartBenchmark(ctx);
+    prepareBenchmark(ctx);
   root->append(std::move(view), {.grow = 1});
   _ui.root().setContent(std::move(root));
 }
@@ -505,6 +505,10 @@ const scene::CameraPath &Demo3DApp::benchmarkPath() {
 
 void Demo3DApp::restartBenchmark(AppContext &ctx) {
   _benchmark = runtime::BenchmarkRun{_benchmark.duration()};
+  prepareBenchmark(ctx);
+}
+
+void Demo3DApp::prepareBenchmark(AppContext &ctx) {
   _benchmarkSubmitted = ctx.renderRuntimeState().submitted;
   _seenCPU = ctx.renderRuntimeState().cpuSamples;
   _seenGPU.clear();

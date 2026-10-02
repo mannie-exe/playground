@@ -6,9 +6,12 @@
 #include <stdexcept>
 
 #include <rendering/Texture.hpp>
+#include <support/PreparationBudget.hpp>
 
 namespace playground::rendering {
 namespace {
+constexpr std::size_t conversionBlockTexels = 4096;
+
 std::size_t count(math::Vec2i s) { return RGBA8Image::byteSize(s) / 4; }
 
 bool valid(TextureRole r) {
@@ -33,7 +36,7 @@ PackedTexels transformTexels(const PackedTexels &source, TextureFormat format,
   if (source.size() > std::numeric_limits<std::size_t>::max() / stride)
     throw std::length_error("Texture conversion size overflow");
   std::vector<std::byte> result(source.size() * stride);
-  std::array<math::Vec4f, 4096> block;
+  std::array<math::Vec4f, conversionBlockTexels> block;
   for (std::size_t i = 0; i < source.size(); i += block.size()) {
     const auto count = std::min(block.size(), source.size() - i);
     for (std::size_t j = 0; j < count; ++j)
@@ -335,7 +338,23 @@ const Texture &Texture::upload(bool ignoreAlpha) const {
   std::lock_guard lock{_uploadMutex};
   auto &cached = ignoreAlpha ? _opaqueUpload : _associatedUpload;
   if (!cached) {
-    const auto &first = _levels.front().texels;
+    const auto &base = _levels.front();
+    auto temporaryBytes = base.texels.data().size();
+    if (ignoreAlpha && _levels.size() > 1) {
+      const auto next =
+          count({std::max(1, base.size.x / 2), std::max(1, base.size.y / 2)});
+      if (next > std::numeric_limits<std::size_t>::max() / sizeof(math::Vec4f))
+        throw std::length_error("Texture conversion scratch overflow");
+      temporaryBytes = std::max(temporaryBytes, next * sizeof(math::Vec4f));
+    }
+    constexpr auto blockBytes = conversionBlockTexels * sizeof(math::Vec4f);
+    if (temporaryBytes > std::numeric_limits<std::size_t>::max() - blockBytes)
+      throw std::length_error("Texture conversion scratch overflow");
+    // Admission precedes the unadopted byte buffer and float mip scratch.
+    // Published PackedTexels retain their separate persistent ledger charges.
+    const auto scratch =
+        resourcePreparationBudget().acquire(temporaryBytes + blockBytes);
+    const auto &first = base.texels;
     cached = ignoreAlpha ? makeOpaqueTexture(*this)
                          : packTexture(*this, first.format(), first.encoding(),
                                        true, _bytes);

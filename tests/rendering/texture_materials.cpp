@@ -99,6 +99,30 @@ int main() {
           p.validate();
         },
         "anisotropy bounded");
+    {
+      auto fresh =
+          rendering::makeTexture({{2, 1}, {{1, 0, 0, .5f}, {0, 1, 0, .5f}}},
+                                 rendering::TextureRole::Color);
+      auto ledger = rendering::defaultResourceLedger();
+      const auto saved = ledger->snapshot().budgets;
+      auto restricted = saved;
+      restricted.preparationBytes = 1;
+      ledger->setBudgets(restricted);
+      test::rejects<rendering::ResourcePressure>(
+          [&] { fresh->upload(true); }, "uncached opaque conversion reserves "
+                                        "temporary memory before allocating");
+      test::rejects<rendering::ResourcePressure>(
+          [&] { fresh->upload(false); },
+          "uncached associated conversion reserves temporary memory");
+      ledger->setBudgets(saved);
+      const auto *opaqueUpload = &fresh->upload(true);
+      const auto *associatedUpload = &fresh->upload(false);
+      ledger->setBudgets(restricted);
+      test::require(&fresh->upload(true) == opaqueUpload &&
+                        &fresh->upload(false) == associatedUpload,
+                    "cached variants require no new preparation reservation");
+      ledger->setBudgets(saved);
+    }
     scene::MaterialProps material;
     material.pbr.emplace();
     material.pbr->normalTexture.texture = color;
