@@ -51,6 +51,14 @@ struct CameraProps {
   CameraView view(float aspect) const;
 };
 
+// Conservative union of transformed mesh corners. Rejects empty draws,
+// missing meshes and nonfinite geometry; does not traverse or mutate a scene.
+Bounds3 drawBounds(std::span<const MeshDraw>);
+// Preview placement using the longest extent, not an exact frustum fit.
+// Preserves lens settings; a positive minimum extent handles point geometry.
+CameraProps boundsCamera(Bounds3, CameraProps lens = {},
+                         float minimumExtent = .001f);
+
 struct SceneCacheStats {
   std::uint64_t worldTransforms{}, visibilityUpdates{}, snapshots{};
 };

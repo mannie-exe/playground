@@ -1,13 +1,14 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <fstream>
 #include <future>
 #include <iostream>
 #include <thread>
 
 #include <app/AppHost.hpp>
-#include <support/TemporaryDirectory.hpp>
+#include <platform/sdl/ProcessEnvironment.hpp>
+#include <support/CommandLine.hpp>
+#include <support/HostPreferences.hpp>
 #include <support/Test.hpp>
 #include <ui/collections/ScrollView.hpp>
 
@@ -112,29 +113,34 @@ void summary(std::string_view name, std::vector<double> values) {
 } // namespace
 
 int main(int argc, char **argv) {
+  constexpr std::string_view usage =
+      "Usage: playground_ui_host_workload software|gpu [--burst] [--motion]\n";
+  if (test::cli::helpRequested(argc, argv))
+    return test::cli::help(usage);
   if (argc < 2 || argc > 4 ||
       (std::string_view{argv[1]} != "software" &&
-       std::string_view{argv[1]} != "gpu")) {
-    std::cerr << "Usage: playground_ui_host_workload software|gpu [--burst] "
-                 "[--motion]\n";
-    return 2;
-  }
+       std::string_view{argv[1]} != "gpu"))
+    return test::cli::usageError(usage);
   bool burst{}, motion{};
   for (int i = 2; i < argc; ++i) {
-    if (std::string_view{argv[i]} == "--burst")
+    if (std::string_view{argv[i]} == "--burst" && !burst)
       burst = true;
-    else if (std::string_view{argv[i]} == "--motion")
+    else if (std::string_view{argv[i]} == "--motion" && !motion)
       motion = true;
     else
-      return 2;
+      return test::cli::usageError(usage, "Unknown or repeated option");
   }
   return test::run([&] {
-    test::TemporaryDirectory user{"playground-ui-workload"};
+    sdl::configureProcessEnvironment();
     const bool gpu = std::string_view{argv[1]} == "gpu";
-    std::ofstream{user.path() / "settings.toml"}
-        << "schema_version = 5\n[graphics]\nrenderer = '"
-        << (gpu ? "sdl-gpu" : "software") << "'\n"
-        << (motion ? "frame_cap = 30\nmotion = 'full'\n" : "");
+    rendering::GraphicsSettings graphics;
+    graphics.renderer.backend = gpu ? rendering::RendererChoice::SDLGPU
+                                    : rendering::RendererChoice::Software;
+    if (motion) {
+      graphics.pacing.maximumFramesPerSecond = 30;
+      graphics.motion = runtime::MotionPreference::Full;
+    }
+    test::HostPreferences user{"playground-ui-workload", graphics};
     Samples samples;
     samples.motion = motion;
     auto motionCompleted = samples.motionCompleted.get_future();

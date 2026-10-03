@@ -6,22 +6,17 @@
 // dependency includes
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_main.h>
-#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_version.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 // project-local includes
 #include <app/AppHost.hpp>
+#include <platform/sdl/ProcessEnvironment.hpp>
 
 int main(int, char **) {
   try {
-#ifdef __APPLE__
-    // MoltenVK reads the native process environment. Set the default before
-    // SDL starts threads or probes Vulkan; keep explicit developer overrides.
-    if (SDL_setenv_unsafe("MVK_CONFIG_LOG_LEVEL", "2", 0) != 0)
-      throw std::runtime_error("Cannot set the default MoltenVK log level");
-#endif
+    playground::sdl::configureProcessEnvironment();
     SDL_Log("%s", std::format("SDL loaded: SDL v{}, SDL_image v{}, SDL_ttf v{}",
                               SDL_GetVersion(), IMG_Version(), TTF_Version())
                       .c_str());

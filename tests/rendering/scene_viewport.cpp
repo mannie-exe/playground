@@ -62,6 +62,41 @@ int main() {
         {mesh, blend, math::translation({0, 0, 1})},
         {mesh, {}, math::translation({0, 0, 2})},
         {mesh, blend, math::translation({0, 0, 4})}};
+    const auto box = scene::drawBounds(draws);
+    test::require(box.minimum == math::Vec3f{-1, -1, 1} &&
+                      box.maximum == math::Vec3f{1, 1, 4},
+                  "draw bounds unite transformed mesh corners");
+    const auto framed = scene::boundsCamera(box, {.nearPlane = .02f});
+    test::require(framed.target == math::Vec3f{0, 0, 2.5f} &&
+                      close(framed.eye.y, 1.05f) && close(framed.eye.z, -.8f) &&
+                      framed.nearPlane == .02f,
+                  "preview framing centers geometry and retains lens");
+    scene::boundsCamera({{1, 2, 3}, {1, 2, 3}}).view(1);
+    auto transformed = draws;
+    transformed.resize(1);
+    transformed[0].model =
+        math::Transform3D{.position = {3, 2, 1}, .scale = {-2, 3, 1}}.matrix();
+    const auto scaled = scene::drawBounds(transformed);
+    test::require(scaled.minimum == math::Vec3f{1, -1, 1} &&
+                      scaled.maximum == math::Vec3f{5, 5, 1},
+                  "reflected nonuniform scales retain conservative bounds");
+    transformed[0].model.at(0, 3) = std::numeric_limits<float>::quiet_NaN();
+    test::rejects([&] { scene::drawBounds(transformed); },
+                  "nonfinite transformed bounds rejected");
+    transformed[0].mesh.reset();
+    test::rejects([&] { scene::drawBounds(transformed); },
+                  "missing mesh rejected");
+    test::rejects([] { scene::drawBounds({}); }, "empty bounds rejected");
+    test::rejects([&] { scene::boundsCamera(box, {}, 0); },
+                  "zero framing extent rejected");
+    test::rejects([] { scene::boundsCamera({{1, 0, 0}, {-1, 0, 0}}); },
+                  "inverted framing bounds rejected");
+    test::rejects(
+        [] {
+          const auto maximum = std::numeric_limits<float>::max();
+          scene::boundsCamera({{-maximum, 0, 0}, {maximum, 0, 0}});
+        },
+        "overflowing framing rejected");
     const auto ordered = scene::orderedDraws(camera.view(1), draws);
     test::require(
         ordered[0].material.alpha == scene::MaterialProps::Alpha::Opaque &&

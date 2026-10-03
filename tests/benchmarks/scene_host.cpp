@@ -1,11 +1,12 @@
 #include <atomic>
 #include <chrono>
-#include <fstream>
 #include <iostream>
 #include <thread>
 
 #include <app/AppHost.hpp>
-#include <support/TemporaryDirectory.hpp>
+#include <platform/sdl/ProcessEnvironment.hpp>
+#include <support/CommandLine.hpp>
+#include <support/HostPreferences.hpp>
 #include <support/Test.hpp>
 using namespace playground;
 using namespace std::chrono_literals;
@@ -55,15 +56,24 @@ struct Log {
 } // namespace
 
 int main(int argc, char **argv) {
-  if (argc < 2 || argc > 3) {
-    std::cerr << "Usage: playground_scene_host_workload "
-                 "material|bistro|chess|benchmark|infinite|interrupted|camera "
-                 "[seconds]\n";
-    return 2;
-  }
-  SDL_setenv_unsafe("MVK_CONFIG_LOG_LEVEL", "2", 0);
+  constexpr std::string_view usage =
+      "Usage: playground_scene_host_workload "
+      "material|bistro|chess|benchmark|infinite|interrupted|camera [seconds]\n";
+  if (test::cli::helpRequested(argc, argv))
+    return test::cli::help(usage);
+  if (argc < 2 || argc > 3)
+    return test::cli::usageError(usage);
+  const std::string_view scene{argv[1]};
+  if (scene != "material" && scene != "bistro" && scene != "chess" &&
+      scene != "benchmark" && scene != "infinite" && scene != "interrupted" &&
+      scene != "camera")
+    return test::cli::usageError(usage, "Unknown scene workload");
+  const auto duration = argc == 3 ? test::cli::number(argv[2], 0, 3600)
+                                  : std::optional<double>{5};
+  if (!duration)
+    return test::cli::usageError(usage, "Duration must be 0..3600 seconds");
+  const double seconds = *duration;
   return test::run([&] {
-    const std::string_view scene{argv[1]};
     const bool infinite = scene == "infinite";
     const bool interrupted = scene == "interrupted";
     const bool benchmark = scene == "benchmark" || infinite || interrupted;
@@ -74,17 +84,11 @@ int main(int argc, char **argv) {
                     : scene == "bistro"   ? AppId::Bistro
                     : scene == "chess"    ? AppId::Chess
                                           : AppId::Menu;
-    test::require(id != AppId::Menu, "known scene workload");
-    std::size_t parsed{};
-    const double seconds = argc == 3 ? std::stod(argv[2], &parsed) : 5.;
-    test::require(argc != 3 || parsed == std::string_view{argv[2]}.size(),
-                  "duration contains only a number");
-    test::require(std::isfinite(seconds) && seconds >= 0 && seconds <= 3600,
-                  "duration 0..3600 seconds");
-    test::TemporaryDirectory user{"playground-scene-workload"};
-    std::ofstream{user.path() / "settings.toml"}
-        << "schema_version = 5\n[graphics]\nrenderer = 'sdl-gpu'\nvsync = "
-           "false\n";
+    sdl::configureProcessEnvironment();
+    test::HostPreferences user{
+        "playground-scene-workload",
+        {.presentation = {.vsync = false},
+         .renderer = {rendering::RendererChoice::SDLGPU}}};
     Log log{infinite ? "cancelled" : interrupted ? "focus" : ""};
     AppHost host{{.resizable = false},
                  {},
