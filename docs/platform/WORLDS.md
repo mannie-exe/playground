@@ -24,6 +24,7 @@ remains future; its adapter boundary is specified here and in PHYSICS.md.
 | `CellId` | Stable residency partition identity; entities can move between cells |
 | `FrameId` | Checked reference-frame identity within one space |
 | `WorldSnapshot` | Immutable retained state at an epoch, revision and simulation tick |
+| `WorldVersion` | Expected epoch/revision pair; restoration cannot accidentally accept stale commands |
 
 Entities reference immutable definitions and own mutable domain state. Neither
 Scene3D ObjectId nor UI NodeHandle substitutes for EntityId. A SceneProjection
@@ -39,7 +40,7 @@ content is absent; they do not silently pin every referenced cell.
 
 | Operation | Boundary/result |
 |---|---|
-| `World::apply(batch, expectedRevision)` | Validate bounded domain mutations and commit once; conflict/failure preserves prior state |
+| `World::apply(batch, expectedVersion, tick)` | Validate bounded domain mutations and commit once; conflict/failure preserves prior state |
 | `World::resolve(entity)` | Return current checked handle/status; distinguish absent residency from destroyed identity |
 | `World::snapshot()` | Retain an admitted immutable generation; never borrow mutable storage |
 | `World::setActivation(request)` | Validate domain policy and readiness before the next simulation boundary |
