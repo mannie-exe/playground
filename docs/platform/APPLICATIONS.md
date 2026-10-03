@@ -109,8 +109,8 @@ creates local render representations without transferring authority to Scene3D.
 [Streaming](STREAMING.md) and activation preserve durable entities when views/cells
 retire. [Procedural data](PROCEDURAL.md) shares that lifecycle. [Navigation](NAVIGATION.md)
 supplies autonomous movement requests; the app arbitrates player, path-following
-and scripted control explicitly. Physics is a [future adapter](PHYSICS.md), not a
-prerequisite for an owned world or kinematic navigation. Headless apps can use all
+and scripted control explicitly. The [Jolt adapter](PHYSICS.md) realizes physical
+movement; an owned world or explicitly kinematic navigation can still omit it. Headless apps can use all
 model/service boundaries without constructing rendering or UI services.
 
 Procedural character work should separate desired motion, motor/controller output,

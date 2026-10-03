@@ -1,5 +1,11 @@
 # Rendering demos
 
+Physics integration does not prescribe a new user-facing demo or menu entry.
+Verification may reuse these assets/scenes or add focused test scenes/executables
+through the shared harness. User-facing multiplayer demonstrations are **future**
+and require a separate application/UX design; native multi-client integration tests
+are covered by [spatial verification](../platform/SPATIAL_TESTING.md).
+
 ## Launcher and ownership
 
 The launcher groups applications under Demo 2D, Demo 3D, Benchmark and Play. Group titles

@@ -100,6 +100,21 @@ GPU upload/native realization has independent resource/frame admission. Neither 
 voxel count nor a declared chunk limit substitutes for worst-case geometry bytes.
 See [product scheduling](../platform/SPATIAL_PRODUCTS.md).
 
+## Solver storage and concurrency
+
+Jolt integration separates tracked shape/body/event storage, reserved scratch and
+estimated dependency-private capacity. Charge old/new collision overlap, queued
+command/results and retained contact identity until solver/query retirement.
+Per-world limits include bodies, pairs and contacts as well as bytes. Exhausted
+solver buffers can compromise a step; accounting admission does not establish a
+successful physical update. Diagnostics report allocation refusal and step validity
+separately. See [physics](../platform/PHYSICS.md).
+
+The solver's job/barrier domain has an explicit process CPU budget coordinated with
+content workers and I/O. A process-wide dependency allocator is not swapped per
+host to fake isolated ownership. Native initialization and final shutdown are
+coordinated across hosts; outstanding worlds retain required runtime lifetime.
+
 ## Admission and pacing
 
 Activity determines whether rendering is needed. Scheduling determines when a

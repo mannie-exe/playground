@@ -7,9 +7,9 @@ resident cell and kinematic movement without creating unused services.
 
 These contracts include moving frames, transfers, persistence and spatial queries.
 [Streaming](STREAMING.md), [spatial datasets](SPATIAL_DATA.md), [voxel content](VOXELS.md),
-[navigation](NAVIGATION.md) and spatial [networking](NETWORKING.md#spatial-authority-and-interest)
-are implementation requirements. [Physics integration](PHYSICS.md#future-implementation)
-remains future; its adapter boundary is specified here and in PHYSICS.md.
+[navigation](NAVIGATION.md), spatial [networking](NETWORKING.md#spatial-authority-and-interest)
+and bounded [Jolt physics](PHYSICS.md) are implementation requirements. Advanced
+physics features retain their explicitly marked scope in PHYSICS.md.
 
 ## Identity and ownership
 
@@ -360,8 +360,9 @@ The adapter and its output use the injected world/host resource ledger.
 Planetary/astronomical coordinate hierarchies, non-Euclidean or seamlessly rendered
 portals, distributed authority migration, and cross-world atomic transfers are
 future. Ordinary separate spaces, rigid moving frames and prepared local transfers
-do not require them. Physics integration, camera obstruction and root motion retain
-their explicit future status. No universal ECS or serialized executable behavior
+do not require them. Advanced physics, camera obstruction and root motion retain
+their explicit future status; baseline Jolt bodies/queries and character movement
+are implementation requirements. No universal ECS or serialized executable behavior
 is required; app authoring/loading and UI editing remain future capabilities.
 
 See [world verification](WORLD_TESTING.md). Design references:

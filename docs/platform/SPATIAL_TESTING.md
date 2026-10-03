@@ -5,6 +5,9 @@ Acceptance covers [datasets](SPATIAL_DATA.md), [voxel edits](VOXELS.md),
 [simulation](SIMULATION.md) and [presentation](../render/SPATIAL.md).
 Contract, integration, native and performance results identify their actual scope.
 Test names below identify workload responsibilities, not already-available targets.
+No user-facing physics scene is prescribed. Tests may extend existing scenes or
+create focused executables using shared infrastructure/assets. Multiplayer demo
+applications are future work; automated multi-client tests remain required.
 
 ## Contract fixtures
 
@@ -57,8 +60,31 @@ Inject stale selection, late mesh completion, missing collision capability, fail
 RequireProducts activation, cancellation and storage failure. Assert preserved old
 state on failure, new revision agreement where required, selective invalidation,
 no navigation through unknown space and no retained owned bytes after teardown.
-A fake physics consumer proves readiness/activation sequencing, not physical contact
-correctness. A supplied real solver needs its own physical validation suite.
+Run both controlled fake-adapter failures and real Jolt collision/movement passes.
+The fake proves readiness/activation sequencing; Jolt fixtures establish exercised
+contact/query behavior. Neither alone completes this integration workload.
+
+### Physics integration
+
+Headless Jolt fixtures use primitive bodies, a kinematic platform, a capsule motor
+and bounded editable voxel collision. They require no newly approved demo app.
+Verify resting/sliding bodies, explicit friction/restitution, filtered ray/overlap/
+sweep results, slope/step constraints and navigation intent realized as actual
+movement. Trace achieved poses and source/collision revisions, not only screenshots.
+
+Exercise removal of support, insertion through a body under every intersection
+policy, edit conflicts while cooking, replacement between steps, no query during
+exchange, offscreen support retention and unavailable sweep coverage. Compare
+near-origin and shifted-region behavior within declared tolerances. Origin shifts
+must not appear as velocity or teleport; recovery must appear as discontinuity.
+
+Inject admission refusal, capacity exhaustion and authoritative callback overflow.
+Verify RefusedBeforeStep leaves native state unchanged; Compromised faults suppress
+complete-tick publication and cannot blindly retry the same mutated solver state.
+Test explicit rebuild/close recovery, body-slot reuse, removed-contact identity,
+queued cancellation, close while stepping and final shared-runtime shutdown.
+Run single/multiple solver workers and simultaneous content preparation; bounded
+CPU budgets must avoid deadlock and preserve host/network responsiveness.
 
 ### Live scalar visualization
 
@@ -84,6 +110,21 @@ receipts. Transport-free execution establishes domain contracts; it is not nativ
 network/authentication coverage. Similarly, fake collision cooking is not solver
 support. Retain those distinctions in every report.
 
+Run the same synthetic domain/protocol fixtures through queued embedded authority,
+fault transport and separate-process GameNetworkingSockets loopback. Use at least
+two clients to exercise edit contention, per-participant filtering, deduplication,
+reconnect/baseline replacement and sequenced physical-body snapshots. Delay data
+updates independently from poses; replicas must expose missing geometry dependencies
+without mislabeling old collision state as current. Faulted/recovered authority
+regions produce visible tick/discontinuity transitions.
+
+Share process/CLI/clock/storage helpers with existing harnesses, extracting reusable
+pieces where needed. Inject ephemeral loopback endpoints and bounded credentials;
+wait on readiness messages and always terminate/reap owned child processes. Test
+malformed/oversized input, queue pressure, timeout, stale connections and teardown.
+Loopback identity is explicitly a test provider. Do not report production identity,
+NAT traversal or managed-hosting coverage from these workloads.
+
 ## Performance comparisons
 
 Record commit/build, OS/CPU/GPU/backend, dataset/schema/provider/profile digests,
@@ -99,6 +140,8 @@ for identified hardware, not unexplained universal pass criteria.
 | Streaming | Repeated crossings, directory page churn, missing halos, queue age and dependency/pinned working set |
 | Live input | FIFO reference versus Latest policy; bounded backlog, result age, useful publication cadence and coalesced work |
 | Simulation | One versus multiple workers for reproducible kernels; step cost, ordering, boundary arbitration and settled invalidation |
+| Physics | Step/query tails, contact/pair capacity, collision activation cost, motor blockage, worker contention and fault recovery |
+| Native networking | Encode/decode/drain cost, useful bytes, queue age, receipt latency, replica age, resync volume and process teardown |
 | Pressure/recovery | Old/new overlap, slow consumers, canceled jobs, native upload pressure, save failure and retirement time |
 
 Report preparation/publication p50/p95/max, input-to-commit and sample-to-present
@@ -117,8 +160,10 @@ than adding per-experiment shell scripts. Add runnable commands to
 [Contributing](../../CONTRIBUTING.md) when their targets exist; do not document a
 nonexistent command as a working workflow.
 
-Completion requires both integrated workloads, failure/pressure coverage, selective
-invalidation evidence and settled teardown accounting. CPU success does not imply
-native presentation, network transport, physics or cross-platform coverage. Record
+Completion requires editable/live-data workflows, real Jolt body/motor/collision
+integration, queued/fault/native-loopback authority workflows, failure/pressure
+coverage, selective invalidation evidence and settled teardown accounting. Passing
+pure CPU contracts does not imply native presentation, transport, solver or
+cross-platform coverage. Record
 unsupported/skipped checks and the actual tested snapshot. A fake adapter's green
 result cannot establish that an unimplemented capability is finished.

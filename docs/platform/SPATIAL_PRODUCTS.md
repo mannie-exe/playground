@@ -101,7 +101,9 @@ cannot evict retained inputs still required by an in-flight consumer.
 | `Durable` | Retain committed dirty state until persistence acknowledges it; retry is bounded and cannot discard unsaved edits |
 
 ProductService maintains bounded demand and policy queues before submitting to the
-shared Executor. Existing executor capacity and rejection rules remain authoritative;
+shared Executor. Physics stepping is a separate bounded native execution domain
+specified in [PHYSICS.md](PHYSICS.md#execution-allocation-and-build-boundary), not a
+SpatialRecipe job graph. Existing executor capacity and rejection rules remain authoritative;
 priority is not a promise of OS thread preemption. Aging/fair shares prevent
 background starvation within admissible workloads. No scheduling policy can promise
 progress for an impossible pinned working set or a nonterminating native provider.

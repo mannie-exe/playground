@@ -48,7 +48,8 @@ profile switches and view-local visibility must not cause unchanged mesh/texture
 uploads or layout remeasurement.
 
 Physics contact, swept-volume correctness and collision-index performance checks
-belong to the deferred obstruction/physics implementation, not these acceptance
+belong to [physics/spatial verification](../platform/SPATIAL_TESTING.md) and the
+separately deferred camera obstruction work, not these camera acceptance
 criteria. No new native command is implied by this matrix.
 
 ## Native workflows

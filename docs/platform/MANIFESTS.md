@@ -119,6 +119,22 @@ separately; changing only a derived recipe never rewrites authoritative samples.
 Unknown providers preserve content while refusing unsupported interpretation.
 See [datasets](SPATIAL_DATA.md) and [checkpoints](VOXELS.md).
 
+## Physics and network compatibility
+
+Physics profiles pin domain shape/filter/material interpretation separately from
+Jolt's native cooking version/build options. Native collision caches record source
+identity, recipe, units/scale and solver compatibility; incompatible caches recook
+from preserved authoritative data. World saves/wire messages contain Playground
+body/entity definitions, poses and revisions, not Jolt BodyID or opaque solver
+snapshots. Save/load rebuilds solver state with an explicit discontinuity unless a
+separately supported exact restoration contract is selected.
+
+Session negotiation includes protocol/features, dataset schemas, content baselines
+and relevant domain interpretations. Local loopback and native clients use the
+same schema/version checks. Server-authoritative clients need not share a solver
+build merely to interpolate poses; deterministic prediction/rollback compatibility
+is not implied. Native transport build identity is separate from domain wire format.
+
 ## Local authoring, build, install and CPack
 
 ```text

@@ -3,7 +3,8 @@
 Simulation is an optional consumer and producer of [spatial data](SPATIAL_DATA.md).
 The framework owns tick ordering, admitted working storage and publication;
 applications own rules and physical meaning. A voxel field need not simulate.
-This contract does not select a rigid-body solver or a universal cellular automaton.
+Spatial kernels do not define a universal cellular automaton. Rigid-body execution
+uses the separate [Jolt integration](PHYSICS.md), not a mutable voxel kernel.
 
 ## API and state
 
@@ -60,6 +61,16 @@ They do not accumulate mandatory fixed steps merely to animate a field. Music/au
 analysis arrives through bounded control-side snapshots with clock identity; audio
 callbacks never generate meshes, acquire ledger tokens or await simulation work.
 Captured samples allow reproducible playback/testing without requiring a live input.
+
+## Native solver boundary
+
+Immutable spatial kernels stage candidate patches; native physics stepping mutates
+solver state and cannot claim the same rollback semantics. The model owner admits
+one physics step, awaits its owned result without blocking UI/service processing,
+and publishes actual poses only for a Complete tick. Compromised faults require
+explicit region recovery. Dataset edits and collision activation cannot interleave
+with a running native step. Region generation, active geometry versions and world
+publication bind the two systems without merging their storage or schedulers.
 
 ## Verification
 

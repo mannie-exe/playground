@@ -109,6 +109,22 @@ World-bound publication uses the [world dataset binding](WORLDS.md#dataset-bindi
 contract. One transaction covers one dataset; coordinated world checkpoints name
 exact dataset roots rather than claiming a distributed transaction.
 
+## Physical edit policy
+
+World-bound collision edits name a BodyIntersectionPolicy: RejectOverlap,
+AllowSolverResolution or RelocateByApp. Validate against candidate geometry and
+body poses at the actual activation boundary, including changes while cooking ran.
+Removing support can legitimately cause a later fall; inserting geometry through a
+body is not an implicit teleport. Relocation requires explicit authorized movement
+commands; permitted overlap still obeys solver limits.
+
+RequireProducts retains old authoritative bindings until staged native collision
+can activate between steps with external queries excluded. Native update failure
+is distinct from edit preparation failure: a Compromised solver faults the region
+rather than rolling back dataset state or replaying the tick automatically. See
+[physics activation/recovery](PHYSICS.md). Receipts and replicated snapshots identify
+which data and collision revisions committed.
+
 ## Live data and undo
 
 `LiveEditPolicy` is ReadOnly, Captured or Overlay. ReadOnly rejects mutations;
