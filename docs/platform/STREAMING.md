@@ -36,8 +36,12 @@ supply their providers rather than triggering implicit acquisition.
 Control calls validate bounded source/request/manifest inputs synchronously.
 Temporary ledger/executor admission pressure keeps demand Queued with a diagnostic
 and a bounded service retry deadline. Stationary sources recover when capacity
-returns; explicit readiness deadlines still expire. Provider/content failures
-remain Failed until an explicit request or replacement retries them.
+returns; explicit readiness deadlines still expire. Reservations larger than an
+entire ledger/executor cap and a closed executor fail without retries. Correct
+the configuration and issue a new request to retry. Provider/content failures
+also remain Failed until an explicit request or replacement retries them.
+Failed/cancelled requests release demand while retaining their terminal outcome
+until `forget`; independent sources continue with their own readiness requirements.
 `advance` grants count cell operations, copied metadata bytes and published worker
 messages; provider work has separate scratch/output bounds. These are cooperative
 work limits, not thread preemption or allocator-enforced resident-memory limits.

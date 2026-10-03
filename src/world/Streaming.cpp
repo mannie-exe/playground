@@ -679,6 +679,11 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
       auto slot = std::make_shared<Impl::Slot>();
       const auto bytes = add(add(s.props.productBytes, s.props.scratchBytes),
                              sizeof(detail::CellGeneration));
+      const auto worker = s.executor.stats();
+      if (worker.closed)
+        throw std::logic_error("Cell executor is closed");
+      if (bytes > worker.maxReservedBytes)
+        throw std::length_error("Cell preparation exceeds executor byte cap");
       slot->charge = s.ledger->reserve(
           runtime::MemoryClass::CPU, runtime::ResourceKind::Preparation, bytes,
           "Cell preparation", {s.world.value, s.epoch, 1});
@@ -733,8 +738,13 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
     } catch (const runtime::ResourcePressure &error) {
       // Admission pressure can disappear without changing source demand.
       // Provider/content failures remain terminal until explicitly retried.
-      e.status = CellStatus::Queued;
-      e.retryAt = now + retryDelay;
+      if (error.requested > error.limit) {
+        e.status = CellStatus::Failed;
+        ++s.counters.failures;
+      } else {
+        e.status = CellStatus::Queued;
+        e.retryAt = now + retryDelay;
+      }
       e.diagnostic = error.what();
     } catch (const std::exception &error) {
       e.status = CellStatus::Failed;
@@ -742,13 +752,17 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
       ++s.counters.failures;
     }
   }
+  bool failedRequests{};
   for (auto &[id, request] : s.requests) {
     const auto &entry = s.entries.at(request.value.cell);
     if (!request.terminal && entry.status == CellStatus::Failed) {
       request.terminal = CellStatus::Failed;
       request.diagnostic = entry.diagnostic;
+      failedRequests = true;
     }
   }
+  if (failedRequests)
+    s.reconcile();
   return work;
 }
 

@@ -299,6 +299,17 @@ int main() {
                   NavigationState::WaitingForData,
               "frame discontinuity cannot blend or follow stale local history");
     }
+    for (bool closed : {false, true}) {
+      runtime::Executor unavailable{{.maxReservedBytes = 1}};
+      if (closed)
+        unavailable.close();
+      NavigationService blocked{snapshot, unavailable, ledger};
+      const auto id = blocked.request(request);
+      blocked.advance(runtime::ActivityClock::now());
+      require(blocked.poll(id).status == NavigationStatus::Failed &&
+                  !blocked.demand().pending && !blocked.demand().wakeAt,
+              "impossible or closed navigation executor terminates planning");
+    }
     NavigationService service{snapshot, executor, ledger};
     auto first = service.request(request);
     auto superseding = request;

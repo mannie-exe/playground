@@ -30,7 +30,9 @@ int main() {
         executor.submit([&](std::stop_token) noexcept { ++executions; }, 16);
     test::require(second.has_value(), "queued task admitted");
     test::require(executor.stats().outstanding == 2 &&
-                      executor.stats().reservedBytes == 32,
+                      executor.stats().reservedBytes == 32 &&
+                      executor.stats().maxReservedBytes == 32 &&
+                      !executor.stats().closed,
                   "reservations include active and pending jobs");
     test::require(!executor.submit([](std::stop_token) noexcept {}, 1),
                   "count/budget backpressure");
@@ -42,6 +44,8 @@ int main() {
                   "discarded queued work reports retirement");
     test::require(!executor.submit([](std::stop_token) noexcept {}, 0),
                   "closed rejects publication");
+    test::require(executor.stats().closed,
+                  "shutdown is observable separately from capacity pressure");
     test::require(executions == 0, "canceled queued task never runs");
     test::rejects([&] { executor.submit({}, 0); }, "empty task rejected");
     std::atomic<bool> stopped{};

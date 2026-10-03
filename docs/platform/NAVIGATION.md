@@ -73,6 +73,8 @@ their own storage. Updating snapshots preserves unaffected in-flight planning;
 publication validates retained path dependencies or, for a no-path result, the
 unchanged searched topology. Epoch replacement cancels prior work. There is no
 automatic tile acquisition or unbounded retry loop.
+An executor whose byte cap cannot admit a request, or which has closed, produces
+Failed rather than keeping that request Planning indefinitely.
 
 Start/goal projection is explicit and bounded; results report projected endpoints.
 No silent snapping across walls, spaces or disconnected layers. Profiles validate

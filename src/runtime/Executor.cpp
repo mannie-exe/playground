@@ -104,7 +104,10 @@ std::optional<TaskTicket> Executor::submit(Job job, std::size_t bytes) {
 
 ExecutorStats Executor::stats() const {
   std::lock_guard lock{_impl->mutex};
-  return _impl->stats;
+  auto result = _impl->stats;
+  result.maxReservedBytes = _impl->props.maxReservedBytes;
+  result.closed = _impl->closed;
+  return result;
 }
 
 void Executor::close() {
