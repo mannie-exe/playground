@@ -12,6 +12,14 @@ int main() {
   return test::run([] {
     auto ledger = std::make_shared<runtime::ResourceLedger>();
     World world{{81}, ledger};
+    {
+      ActivationScheduler empty{world.snapshot(), ledger, {}, 8};
+      require(empty.advance(world.snapshot(), 0).steps.empty(),
+              "empty world has no scheduled updates");
+      ZoneTracker noZones{world.snapshot(), {}, ledger, 8};
+      require(noZones.updateBounds(world.snapshot()).values.empty(),
+              "empty world and zone index produce no events");
+    }
     const SpaceId a{{81}, 1}, b{{81}, 2};
     const EntityId actor{{81}, 1}, other{{81}, 2};
     auto props = [&](double x) {

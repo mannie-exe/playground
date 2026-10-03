@@ -50,12 +50,28 @@ struct WorldVersion {
   bool operator==(const WorldVersion &) const = default;
 };
 
+struct EntitySample {
+  EntityHandle entity;
+  WorldPose pose;
+  WorldVelocity velocity;
+  std::uint64_t tick{}, discontinuity{};
+};
+
 struct WorldProps {
   std::size_t maxSpaces{256}, maxEntities{65536}, maxCommands{4096};
   // Final logical snapshot size; temporary mutation storage is separately
   // admitted by the resource ledger, together with retained reader snapshots.
   std::size_t maxEntityBytes{1024 * 1024}, maxStateBytes{64 * 1024 * 1024};
   void validate() const;
+};
+
+// Stable checkpoint values, never runtime pointers. Restoring validates the
+// entire candidate and rebinds attachment epochs before replacing live state.
+struct WorldArchive {
+  WorldId id;
+  std::uint64_t revision{}, tick{};
+  std::vector<SpaceDefinition> spaces;
+  std::vector<EntityRecord> entities;
 };
 
 class WorldSnapshot {
@@ -76,6 +92,7 @@ public:
   const SpaceDefinition *space(SpaceId) const;
   const EntityRecord *find(EntityId) const;
   const EntityRecord &resolve(EntityHandle) const;
+  EntitySample sample(EntityHandle) const;
   std::size_t reservedBytes() const noexcept;
 };
 
@@ -133,6 +150,7 @@ public:
                       std::uint64_t tick);
   // Restore an immutable admitted snapshot into a fresh runtime incarnation.
   void restore(const WorldSnapshot &, WorldVersion expected);
+  void restore(const WorldArchive &, WorldVersion expected);
   std::uint64_t setActivation(ActivationRequest, WorldVersion expected,
                               std::uint64_t tick);
 };

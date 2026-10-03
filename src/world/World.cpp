@@ -187,6 +187,12 @@ const EntityRecord &WorldSnapshot::resolve(EntityHandle handle) const {
   return *result;
 }
 
+EntitySample WorldSnapshot::sample(EntityHandle handle) const {
+  const auto &record = resolve(handle);
+  return {handle, record.props.pose, record.props.velocity, tick(),
+          record.discontinuity};
+}
+
 World::World(WorldId id, std::shared_ptr<runtime::ResourceLedger> ledger,
              WorldProps props)
     : _props{props}, _ledger{std::move(ledger)} {
@@ -392,6 +398,55 @@ std::uint64_t World::setActivation(ActivationRequest request,
   props.activation = request.mode;
   const WorldMutation mutation = SetEntity{request.entity.id, std::move(props)};
   return apply({&mutation, 1}, expected, tick);
+}
+
+void World::restore(const WorldArchive &archive, WorldVersion expected) {
+  if (archive.id != _state->id || expected != snapshot().version() ||
+      archive.spaces.size() > _props.maxSpaces ||
+      archive.entities.size() > _props.maxEntities)
+    throw std::invalid_argument("Invalid world archive identity or capacity");
+  auto bytes = add(sizeof(detail::WorldState),
+                   arrayBytes(archive.spaces.size(), sizeof(SpaceDefinition)));
+  bytes = add(bytes, arrayBytes(archive.entities.size(), sizeof(EntityRecord)));
+  for (const auto &entity : archive.entities)
+    bytes = add(bytes, entity.props.data.size());
+  detail::WorldState empty;
+  empty.id = archive.id;
+  empty.epoch = nextEpoch();
+  auto restored = candidate(empty, _ledger, bytes, archive.spaces.size(),
+                            archive.entities.size(), _props);
+  restored->revision = archive.revision;
+  restored->tick = archive.tick;
+  restored->spaces = archive.spaces;
+  restored->entities = archive.entities;
+  std::sort(restored->spaces.begin(), restored->spaces.end(),
+            [](const auto &a, const auto &b) { return a.id < b.id; });
+  std::sort(restored->entities.begin(), restored->entities.end(),
+            [](const auto &a, const auto &b) { return a.id < b.id; });
+  std::optional<SpaceId> previousSpace;
+  for (const auto &space : restored->spaces) {
+    own(archive.id, space.id);
+    space.limits.validate();
+    if (previousSpace == space.id)
+      throw std::invalid_argument("Duplicate archived space");
+    previousSpace = space.id;
+  }
+  std::optional<EntityId> previousEntity;
+  for (auto &entity : restored->entities) {
+    own(archive.id, entity.id);
+    if (previousEntity == entity.id || !entity.revision ||
+        entity.revision > archive.revision || !entity.discontinuity ||
+        (entity.destroyed && !entity.props.data.empty()))
+      throw std::invalid_argument("Invalid archived entity");
+    if (entity.props.attachment)
+      entity.props.attachment->frame.epoch = restored->epoch;
+    validProps(*restored, entity.props, _props);
+    entity.props.pose.orientation =
+        math::normalizedRotation(entity.props.pose.orientation);
+    previousEntity = entity.id;
+  }
+  restored->charge->setState(runtime::AllocationState::Owned);
+  _state = std::move(restored);
 }
 
 } // namespace playground::world

@@ -33,6 +33,24 @@ Mesh providers own corridor generation and agent-clearance validation. Library
 handles stay private. Recast/Detour is a candidate adapter, not a mandated new
 dependency in this documentation pass.
 
+`world/Navigation.hpp` supplies immutable `NavigationSnapshot` generations built
+from revisioned `NavigationTile` values. Graph links carry positive authored costs,
+clearance, headroom, slope/step constraints, traversal kind and permission bits.
+`navigationGrid` builds four-neighbor ground grids; unprovided clearance defaults
+conservatively to half a cell. Larger occupancy-derived clearance is explicit
+provider data. `navigationMesh` connects triangles sharing exact edges and emits
+center/portal corridors with conservative clearance. It does not weld geometry,
+build arbitrary volume navigation, or implement Recast. Ground-mesh endpoints
+project onto the radius-inset triangle within the request's projection tolerance.
+
+The shared planner uses bounded Dijkstra search (A* with a zero admissible
+heuristic), preserving optimal authored costs across weighted, frame and transfer
+links. Equal costs use stable node/link order. Budgets independently limit endpoint
+projection visits, edge visits, expansions, frontier entries and output points.
+Missing authored target nodes are invalid; links to absent tiles explicitly mean
+missing data. An unavailable link is a data-readiness gap, while a blocked route
+is removed or denied by its declared profile/permission constraints.
+
 ## Planning and missing data
 
 Result status is Complete, Partial, NoPath, NeedsData, Unsupported, BudgetExceeded,
@@ -46,6 +64,15 @@ Tile requests use explicit bounded streaming sources/leases; path queries do not
 perform hidden disk/network reads. Planning reserves expansions, frontier bytes,
 jobs and output points. Superseded requests retain resources until retired, and
 world epoch, agent generation and goal revision reject late publication.
+
+`NavigationService` queues bounded requests on the shared executor and publishes
+retained results at `advance`/`ServiceScope` boundaries. Requesting a newer goal
+cancels pending requests for the same agent. `poll` retains terminal results until
+`forget`; closing the scope cancels pending publication while running jobs retain
+their own storage. Updating snapshots preserves unaffected in-flight planning;
+publication validates retained path dependencies or, for a no-path result, the
+unchanged searched topology. Epoch replacement cancels prior work. There is no
+automatic tile acquisition or unbounded retry loop.
 
 Start/goal projection is explicit and bounded; results report projected endpoints.
 No silent snapping across walls, spaces or disconnected layers. Profiles validate
@@ -69,6 +96,22 @@ uses an explicit traversal handler with readiness, deadline, cancellation and
 completion results; graph connectivity never performs the movement itself.
 Cross-space links invoke WorldTransfer, with destination readiness and authority
 checks, rather than interpolating coordinates between spaces.
+
+`PathFollower::advance` reads an `EntitySample` (actual pose/velocity, epoch, tick
+and discontinuity). It reports desired velocity and facing without mutating the
+subject. Profile/motor integration realizes that request. Progress must exceed a
+configured distance within the stall interval; otherwise the follower becomes
+Blocked. An unexpected teleport invalidates progress and requests new data/path.
+Partial corridors end in WaitingForData, never Arrived.
+
+Non-walking links return a traversal request and stop movement. The app performs
+the transfer/boarding/jump and calls `completeTraversal`; arrival still requires
+the reported actual destination pose. Frame-local graph nodes use a matching
+`FrameSnapshot` during snapshot construction. Following samples the same frame
+at the subject's tick; topology-preserving motion remaps the corridor, while frame
+discontinuity/removal stops it. Crossing frame boundaries requires an explicit
+traversal. Framed triangle meshes and framed world-space portal points reject
+instead of silently using stale geometry; providers can use frame-local graphs.
 
 Kinematic followers work without physics over declared navigable data. Local
 avoidance is a separate optional capability returning a bounded preferred velocity;
