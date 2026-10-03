@@ -80,6 +80,8 @@ struct Quaternion {
 };
 
 Quaternion normalizedRotation(Quaternion value);
+Quaternion lookRotation(Vec3f forward, Vec3f up = {0, 1, 0});
+Quaternion slerp(Quaternion from, Quaternion to, double alpha);
 Quaternion axisAngle(Vec3f axis, float radians);
 // Hamilton product: rotation(a * b) applies b first, then a.
 Quaternion operator*(Quaternion a, Quaternion b);

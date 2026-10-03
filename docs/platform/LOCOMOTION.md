@@ -23,6 +23,16 @@ it is not the authority for movement. Controllers hold copied values and validat
 identities, not borrowed mesh/body pointers. The app publishes actual results
 after applying requests and feeds those results into the next evaluation.
 
+`world/Locomotion.hpp` uses `LocomotionState = EntitySample` so player control,
+navigation and camera targets share checked identity, actual pose/velocity, tick
+and discontinuity values. `CharacterFacingController::advance` retains only
+steering/free-look history and returns an owned request. Failed validation leaves
+that history unchanged. `LocomotionProps::responsive()` and `outOfNowhere()` provide
+the Steered recipes; Strafe and Tank use the same controller. Input axes are finite
+values in [-1,1]; combined movement is length-limited without losing analog scale.
+`travelIntent` converts desired autonomous/scripted travel into the selected profile
+instead of bypassing it with a direct pose write.
+
 Positions and rates follow [world coordinates and frames](WORLDS.md): meters,
 seconds, radians and +Y up. Ground movement projects onto the
 configured up plane and uses look yaw, not pitched camera forward; looking near
@@ -106,6 +116,22 @@ The baseline realization is kinematic: it applies bounded movement and facing
 without gravity, contact, slopes or penetration recovery. Following a subject
 does not imply that the subject cannot pass through scene geometry. Movement
 realization belongs to the app/model, never the renderer or camera director.
+
+`realizeMovement` validates subject/tick/discontinuity, step size and rate limits
+before returning actual state and an optional updated frame attachment. It does
+not publish World mutations. `MovementRealization::Physics` and `RootMotion` return
+Unsupported with unchanged state until their adapters exist. A zero-duration
+kinematic step preserves actual pose and velocity.
+
+Movement axes and up direction use the explicitly sampled frame, or space axes
+without a frame. The default frame policy includes sampled point/angular velocity
+in the requested and reported world velocity. The domain resolves inherited frame
+placement before evaluating locomotion; the motor integrates relative travel once
+and updates the attachment, avoiding duplicate parent motion. A domain choosing
+`inheritFrameVelocity = false` retains world placement instead of first applying
+parent motion, and realizes only requested world velocity. Both policies require
+a frame sample matching the subject's epoch, space and tick. Space-specific
+`SpatialLimits` validate movement and placement independently of render origins.
 
 Simulation advances actual subject state on its declared clock. Presentation
 samples `PoseHistory`; desired heading, actual heading and actual velocity are

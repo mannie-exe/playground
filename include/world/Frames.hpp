@@ -31,6 +31,8 @@ struct FrameSample {
   WorldVelocity velocity;
 };
 
+void validate(const FrameSample &, const SpatialLimits & = {});
+
 struct FrameRecord {
   FrameId id;
   ReferenceFrame definition;

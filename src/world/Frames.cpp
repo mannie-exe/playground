@@ -65,6 +65,10 @@ std::size_t estimate(std::size_t count) {
 }
 } // namespace
 
+void validate(const FrameSample &sample, const SpatialLimits &limits) {
+  valid(sample, limits);
+}
+
 WorldPosition worldPosition(FramePosition position, const FrameSample &sample,
                             const SpatialLimits &limits) {
   valid(sample, limits);
