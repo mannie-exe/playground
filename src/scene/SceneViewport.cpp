@@ -7,6 +7,25 @@
 
 namespace playground::scene {
 
+std::optional<world::WorldRay>
+SceneViewport::worldRayAt(math::Point2 local) const {
+  if (!origin)
+    return {};
+  const auto ray = rayAt(local);
+  if (!ray)
+    return {};
+  return world::WorldRay{
+      world::worldPosition(ray->origin, *origin, spatialLimits),
+      {ray->direction.x, ray->direction.y, ray->direction.z}};
+}
+
+std::optional<math::Point2>
+SceneViewport::projectWorld(world::WorldPosition position) const {
+  if (!origin)
+    return {};
+  return project(world::renderPosition(position, *origin, spatialLimits));
+}
+
 std::optional<SceneViewport> resolveViewport(const CameraProps &camera,
                                              const SceneViewportProps &props) {
   if (!math::isFinite(props.logicalBounds) ||

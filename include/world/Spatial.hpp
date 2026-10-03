@@ -52,6 +52,11 @@ struct WorldPose {
   bool operator==(const WorldPose &) const = default;
 };
 
+struct WorldRay {
+  WorldPosition origin;
+  Vec3d direction;
+};
+
 struct WorldVelocity {
   SpaceId space;
   Vec3d linear{}, angular{};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <scene/SceneViewport.hpp>
+#include <scene/WorldScene.hpp>
 #include <support/Patch.hpp>
 #include <ui/Node.hpp>
 
@@ -19,6 +20,10 @@ struct SceneViewProps {
   float exposure{1};
   bool toneMap{};
   bool adaptiveResolution{true};
+  // Exactly one source: scene or an immutable world extraction. World camera is
+  // captured with its origin; camera remains the direct Scene3D source's
+  // camera.
+  std::shared_ptr<const scene::WorldSceneSnapshot> worldScene;
   bool operator==(const SceneViewProps &) const = default;
 };
 
@@ -33,6 +38,7 @@ struct SceneViewPatch {
   Patch<scene::SceneRenderProps::Lighting> lighting;
   Patch<float> exposure;
   Patch<bool> toneMap, adaptiveResolution;
+  Patch<std::shared_ptr<const scene::WorldSceneSnapshot>> worldScene;
 };
 
 class SceneView final : public Node {
