@@ -169,7 +169,7 @@ target_sources(playground_sdl PRIVATE
     src/platform/sdl/TextureDecode.cpp
     src/platform/sdl/KTXTexture.cpp
     src/platform/sdl/AssetResources.cpp
-    src/platform/sdl/ModelPreparation.cpp
+    src/platform/sdl/AssetPreparation.cpp
     src/platform/sdl/GPUText.cpp
     src/platform/sdl/TextColumns.cpp
     src/ui/views/SettingsView.cpp

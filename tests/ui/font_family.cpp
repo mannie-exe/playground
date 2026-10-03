@@ -23,6 +23,30 @@ int main() {
     auto definition = ui::defaultThemeDefinition();
     app::configureThemeFonts(definition.typography, resources);
     definition.validate();
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
+    auto themed = ui::resolveThemeFont(
+        definition.typography, ui::TextRole::Body, {}, nullptr, {}, {}, ledger);
+    auto variant = ui::resolveThemeFont(definition.typography,
+                                        ui::TextRole::Title, themed);
+    test::require(
+        themed->resources() == ledger && variant->resources() == ledger,
+        "uncached theme fonts and fallback variants retain injected ownership");
+    {
+      ui::UIRoot isolated{ui::UIServices{.resources = ledger}};
+      isolated.setThemeDefinition(definition);
+      isolated.setContent(std::make_unique<ui::TextField>(
+          ui::TextFieldProps{.textRole = ui::TextRole::Body},
+          "host-owned text"));
+      const auto global =
+          runtime::defaultResourceLedger()->snapshot().memory[0].bytes;
+      isolated.flushLayout({300, 50});
+      isolated.prepare({});
+      test::require(
+          ledger->snapshot().memory[0].bytes > 0 &&
+              runtime::defaultResourceLedger()->snapshot().memory[0].bytes ==
+                  global,
+          "theme-only editor raster stays in its UI session resource domain");
+    }
     test::require(definition.typography.fallbacks &&
                       !definition.typography.fallbacks->empty(),
                   "host registers an emoji fallback chain");

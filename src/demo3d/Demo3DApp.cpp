@@ -14,7 +14,7 @@
 #include <app/Assets.hpp>
 #include <demo3d/Demo3DApp.hpp>
 #include <demo3d/Views.hpp>
-#include <platform/sdl/ModelPreparation.hpp>
+#include <platform/sdl/AssetPreparation.hpp>
 #include <platform/sdl/TextureDecode.hpp>
 #include <platform/sdl/WindowServices.hpp>
 #include <ui/containers/Stack.hpp>
@@ -146,10 +146,7 @@ Demo3DApp::Demo3DApp(DemoKind kind,
                       {.action = "light", .code = SDL_SCANCODE_L}});
 }
 
-Demo3DApp::~Demo3DApp() {
-  if (_task)
-    _task->cancel();
-}
+Demo3DApp::~Demo3DApp() = default;
 
 AppInfo Demo3DApp::staticInfo(DemoKind kind) {
   const auto id = kind == DemoKind::Benchmark ? AppId::BistroBenchmark
@@ -170,6 +167,8 @@ AppInfo Demo3DApp::staticInfo(DemoKind kind) {
 
 void Demo3DApp::onEnter(AppContext &ctx) {
   applyControls(ctx);
+  if (_kind == DemoKind::Bistro)
+    ctx.setSimulationPaused(true);
   _loadStarted = nowSeconds();
   _benchmarkSubmitted = ctx.renderRuntimeState().submitted;
   _ui.root().setContent(std::make_unique<ui::Text>(
@@ -178,60 +177,18 @@ void Demo3DApp::onEnter(AppContext &ctx) {
           .value = "Preparing textures and environment...",
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 20}}),
           .textRole = ui::TextRole::Body}));
-  auto promise = std::make_shared<std::promise<Resources>>();
-  _pending = promise->get_future();
-  auto catalog = ctx.resources().catalogHandle();
-  _task =
-      ctx.workers()
-          .submit(
-              [catalog, promise, kind = _kind,
-               ledger = _ledger](std::stop_token stop) noexcept {
-                try {
-                  PreparationBudget budget{ledger};
-                  Resources result;
-                  const auto ids = kind == DemoKind::Material
-                                       ? std::vector{propId, flightId, helmetId}
-                                   : (kind == DemoKind::Bistro ||
-                                      kind == DemoKind::Benchmark)
-                                       ? std::vector{bistroId}
-                                       : std::vector{chessId};
-                  for (const auto &id : ids) {
-                    try {
-                      result.models.push_back(
-                          sdl::prepareModel(*catalog, id, stop, ledger));
-                    } catch (const std::exception &error) {
-                      throw std::runtime_error(id.value + ": " + error.what());
-                    }
-                  }
-                  auto bytes =
-                      catalog->read(catalog->definition(environmentId).source,
-                                    16 * 1024 * 1024);
-                  auto hdr = sdl::decodeHDR(bytes, 256 * 1024 * 1024, budget);
-                  result.environment =
-                      scene::prepareEnvironment(*hdr, {}, stop);
-                  if (kind == DemoKind::Material) {
-                    result.environmentReference =
-                        std::make_shared<const rendering::Texture>(
-                            rendering::TextureRole::Color, hdr->levels());
-                    bytes = catalog->read(catalog->definition(smokeId).source,
-                                          16 * 1024 * 1024);
-                    // Unpadded atlas: no whole-sheet mips, which would blend
-                    // adjacent frames.
-                    result.smoke = sdl::decodeTexture(
-                        bytes, "image/png", rendering::TextureRole::Color,
-                        rendering::MipPolicy::None, 256 * 1024 * 1024, budget);
-                  }
-                  if (stop.stop_requested())
-                    throw std::runtime_error("Demo 3D preparation canceled");
-                  promise->set_value(std::move(result));
-                } catch (...) {
-                  promise->set_exception(std::current_exception());
-                }
-              },
-              512 * 1024 * 1024)
-          .ticket;
-  if (!_task)
-    throw std::runtime_error("Demo 3D worker admission refused");
+  _preparationProps.models = _kind == DemoKind::Material
+                                 ? std::vector{propId, flightId, helmetId}
+                                 : std::vector{(_kind == DemoKind::Bistro ||
+                                                _kind == DemoKind::Benchmark)
+                                                   ? bistroId
+                                                   : chessId};
+  _preparationProps.environment = sdl::EnvironmentRequest{environmentId};
+  if (_kind == DemoKind::Material)
+    _preparationProps.textures = {
+        {smokeId, rendering::TextureRole::Color, rendering::MipPolicy::None}};
+  _loadRequested = true;
+  ctx.requestUpdate();
   synchronize(ctx);
 }
 
@@ -375,14 +332,9 @@ scene::WorldCamera Demo3DApp::camera() const {
 }
 
 void Demo3DApp::project(ui::SceneViewProps &props) {
-  if (!_projection || _projectedRevision != _scene->revision()) {
-    std::vector<scene::EntityVisual> visuals;
-    for (const auto &draw : _scene->snapshot())
-      visuals.push_back({_scenery, draw});
-    _projection =
-        std::make_unique<scene::SceneProjection>(std::move(visuals), _ledger);
-    _projectedRevision = _scene->revision();
-  }
+  if (!_projection)
+    _projection = std::make_unique<scene::SceneInstanceProjection>(
+        std::vector<scene::SceneInstanceBinding>{{_scenery, _scene}}, _ledger);
   props.scene.reset();
   props.worldScene =
       _projection->extract(_world.snapshot(), _director.camera(),
@@ -528,6 +480,7 @@ void Demo3DApp::onActions(AppContext &ctx,
       _freeCamera.setProps(props);
       _followMode = false;
     }
+    ctx.setSimulationPaused(!_followMode);
     _controls.suspend(input::ControlReason::Target);
     _navigation = {};
     _keyboardLook = _gamepadLook = _gamepadMove = {};
@@ -666,32 +619,82 @@ EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
   return result;
 }
 
+runtime::ActivityProps Demo3DApp::activityProps() const {
+  if (!_view)
+    return {false, false};
+  const bool animation = _kind == DemoKind::Material && !_playback.isPaused();
+  const bool benchmark = _kind == DemoKind::Benchmark && !_benchmarkReported;
+  bool movement = _followMode || _keyboardLook != math::Vec2f{} ||
+                  _gamepadLook != math::Vec2f{} ||
+                  _gamepadMove != math::Vec2f{};
+  for (const auto *action :
+       {"forward", "backward", "strafe-left", "strafe-right", "rise", "fall"})
+    movement |= _navigation[action].held;
+  return {animation || benchmark || (!inspecting() && movement),
+          animation ||
+              (_kind == DemoKind::Benchmark && _benchmark.traversing())};
+}
+
+runtime::ActivityDemand Demo3DApp::activityDemand() {
+  auto demand = _ui.activityDemand();
+  demand.update |= _preparation.isReady() || (_loadRequested && !_loadRetryAt);
+  if (_loadRequested && _loadRetryAt &&
+      (!demand.wakeAt || *_loadRetryAt < *demand.wakeAt))
+    demand.wakeAt = _loadRetryAt;
+  return demand;
+}
+
 void Demo3DApp::update(AppContext &ctx, float dt) {
   applyControls(ctx);
-  if (_pending.valid() &&
-      _pending.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
+  if (_loadRequested || _preparation.isReady()) {
     try {
-      createView(ctx, _pending.get());
-    } catch (const std::exception &e) {
-      SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Scene preparation failed: %s",
-                  e.what());
-      _view = nullptr;
-      _inspection = nullptr;
-      _inspectionChanged.disconnect();
-      _caption = nullptr;
-      _scene.reset();
-      _resources = {};
-      _ui.root().setContent(std::make_unique<ui::Text>(
-          ctx.assets(),
-          ui::TextProps{.value = std::string{"Scene preparation failed: "} +
-                                 e.what(),
-                        .font = ctx.resources().font(app::fontAsset),
-                        .wrap = ui::TextWrap::AvailableInlineSize,
-                        .textRole = ui::TextRole::Body,
-                        .ink = ui::TextInk::Error}));
+      if (_loadRequested &&
+          (!_loadRetryAt || runtime::ActivityClock::now() >= *_loadRetryAt)) {
+        const auto admission = _preparation.start(
+            ctx.workers(), ctx.resources(), _preparationProps,
+            [sink = ctx.completions()] { sink.post([] {}); });
+        if (admission == runtime::TaskAdmission::Busy) {
+          _loadRetryAt =
+              runtime::ActivityClock::now() + std::chrono::milliseconds{50};
+        } else if (admission != runtime::TaskAdmission::Accepted) {
+          throw std::runtime_error(std::string{runtime::describe(admission)});
+        } else {
+          _loadRequested = false;
+          _loadRetryAt.reset();
+        }
+      }
+      if (auto result = _preparation.poll()) {
+        if (result->error)
+          std::rethrow_exception(result->error);
+        auto prepared = ctx.resources().publish(std::move(result->assets),
+                                                _preparationProps);
+        Resources resources;
+        for (const auto &model : prepared.models)
+          resources.models.push_back(model.model);
+        resources.environment = prepared.environment->lighting;
+        if (_kind == DemoKind::Material) {
+          resources.smoke = prepared.textures.front().second;
+          resources.environmentReference =
+              std::make_shared<const rendering::Texture>(
+                  rendering::TextureRole::Color,
+                  prepared.environment->source->levels());
+        }
+        createView(ctx, std::move(resources));
+      }
+    } catch (const runtime::ResourcePressure &error) {
+      preparationError(ctx, error.what());
+      if (!_reclaimedPreparation && error.requested <= error.limit) {
+        _reclaimedPreparation = true;
+        ctx.reclaimResources();
+        _loadRequested = true;
+        _loadRetryAt =
+            runtime::ActivityClock::now() + std::chrono::milliseconds{50};
+      }
+    } catch (const std::exception &error) {
+      preparationError(ctx, error.what());
     }
-    _task.reset();
   }
+
   if (_view && _kind == DemoKind::Benchmark)
     updateBenchmark(ctx);
   if (_view && !_followMode && !inspecting() && _kind != DemoKind::Benchmark) {
@@ -735,6 +738,29 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
     updateView();
   }
   _ui.update(dt);
+}
+
+void Demo3DApp::preparationError(AppContext &ctx, std::string_view message) {
+  _preparation.cancel();
+  _loadRequested = false;
+  _loadRetryAt.reset();
+  _view = nullptr;
+  _inspection = nullptr;
+  _inspectionChanged.disconnect();
+  _caption = nullptr;
+  _projection.reset();
+  _scene.reset();
+  _resources = {};
+  SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Scene preparation failed: %.*s",
+              int(message.size()), message.data());
+  _ui.root().setContent(std::make_unique<ui::Text>(
+      ctx.assets(),
+      ui::TextProps{.value = std::string{"Scene preparation failed: "} +
+                             std::string{message},
+                    .font = ctx.resources().font(app::fontAsset),
+                    .wrap = ui::TextWrap::AvailableInlineSize,
+                    .textRole = ui::TextRole::Body,
+                    .ink = ui::TextInk::Error}));
 }
 
 void Demo3DApp::applyControls(AppContext &ctx) {
@@ -1047,10 +1073,9 @@ void Demo3DApp::onExit(AppContext &ctx) {
     _director.remove(std::exchange(_pathCamera, 0));
   if (_interactiveCamera)
     _director.remove(std::exchange(_interactiveCamera, 0));
-  if (_task)
-    _task->cancel();
-  _task.reset();
-  _pending = {};
+  _preparation.cancel();
+  _loadRequested = false;
+  _loadRetryAt.reset();
   _navigation = {};
   _ui.clear();
   _view = nullptr;

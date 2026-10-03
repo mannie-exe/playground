@@ -327,7 +327,7 @@ For asynchronous work, capture `auto delivery = ctx.completions()` before starti
 the worker. Post a closure owning its prepared result; it may borrow app state only
 inside that owner-thread closure, guarded by the captured activation endpoint.
 Handle `post` returning false: it means bounded-queue refusal or a dead activation,
-not successful publication. Per-request supersession (for example ModelPreparation)
+not successful publication. Per-request supersession (for example AssetPreparation)
 is still separate from the lifetime of the whole app activation.
 Renderer resource-domain compatibility is another independent check: activation
 tokens do not make native resources survive backend replacement.

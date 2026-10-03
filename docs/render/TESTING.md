@@ -95,6 +95,7 @@ cmake --build --preset debug --target playground_scene_host_workload --parallel 
 ./build/debug/bin/playground_scene_host_workload material 5
 ./build/debug/bin/playground_scene_host_workload bistro 5
 ./build/debug/bin/playground_scene_host_workload chess 5
+./build/debug/bin/playground_scene_host_workload idle 5
 ./build/debug/bin/playground_scene_host_workload camera
 ./build/debug/bin/playground_scene_host_workload benchmark 5
 ./build/debug/bin/playground_scene_host_workload benchmark 15
@@ -184,3 +185,9 @@ Alt holds free look, Shift requests strafe aiming, and C recenters locomotion.
 Camera obstruction and physical grounding remain unavailable. Material Test and
 Chess use visible-pointer inspection; benchmark playback ignores manual control
 preferences.
+
+The `idle` workload loads Chess with an isolated resource ledger, waits for scene
+work to settle, then requires no new scene draws/uploads and no simulation-rate
+updates. Its 20 Hz observer is included in iteration counts. It also verifies that
+host-managed CPU allocations leave the process-default ledger untouched. This
+mode does not need pointer capture; `camera` verifies free/follow input hand-off.

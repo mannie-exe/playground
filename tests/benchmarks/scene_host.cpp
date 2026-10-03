@@ -57,9 +57,9 @@ struct Log {
 } // namespace
 
 int main(int argc, char **argv) {
-  constexpr std::string_view usage =
-      "Usage: playground_scene_host_workload "
-      "material|bistro|chess|benchmark|infinite|interrupted|camera [seconds]\n";
+  constexpr std::string_view usage = "Usage: playground_scene_host_workload "
+                                     "material|bistro|chess|benchmark|infinite|"
+                                     "interrupted|camera|idle [seconds]\n";
   if (test::cli::helpRequested(argc, argv))
     return test::cli::help(usage);
   if (argc < 2 || argc > 3)
@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
   const std::string_view scene{argv[1]};
   if (scene != "material" && scene != "bistro" && scene != "chess" &&
       scene != "benchmark" && scene != "infinite" && scene != "interrupted" &&
-      scene != "camera")
+      scene != "camera" && scene != "idle")
     return test::cli::usageError(usage, "Unknown scene workload");
   const auto duration = argc == 3 ? test::cli::number(argv[2], 0, 3600)
                                   : std::optional<double>{5};
@@ -79,21 +79,25 @@ int main(int argc, char **argv) {
     const bool interrupted = scene == "interrupted";
     const bool benchmark = scene == "benchmark" || infinite || interrupted;
     const bool camera = scene == "camera";
+    const bool idle = scene == "idle";
     const bool inspection = scene == "material" || scene == "chess";
-    const auto id = benchmark             ? AppId::BistroBenchmark
-                    : camera              ? AppId::Bistro
-                    : scene == "material" ? AppId::Demo3D
-                    : scene == "bistro"   ? AppId::Bistro
-                    : scene == "chess"    ? AppId::Chess
-                                          : AppId::Menu;
+    const auto id = benchmark                    ? AppId::BistroBenchmark
+                    : camera                     ? AppId::Bistro
+                    : scene == "material"        ? AppId::Demo3D
+                    : scene == "bistro"          ? AppId::Bistro
+                    : (scene == "chess" || idle) ? AppId::Chess
+                                                 : AppId::Menu;
     sdl::configureProcessEnvironment();
     test::HostPreferences user{
         "playground-scene-workload",
         {.presentation = {.vsync = false},
          .renderer = {rendering::RendererChoice::SDLGPU}}};
     Log log{infinite ? "cancelled" : interrupted ? "focus" : ""};
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
+    const auto globalBefore =
+        runtime::defaultResourceLedger()->snapshot().memory[0].bytes;
     AppHost host{{.resizable = false},
-                 {},
+                 {.resources = ledger},
                  ui::makeSettingsView,
                  {.project = PLAYGROUND_SOURCE_DIR, .user = user.path()}};
     host.request({.type = AppCommandType::SwitchTo,
@@ -111,7 +115,7 @@ int main(int argc, char **argv) {
     std::optional<double> quietStarted;
     double quietSince{};
     std::uint64_t quietMeshHits{};
-    std::uint64_t resumedMeshHits{};
+    std::uint64_t resumedMeshHits{}, resumedTick{};
     unsigned cameraStage{};
     std::optional<unsigned> focusStage;
     auto focusAt = started;
@@ -179,6 +183,39 @@ int main(int argc, char **argv) {
               timedOut = !log.finished;
               host.request({.type = AppCommandType::Quit});
             }
+          } else if (idle && elapsed > 5 && state.sceneWork.uploads) {
+            if (!warm) {
+              if (quietMeshHits != state.sceneWork.meshHits) {
+                quietMeshHits = state.sceneWork.meshHits;
+                quietSince = elapsed;
+              }
+              if (elapsed - quietSince < 1)
+                return;
+              warm = true;
+              baseline = state.sceneWork;
+              baselineSamples = state.cpuSamples;
+              measuredAt = elapsed;
+            }
+            if (elapsed - measuredAt >= std::max(1., seconds)) {
+              const auto span = elapsed - measuredAt;
+              const auto updates = state.cpuSamples - baselineSamples;
+              std::cout << "SceneIdle seconds=" << span
+                        << " host_iterations=" << updates
+                        << " probe_hz=20 mesh_hits="
+                        << state.sceneWork.meshHits - baseline.meshHits
+                        << " uploads="
+                        << state.sceneWork.uploads - baseline.uploads << '\n';
+              completed = state.resources.memory[0].bytes > 0 &&
+                          runtime::defaultResourceLedger()
+                                  ->snapshot()
+                                  .memory[0]
+                                  .bytes == globalBefore &&
+                          state.sceneWork.meshHits == baseline.meshHits &&
+                          state.sceneWork.uploads == baseline.uploads &&
+                          updates <= span * 35 + 5;
+              log.invalid = !completed;
+              host.request({.type = AppCommandType::Quit});
+            }
           } else if (camera && elapsed > 30 && state.sceneWork.uploads &&
                      std::chrono::steady_clock::now() - stageAt > 250ms) {
             const bool captureStage = cameraStage == 0 || cameraStage == 3 ||
@@ -223,11 +260,28 @@ int main(int argc, char **argv) {
             };
             const auto require = [&](bool value, const char *message) {
               if (!value) {
-                std::cerr << message << '\n';
+                std::cerr << message << " stage=" << cameraStage
+                          << " focused=" << host.windowServices().focused()
+                          << " captured="
+                          << host.windowServices().relativeMouseActive()
+                          << " mesh_hits=" << state.sceneWork.meshHits
+                          << " baseline_hits=" << resumedMeshHits;
+                if (const auto simulation = host.simulationState())
+                  std::cerr << " simulation_tick=" << simulation->tick
+                            << " simulation_paused=" << simulation->paused;
+                std::cerr << '\n';
                 log.invalid = true;
                 host.request({.type = AppCommandType::Quit});
               }
             };
+            // Native capture and the first resumed simulation frame are
+            // asynchronous. Require the same evidence, allowing a bounded
+            // response under host load.
+            if (cameraStage == 14 &&
+                (!host.windowServices().relativeMouseActive() ||
+                 state.sceneWork.meshHits <= resumedMeshHits) &&
+                std::chrono::steady_clock::now() - stageAt < 2s)
+              return;
             switch (cameraStage++) {
             case 0:
               mouse();
@@ -303,6 +357,10 @@ int main(int argc, char **argv) {
               key(SDL_SCANCODE_F, false);
               break;
             case 13:
+              require(host.simulationState() && !host.simulationState()->paused,
+                      "follow takeover activates fixed simulation");
+              resumedTick =
+                  host.simulationState() ? host.simulationState()->tick : 0;
               require(!host.windowServices().relativeMouseActive(),
                       "follow takeover revokes manual lease");
               mouse();
@@ -311,6 +369,8 @@ int main(int argc, char **argv) {
               break;
             case 14: {
               require(host.windowServices().relativeMouseActive() &&
+                          host.simulationState() &&
+                          host.simulationState()->tick > resumedTick &&
                           state.sceneWork.meshHits > resumedMeshHits,
                       "follow motor and camera redraw after engagement");
               key(SDL_SCANCODE_W, false);
@@ -325,6 +385,8 @@ int main(int argc, char **argv) {
               key(SDL_SCANCODE_F, false);
               break;
             case 16:
+              require(host.simulationState() && host.simulationState()->paused,
+                      "free takeover pauses fixed simulation");
               require(!host.windowServices().relativeMouseActive(),
                       "return to free camera requires reengagement");
               mouse();
@@ -336,7 +398,7 @@ int main(int argc, char **argv) {
               require(!host.windowServices().relativeMouseActive(),
                       "app exit releases mouse lock");
               completed = !log.invalid;
-              std::cout << "CameraWorkflow checks=12 complete=" << completed
+              std::cout << "CameraWorkflow checks=14 complete=" << completed
                         << '\n';
               host.request({.type = AppCommandType::Quit});
               break;

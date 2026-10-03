@@ -21,6 +21,8 @@ inline SurfaceHandle createManagedSurface(
     const std::shared_ptr<playground::rendering::ResourceLedger> &ledger =
         playground::rendering::defaultResourceLedger()) {
   using namespace playground::rendering;
+  if (!ledger)
+    throw std::invalid_argument("Surface requires a ledger");
   auto allocation = ledger->reserve(
       MemoryClass::CPU, ResourceKind::Surface,
       AllocationLimits::textureBytes({width, height}, 4), "Software surface");
@@ -44,6 +46,8 @@ inline SurfaceHandle adoptManagedSurface(
   if (!surface)
     throw std::runtime_error(SDL_GetError());
   using namespace playground::rendering;
+  if (!ledger)
+    throw std::invalid_argument("Surface requires a ledger");
   auto allocation = ledger->reserve(
       MemoryClass::CPU, ResourceKind::Asset,
       AllocationLimits::textureBytes({surface->pitch, surface->h}, 1),

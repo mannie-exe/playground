@@ -147,6 +147,8 @@ public:
 };
 
 struct UIServices {
+  std::shared_ptr<runtime::ResourceLedger> resources{
+      runtime::defaultResourceLedger()};
   ResolvedTheme theme{defaultResolvedTheme()};
   std::function<std::string()> readClipboard;
   std::function<void(std::string_view)> writeClipboard;

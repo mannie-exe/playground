@@ -93,10 +93,10 @@ arbitrary callback serialization are outside the asset preparation boundary.
 | `sdl::AssetResources` | Owner-thread adapter with shared frozen catalog and borrowed SDL cache |
 | `font/image/vector/mesh/model/shader` | Typed acquisition; failed construction publishes no cache entry |
 | `publishModel(result)` | Accept a successful matching-catalog result; reuse already-cached content |
-| `trimUnused()` | Release unused vector/model/shader cache entries without invalidating live handles |
+| `trimUnused()` | Evict unreferenced prepared assets without invalidating live handles |
 | `assets::prepareShader` | Read SPIR-V, reflect and verify stage/layout; no GPU allocation |
 | `sdl::prepareModel` | Synchronous CPU import with registered URI mappings; no scene mutation |
-| `sdl::ModelPreparation` | One consumer's generation-checked asynchronous request/result slot |
+| `sdl::AssetPreparation` | One consumer's generation-checked asynchronous request/result slot |
 | `runtime::Executor` | Bounded worker execution, not a UI dispatcher or dependency scheduler |
 
 `playground_assets` owns neutral definitions and depends on scene/rendering
@@ -166,36 +166,50 @@ and native pipeline props; this constructor never polls files. The existing
 path-based constructor retains explicit poll behavior. Custom pipelines are
 native extensions, not interchangeable with built-in MaterialProps or a material graph.
 
+## Prepared asset requests
+
+`AssetPreparation` owns one cancelable, latest-request slot. `start(executor,
+resources, props, wake)` returns `TaskAdmission`; rejection preserves the previous
+request. `AssetPreparationProps` groups models, interpreted textures and an optional
+HDR environment. A batch has at most 256 model and 256 texture entries. Duplicate
+entries share preparation; missing items execute sequentially. Executor reservation
+estimates peak stage scratch (model parser plus mesh scratch, or decoder allowance),
+not the sum of all retained assets or an allocator ceiling. Actual managed storage
+and decoder/mesh scratch use the provider's ledger.
+
+`poll()` transfers a generation-tagged result or exception without blocking.
+`AssetResources::publish(result.assets, props)` checks catalog and recipe identities
+before caching; existing handles win duplicate publication. Workers never mutate
+owner caches. Independent concurrent requests may prepare the same missing asset;
+publication reconciles identity. All-cache-hit requests are ready immediately and
+need no worker admission. Cancellation suppresses publication, not necessarily
+already-running computation. Wake callbacks signal readiness without capturing views.
+
+Environment cache keys include source revision, diffuse/specular widths, BRDF size,
+sample count and byte cap. Texture keys include role, mip policy and byte cap.
+Normal reclamation retains an LRU working set of 8 models, 8 textures and 2
+environments; active references may exceed those retention targets. Pressure
+reclamation evicts every unreferenced entry. Live handles and in-flight work keep
+their original ledger charges until the last owner releases them.
+
 ## Asynchronous requests
 
-AppContext::workers creates the executor lazily. Demo/Minesweeper remain synchronous;
-no worker starts merely to display them. An app owns a ModelPreparation slot and
-calls start with executor, frozen catalog handle and ModelAsset ID. False means
-admission refused and the previous request is unchanged. Acceptance supersedes
-the old generation without blocking. Superseded tasks still occupy capacity until
-they finish or are dequeued.
+`AppContext::workers` creates the executor lazily. UI Test and Minesweeper do not
+start workers merely to display their controls. Demo3D uses the grouped
+[prepared asset request](#prepared-asset-requests) path, then explicitly
+instantiates published models at an owner-thread scene boundary.
 
-Poll during app update. No result means not ready. A result owns generation,
-asset ID, definition key and either model or exception_ptr; it is consumed once.
-The app can publishModel into its resource cache and explicitly instantiate at a
-safe scene boundary. This path uses a future slot, not captured app callbacks or
-a second completion queue. Existing UI CompletionQueue still routes UI callbacks.
+Results are published before the optional wake callback runs. Demo3D posts an
+activation-scoped notification so completion wakes an idle host without retaining
+a view or app. Busy admission schedules a 50 ms retry deadline; pending worker
+execution does not request continuous updates or painting. Cancellation discards
+the slot and requests cooperative stop. Blocking parser/decoder/read operations
+are not forcibly interrupted. Superseded jobs retain capacity until retirement.
 
-The future becoming ready does not itself wake AppHost. An on-demand app must
-declare update demand or a polling deadline while a request is pending; otherwise
-publication can wait until an unrelated event or the host's maintenance update.
-Worker paths with a wake endpoint must publish the result before notifying it.
-See [host activity](ACTIVITY.md) for demand and fallback behavior.
-
-cancel discards the slot and requests cooperative stop. Checks surround reads,
-decoding and parsing; a blocking parser/decoder/read is not forcibly interrupted.
-Admission reserves configured document/parser/resource byte maxima, not all heap
-usage: geometry, decoded peaks, retained results and catalog bytes are separate.
-Jobs have a noexcept execution boundary and must transport their own errors;
-ModelPreparation does so. close stops admission, cancels queued/running jobs and
-wakes workers; destruction additionally joins. Never destroy the executor from
-its own job. Owner slots must not be mutated concurrently. A queued job discarded
-by shutdown can yield broken-promise error if its consumer has not canceled.
+Jobs transport exceptions across a noexcept boundary. Closing the executor stops
+admission and cancels queued/running jobs; destruction additionally joins. Never
+destroy the executor from its own job. A queued job discarded by shutdown can
+yield a broken-promise error if its consumer has not canceled.
 
 ## Built-in application reconstruction
 

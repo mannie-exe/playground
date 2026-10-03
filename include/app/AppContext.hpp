@@ -53,6 +53,7 @@ public:
   const playground::platform::AppViewPolicy &viewPolicy() const;
   const playground::platform::SettingsDocument &userSettings() const;
 
+  void reclaimResources();
   AssetRegistry &assets();
   playground::sdl::AssetResources &resources();
   playground::runtime::Executor &workers();

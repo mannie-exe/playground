@@ -113,9 +113,10 @@ GPUSceneRenderer::GPUSceneRenderer(PaintDevice &device)
   tone.target_info.num_color_targets = 1;
   _tonePipeline = {device.device,
                    SDL_CreateGPUGraphicsPipeline(device.device->get(), &tone)};
-  const auto solid = [](math::Vec4f p) {
+  const auto solid = [&device](math::Vec4f p) {
     return rendering::makeTexture({{1, 1}, {p}}, rendering::TextureRole::Data,
-                                  rendering::MipPolicy::None);
+                                  rendering::MipPolicy::None, 16,
+                                  device.device->resources());
   };
   _whiteTexture = solid({1, 1, 1, 1});
   _normalTexture = solid({.5f, .5f, 1, 1});

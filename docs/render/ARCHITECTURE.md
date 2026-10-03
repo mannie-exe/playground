@@ -112,7 +112,7 @@ input -> publish completed CPU work -> model update -> layout
 Workers may decode/compute immutable CPU results. They never mutate a live Node,
 Scene, registry, window or device. Publish through a lifetime-scoped completion
 mailbox or owner-polled result slot with a request generation; owner-thread
-acceptance rejects stale results. ModelPreparation uses a bounded executor and
+acceptance rejects stale results. AssetPreparation uses a bounded executor and
 latest-request future slot; it does not enqueue callbacks into UIRoot. See
 [asset preparation](../platform/ASSETS.md#asynchronous-requests).
 Cancellation and stale-result rejection are separate concerns. Existing UI

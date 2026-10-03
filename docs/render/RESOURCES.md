@@ -15,7 +15,8 @@ ledgers support isolated hosts and tests. AppHost injects its backend ledger int
 its asset cache and app factories. Meshes, decoded surfaces, packed textures,
 font raster variants, world snapshots and projections retain that owner; copies,
 mips and upload representations inherit it. Preparation uses the same ledger.
-Default construction is a convenience for standalone callers, not a host-wide
+UI sessions also inject the ledger into `UIServices` for theme-only editor fonts;
+GPU fallback textures use their device owner. Default construction is a convenience for standalone callers, not a host-wide
 service locator. Compatibility domains are not accounting identities.
 Service snapshots expose queue/voice/connection counts separately from byte
 charges. Shared storage is charged once globally even when several apps or mounts
@@ -118,6 +119,16 @@ measurement state. `requestRenderRuntime` publishes budget/pacing patches at hos
 boundaries; see [SETTINGS.md](../platform/SETTINGS.md). The last pressure diagnostic
 survives retry wakes and clears on successful presentation, independently of
 rate-limited logging.
+
+## Host reclamation
+
+`AppHost::reclaimResources(pressure)` trims its CPU asset provider and renderer on
+the owner thread. App switches use normal retention; budget reductions, rendering
+pressure and preparation retries use aggressive unused-entry eviction.
+`AppContext::reclaimResources()` exposes pressure reclamation to app preparation.
+Live references remain valid; reclaiming a cache entry does not cancel a consumer.
+Rendering retains its bounded retry policy. Demo asset preparation makes one
+reclamation retry for potentially recoverable ledger pressure, then reports failure.
 
 ## Measurements and extension
 
