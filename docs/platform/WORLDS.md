@@ -112,6 +112,25 @@ replacement, teleports and transfers never blend unrelated histories. Frame remo
 requires an explicit detach, transfer or dependent-removal policy before commit.
 No implied forces or contact constraints follow from frame attachment.
 
+`world/Frames.hpp` provides ReferenceFrames with atomic `apply(source, batch,
+expectedVersion)` and retained FrameSnapshots. The source world epoch must match
+and its revision/tick cannot move backward. Frame IDs include their space and
+runtime epoch; restore constructs a fresh registry with rebound IDs. Removed IDs
+remain tombstoned within that epoch. Candidate-wide parent validation permits
+explicit reparenting and dependent removal in one batch; dangling parents,
+cross-space parents, cycles and excessive depth reject the entire candidate.
+Parent discontinuities propagate to descendants; ordinary parent movement does
+not reset history. Storage for retained generations and sampling scratch is
+admitted through the shared ledger.
+
+`attach(sample, pose, velocity, policy)` derives parent-local values while either
+preserving world velocity or following the frame's point velocity. `resolve`
+returns pose and velocity together; the application publishes them through its
+world mutation boundary. Reparenting preserves pose by explicitly converting
+through the old/new samples, or adopts an authored local pose. Neither operation
+silently guesses that policy. A FramePosition conversion requires its matching
+FrameSample; applications retain the sample and enforce their tick boundary.
+
 `WorldTransfer::prepare(request)` validates source identity/revision, destination
 SpaceId/pose, declared dependent entities, admission and readiness requirements.
 The request specifies velocity policy, authority and cancellation/deadline.
