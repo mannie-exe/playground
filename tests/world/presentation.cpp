@@ -142,6 +142,14 @@ int main() {
                   extracted->draws()[0].model.at(0, 3) < .03,
               "model edits invalidate extracted values without changing assets "
               "or old snapshots");
+      auto oversized = math::Matrix4{};
+      oversized.at(0, 0) = 40000;
+      scene::SceneProjection oversizedProjection({{id, {mesh, {}, oversized}}},
+                                                 ledger);
+      const auto rejected =
+          oversizedProjection.extract(world.snapshot(), camera, origin);
+      require(rejected->draws().empty() && rejected->omittedForExtent() == 1,
+              "mesh extent is checked independently of in-range entity anchor");
       camera.pose.position.meters.x += 20000;
       const auto distant = projection.extract(world.snapshot(), camera,
                                               {camera.pose.position, 3});

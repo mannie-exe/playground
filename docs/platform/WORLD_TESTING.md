@@ -32,6 +32,21 @@ write callback. Coordinate fixtures compare world-space quantities before float
 projection as well as local output; increasing tolerance to hide lost precision
 is not an acceptable far-origin test.
 
+## Focused commands
+
+```sh
+cmake --build --preset debug --target playground_tests --parallel 4
+ctest --preset debug -R '^(world_.*|runtime_services|host_smoke)$'
+# Native GPU readback and immutable-upload reuse, when GPU support is built:
+ctest --preset debug -R '^gpu_scene_residency$'
+```
+
+The world presentation fixture compares complete software images at zero and
+±1,000,000 meters and verifies retained UI invalidation and picking. Native scene
+residency checks equivalent GPU images, simultaneous distant origins and upload
+reuse after rebasing. These checks establish only the exercised platform/backend;
+unsupported native execution is reported as skipped, not passed coverage.
+
 ## Integrated workloads
 
 The small streaming fixture combines authored cells, a generated voxel boundary,
