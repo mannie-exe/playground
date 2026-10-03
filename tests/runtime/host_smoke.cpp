@@ -1,12 +1,11 @@
 #include <chrono>
-#include <fstream>
 #include <optional>
 #include <string_view>
 #include <thread>
 
 #include <app/AppHost.hpp>
 #include <app/SDLGuard.hpp>
-#include <support/TemporaryDirectory.hpp>
+#include <support/HostPreferences.hpp>
 #include <support/Test.hpp>
 
 using namespace playground;
@@ -24,9 +23,9 @@ int main() {
   if (driverName == "dummy" || driverName == "offscreen")
     return 77;
   return test::run([] {
-    test::TemporaryDirectory user{"playground-host-test"};
-    std::ofstream{user.path() / "settings.toml"}
-        << "schema_version = 5\n[graphics]\nrenderer = 'software'\n";
+    test::HostPreferences user{
+        "playground-host-test",
+        {.renderer = {rendering::RendererChoice::Software}}};
     ui::SettingsView *settings{};
     unsigned serviceCalls{}, settingsServiceCalls{};
     bool serviceCancelled{};

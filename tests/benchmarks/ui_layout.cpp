@@ -15,7 +15,9 @@
 #endif
 #include <app/TTFGuard.hpp>
 #include <demo2d/Demo2DUI.hpp>
+#include <platform/sdl/ProcessEnvironment.hpp>
 #include <platform/sdl/SurfacePainter.hpp>
+#include <support/CommandLine.hpp>
 #include <support/Test.hpp>
 #include <ui/UIRoot.hpp>
 #include <ui/collections/ScrollView.hpp>
@@ -133,32 +135,38 @@ double elapsed(Clock::time_point start) {
 } // namespace
 
 int main(int argc, char **argv) {
-  bool verify{}, full{}, gpu{};
+  constexpr std::string_view usage = "Usage: playground_ui_layout_workload "
+                                     "[--verify] [--full-layout] [--gpu]\n"
+                                     "       playground_ui_layout_workload "
+                                     "--screenshots DIRECTORY (software)\n";
+  if (test::cli::helpRequested(argc, argv))
+    return test::cli::help(usage);
+  bool verify{}, full{}, gpu{}, capture{};
   std::filesystem::path captureDirectory;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg{argv[i]};
-    if (arg == "--gpu")
+    if (arg == "--gpu" && !gpu)
       gpu = true;
-    else if (arg == "--screenshots" && i + 1 < argc)
-      captureDirectory = argv[++i];
-    else if (arg == "--verify")
+    else if (arg == "--screenshots" && !capture && i + 1 < argc) {
+      const std::string_view path{argv[++i]};
+      if (path.empty() || path.starts_with("--"))
+        return test::cli::usageError(usage, "Expected screenshot directory");
+      captureDirectory = std::filesystem::path{
+          std::u8string{reinterpret_cast<const char8_t *>(argv[i])}};
+      capture = true;
+    } else if (arg == "--verify" && !verify)
       verify = true;
-    else if (arg == "--full-layout")
+    else if (arg == "--full-layout" && !full)
       full = true;
-    else {
-      std::cerr
-          << "Usage: ui_layout_workload [--verify] [--full-layout] [--gpu]\n"
-          << "       ui_layout_workload --screenshots DIRECTORY (software)\n";
-      return 2;
-    }
+    else
+      return test::cli::usageError(usage, "Unknown or repeated option");
   }
-  if (!captureDirectory.empty() && (gpu || verify || full)) {
-    std::cerr
-        << "Screenshot mode uses software rendering without timing checks\n";
-    return 2;
-  }
+  if (capture && (gpu || verify || full))
+    return test::cli::usageError(
+        usage, "Screenshot mode uses software rendering without timing checks");
   bool unsupported{};
   const auto result = test::run([&] {
+    sdl::configureProcessEnvironment();
     std::optional<SDLGuard> sdl;
     try {
       sdl.emplace(gpu ? SDL_INIT_VIDEO : 0);

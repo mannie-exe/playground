@@ -327,6 +327,16 @@ host workloads and capture tools are built by the normal build but excluded from
 uses it for correctness checks. See [UI workloads](docs/ui/TESTING.md#rendering-workloads)
 and [scene/capture workflows](docs/render/TESTING.md#commands).
 
+Developer workloads and model capture accept standalone `--help`. Shared helpers
+in `tests/support/CommandLine.hpp` use exit 0 for success/help, 2 for invalid
+arguments and 1 for execution failure. Unsupported automated hardware checks
+alone use 77. Durations require a finite, complete number in the documented range.
+`HostPreferences` writes isolated temporary settings with the production
+serializer and removes them after the host is destroyed; workloads do not embed
+settings schema versions. Entry points call `sdl::configureProcessEnvironment()`
+before SDL initialization or worker creation; macOS defaults MoltenVK logging to
+2 while preserving explicit environment overrides.
+
 Release checks should use `cmake --preset release`, build the desired target with
 `--preset release`, and run `ctest --test-dir build/release ...`. Do not use plain
 `assert` for required test outcomes: it disappears under NDEBUG. Current tests

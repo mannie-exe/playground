@@ -6,6 +6,15 @@ contracts cover games, editing tools, presentations and 2D pan/zoom views.
 of camera placement. Neither following a subject nor changing perspective implies
 physics or collision support.
 
+`scene::drawBounds(draws)` unions transformed mesh corners without changing scene
+state. Empty draws, missing meshes and nonfinite bounds are errors.
+`scene::boundsCamera(bounds, lens, minimumExtent)` provides preview placement from
+the longest extent, retaining lens settings. This is not an exact frustum fit;
+callers choose clipping planes and framing policy. Invalid/inverted bounds,
+nonpositive minimum extent and arithmetic overflow are errors. Demo 3D and model
+capture share this geometry helper; `demo3d::bistroView` is an explicit authored
+street preset, independent of filenames.
+
 ## Controller boundaries
 
 | API | Contract |

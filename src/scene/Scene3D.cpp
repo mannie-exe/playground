@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -24,6 +25,50 @@ CameraView CameraProps::view(float aspect) const {
               ? math::orthographicLH(*orthographicHeight * aspect,
                                      *orthographicHeight, nearPlane, farPlane)
               : math::perspectiveLH(verticalFov, aspect, nearPlane, farPlane)};
+}
+
+Bounds3 drawBounds(std::span<const MeshDraw> draws) {
+  const float inf = std::numeric_limits<float>::infinity();
+  Bounds3 result{{inf, inf, inf}, {-inf, -inf, -inf}};
+  for (const auto &draw : draws) {
+    if (!draw.mesh)
+      throw std::invalid_argument("Scene draw has no mesh");
+    if (!math::isFinite(draw.model))
+      throw std::invalid_argument("Nonfinite scene draw transform");
+    const auto box = draw.mesh->bounds();
+    for (int corner = 0; corner < 8; ++corner) {
+      const auto point = math::transformPoint(
+          draw.model, {corner & 1 ? box.maximum.x : box.minimum.x,
+                       corner & 2 ? box.maximum.y : box.minimum.y,
+                       corner & 4 ? box.maximum.z : box.minimum.z});
+      if (!math::isFinite(point))
+        throw std::invalid_argument("Nonfinite transformed mesh bounds");
+      result.minimum = {std::min(result.minimum.x, point.x),
+                        std::min(result.minimum.y, point.y),
+                        std::min(result.minimum.z, point.z)};
+      result.maximum = {std::max(result.maximum.x, point.x),
+                        std::max(result.maximum.y, point.y),
+                        std::max(result.maximum.z, point.z)};
+    }
+  }
+  if (draws.empty())
+    throw std::invalid_argument("Scene contains no bounded geometry");
+  return result;
+}
+
+CameraProps boundsCamera(Bounds3 box, CameraProps lens, float minimumExtent) {
+  if (!math::isFinite(box.minimum) || !math::isFinite(box.maximum) ||
+      box.minimum.x > box.maximum.x || box.minimum.y > box.maximum.y ||
+      box.minimum.z > box.maximum.z || !std::isfinite(minimumExtent) ||
+      minimumExtent <= 0)
+    throw std::invalid_argument("Invalid camera framing bounds");
+  const auto extent = box.maximum - box.minimum;
+  const float size = std::max({extent.x, extent.y, extent.z, minimumExtent});
+  lens.target = box.minimum * .5f + box.maximum * .5f;
+  lens.eye = lens.target + math::Vec3f{0, size * .35f, -size * 1.1f};
+  if (!math::isFinite(lens.eye) || !math::isFinite(extent))
+    throw std::invalid_argument("Camera framing exceeds local float range");
+  return lens;
 }
 
 Scene3D::Scene3D() : _owner{nextOwner.fetch_add(1)} {

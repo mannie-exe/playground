@@ -36,6 +36,8 @@ playground_add_test(world_state SOURCE world/state.cpp MODULE world LABELS unit 
 playground_add_test(world_presentation SOURCE world/presentation.cpp MODULE world LABELS integration scene ui pixels arithmetic LIBRARIES playground_sdl)
 
 set(sdl_libraries playground_sdl)
+playground_add_test(developer_tools SOURCE runtime/developer_tools.cpp MODULE runtime
+    LABELS unit settings failure LIBRARIES playground_sdl)
 playground_add_test(host_smoke SOURCE runtime/host_smoke.cpp MODULE runtime
     LABELS integration settings window LIBRARIES playground_app Threads::Threads TIMEOUT 20)
 target_compile_definitions(playground_host_smoke_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")

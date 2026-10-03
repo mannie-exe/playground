@@ -116,8 +116,9 @@ Settings, window, graphics, device and quality changes. `interrupted` verifies
 that focus loss during loading remains invalid after the scene arrives. Only an
 explicit restart clears interruption. Interruptions produce invalid results,
 not a score.
-Each invocation uses temporary settings and requests a nonresizable 960×720
-window; incompatible window-manager placement fails explicitly. Drawable pixels
+Each invocation uses serialized, isolated `HostPreferences` settings and requests
+a nonresizable 960×720 window; incompatible window-manager placement fails
+explicitly. Drawable pixels
 still depend on display density and remain part of result identity. User settings
 are untouched.
 
@@ -147,12 +148,15 @@ cmake --build --preset debug --target playground_model_capture --parallel 4
 ./build/debug/bin/playground_model_capture --help
 ./build/debug/bin/playground_model_capture assets/demo3d/BoomBox.glb build/boombox.bmp
 ./build/debug/bin/playground_model_capture assets/demoscene/chess/ABeautifulGame.glb build/chess.bmp
+./build/debug/bin/playground_model_capture assets/demoscene/bistro/Bistro.glb build/bistro.bmp --view bistro
 ```
 
 Both model and output paths are required; the output directory must already
-exist. Models use bounds framing; a file named `Bistro.glb` retains the existing
-reference street camera. The capture uses a fixed studio setup, not an authored
-camera/light rig or a guarantee of correct unsupported material extensions.
+exist. Models use bounds framing by default. Append `--view bistro` to select
+the shared Bistro street preset explicitly; `--view bounds` selects the default.
+Filenames never select camera behavior. The capture uses a fixed studio setup,
+not an authored camera/light rig or a guarantee of correct unsupported material
+extensions.
 Import limits are 320 MiB per document/resource and 1 GiB total source resources.
 Decoded resources additionally obey the renderer/preparation budgets.
 

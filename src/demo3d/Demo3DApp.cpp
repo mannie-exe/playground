@@ -2,7 +2,6 @@
 #include <chrono>
 #include <cmath>
 #include <format>
-#include <limits>
 #include <memory>
 #include <numbers>
 #include <string>
@@ -13,6 +12,7 @@
 
 #include <app/Assets.hpp>
 #include <demo3d/Demo3DApp.hpp>
+#include <demo3d/Views.hpp>
 #include <platform/sdl/ModelPreparation.hpp>
 #include <platform/sdl/TextureDecode.hpp>
 #include <platform/sdl/WindowServices.hpp>
@@ -45,29 +45,6 @@ importProps(const assets::AssetId<assets::ModelAsset> &id) {
   props.maxTotalResourceBytes =
       (large || id == chessId ? 1024ULL : 768ULL) * 1024 * 1024;
   return props;
-}
-
-scene::Bounds3 bounds(const scene::Scene3D &scene) {
-  const float inf = std::numeric_limits<float>::infinity();
-  scene::Bounds3 result{{inf, inf, inf}, {-inf, -inf, -inf}};
-  for (const auto &draw : scene.snapshot()) {
-    const auto b = draw.mesh->bounds();
-    for (int corner = 0; corner < 8; ++corner) {
-      auto p = math::transformPoint(draw.model,
-                                    {corner & 1 ? b.maximum.x : b.minimum.x,
-                                     corner & 2 ? b.maximum.y : b.minimum.y,
-                                     corner & 4 ? b.maximum.z : b.minimum.z});
-      result.minimum = {std::min(result.minimum.x, p.x),
-                        std::min(result.minimum.y, p.y),
-                        std::min(result.minimum.z, p.z)};
-      result.maximum = {std::max(result.maximum.x, p.x),
-                        std::max(result.maximum.y, p.y),
-                        std::max(result.maximum.z, p.z)};
-    }
-  }
-  if (!math::isFinite(result.minimum) || !math::isFinite(result.maximum))
-    throw std::runtime_error("Demo scene contains no bounded geometry");
-  return result;
 }
 
 scene::MeshHandle referenceSphere() {
@@ -217,7 +194,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     for (std::size_t i = 0; i < _resources.models.size(); ++i) {
       scene::Scene3D sample;
       _resources.models[i]->instantiate(sample);
-      const auto box = bounds(sample);
+      const auto box = scene::drawBounds(sample.snapshot());
       const auto extent = box.maximum - box.minimum;
       const float scale = 2.f / std::max({extent.x, extent.y, extent.z, .001f});
       const auto center = (box.maximum + box.minimum) * .5f;
@@ -250,19 +227,14 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     _camera.setProps({.target = {0, .5f, 0}, .pitch = .15f, .distance = 10});
   } else {
     _resources.models.front()->instantiate(*_scene);
-    const auto box = bounds(*_scene);
-    const auto center = (box.minimum + box.maximum) * .5f;
+    const auto box = scene::drawBounds(_scene->snapshot());
     const auto extent = box.maximum - box.minimum;
     const float radius = std::max({extent.x, extent.y, extent.z, 1.f});
-    _initialCamera = {.position = center +
-                                  math::Vec3f{0, radius * .35f, -radius * 1.1f},
+    _initialCamera = {.position = scene::boundsCamera(box, {}, 1.f).eye,
                       .pitch = -.3f,
                       .unitsPerSecond = radius * .15f};
     if (_kind == DemoKind::Bistro || _kind == DemoKind::Benchmark)
-      _initialCamera = {.position = {24.82285f, 3.16055f, 61.64814f},
-                        .yaw = -2.81696f,
-                        .pitch = -.05827f,
-                        .unitsPerSecond = 5};
+      _initialCamera = bistroView;
     _freeCamera.setProps(_initialCamera);
   }
   _director.setFallback(camera());
