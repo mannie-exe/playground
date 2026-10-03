@@ -30,6 +30,7 @@ endfunction()
 
 playground_add_test(ui_motion SOURCE ui/motion.cpp MODULE ui LABELS unit animation async ownership failure LIBRARIES playground_ui_core playground_runtime)
 playground_add_test(world_spatial SOURCE world/spatial.cpp MODULE world LABELS unit arithmetic identity failure LIBRARIES playground_world)
+playground_add_test(world_queries SOURCE world/queries.cpp MODULE world LABELS unit spatial budget failure LIBRARIES playground_world)
 playground_add_test(world_state SOURCE world/state.cpp MODULE world LABELS unit ownership identity budget failure LIBRARIES playground_world)
 playground_add_test(world_presentation SOURCE world/presentation.cpp MODULE world LABELS integration scene ui pixels arithmetic LIBRARIES playground_sdl)
 

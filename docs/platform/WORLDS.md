@@ -157,6 +157,28 @@ boundary rules. Incomplete coverage cannot synthesize a confirmed exit. Initial
 membership, teleports and destruction have explicit reasons and stable ordering.
 Queries and triggers do not apply forces or solve penetration.
 
+`world/Queries.hpp` supplies immutable, ledger-admitted query snapshots from a
+WorldSnapshot, explicit SpatialCoverage and authored QueryPrimitives. Primitive
+identity is `(EntityId, primitive)`; category and single-purpose bits filter
+independently of presentation. A snapshot binds geometry to live entities at its
+captured revision and retains that revision after later mutation/destruction.
+Raycasts use world-relative double arithmetic and normalize finite nonzero
+directions; distance is a finite nonnegative meter limit. Bounds hits originating
+inside a box have distance zero and no invented surface normal. Triangle hits are
+two-sided and expose their authored winding normal. Overlap uses closed AABBs,
+including conservative triangle bounds, and explicitly reports Bounds precision.
+Unsupported shape sweeps return Unsupported; malformed inputs return Invalid.
+
+QueryBudget counts primitive visits, broad-phase candidates and retained hits.
+Hit-limited results retain the nearest available ray hits but remain Incomplete.
+Exclusions and output capacity have snapshot-level bounds; output storage is
+admitted through the shared ledger before traversal. Admission refusal raises
+ResourcePressure without mutating the index. Each result includes source world
+version, tick, index revision and consumed work. A coverage box asserts complete
+geometry only inside its extent; providers with holes mark coverage Incomplete
+or publish separately complete regions. Never infer full coverage from an empty
+primitive list.
+
 ## State, activation and persistence
 
 Logical existence, CPU residency, simulation activation, view visibility and GPU
