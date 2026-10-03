@@ -5,6 +5,7 @@
 
 #include <app/AppHost.hpp>
 #include <app/SDLGuard.hpp>
+#include <demo3d/Demo3DApp.hpp>
 #include <support/HostPreferences.hpp>
 #include <support/Test.hpp>
 
@@ -23,6 +24,27 @@ int main() {
   if (driverName == "dummy" || driverName == "offscreen")
     return 77;
   return test::run([] {
+    for (const auto kind : {demo3d::DemoKind::Material, demo3d::DemoKind::Chess,
+                            demo3d::DemoKind::Bistro}) {
+      demo3d::Demo3DApp app{kind};
+      auto &map = app.input();
+      const auto press = [&](int key) {
+        input::routeInputEvent(map, {{input::ControlKind::Key, key}, 1}, false,
+                               [] { return false; });
+        const auto snapshot = map.takeFrameSnapshot();
+        input::routeInputEvent(map, {{input::ControlKind::Key, key}, 0}, false,
+                               [] { return false; });
+        map.takeFrameSnapshot();
+        return snapshot;
+      };
+      const auto space = press(SDL_SCANCODE_SPACE);
+      test::require(space["rise"].pressed && !space["pause"].pressed &&
+                        press(SDL_SCANCODE_LSHIFT)["fall"].pressed &&
+                        !press(SDL_SCANCODE_PAGEUP)["rise"].pressed &&
+                        !press(SDL_SCANCODE_PAGEDOWN)["fall"].pressed &&
+                        press(SDL_SCANCODE_P)["pause"].pressed,
+                    "demo elevation and playback bindings do not conflict");
+    }
     test::HostPreferences user{
         "playground-host-test",
         {.renderer = {rendering::RendererChoice::Software}}};

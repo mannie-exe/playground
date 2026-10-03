@@ -103,9 +103,14 @@ cmake --build --preset debug --target playground_scene_host_workload --parallel 
 ./build/debug/bin/playground_scene_host_workload interrupted
 ```
 
+`inspection_view` exercises orbit/pan/zoom, modifier handling, capture outside
+content, cancellation, panning reset and SDL modifier translation without requiring
+desktop focus. Controller tests cover distant pivots and orthographic zoom/pan.
+
 Material/Bistro/Chess workloads allow 30 seconds for preparation before measuring;
 measurement starts after scene upload and requires rendered samples. Scene
-workloads inject held look intent to exercise camera redraws. Camera mode
+workloads inject inspection drags (Material/Chess) or engaged held look (Bistro)
+to exercise camera redraws. Camera mode
 checks native lock/unlock, relative motion, held movement across Settings,
 focus cancellation and app exit. Early exit cannot pass unfinished checks. Keep
 that window focused; focus enforcement is part of the contract.
@@ -167,10 +172,11 @@ execution failures, including unavailable Vulkan. MoltenVK logging defaults to
 level 2 on macOS while preserving an explicit environment override. Output files
 belong under ignored build directories.
 
-The `camera` scene-host workload verifies relative capture, Escape unlock,
-Settings/focus cancellation, follow/free takeover, kinematic forward movement,
-perspective zoom and app-exit release. `F` switches scene demos between free and
+The `camera` scene-host workload uses Bistro and verifies relative capture,
+Escape unlock, Settings/focus cancellation, follow/free takeover, kinematic forward movement,
+perspective zoom and app-exit release. `F` switches Bistro between free and
 follow control; RMB (or gamepad Start) deliberately re-engages the selected view.
 Alt holds free look, Shift requests strafe aiming, and C recenters locomotion.
-Camera obstruction and physical grounding remain unavailable. Material inspection
-keeps orbit/zoom; benchmark playback ignores manual control preferences.
+Camera obstruction and physical grounding remain unavailable. Material Test and
+Chess use visible-pointer inspection; benchmark playback ignores manual control
+preferences.

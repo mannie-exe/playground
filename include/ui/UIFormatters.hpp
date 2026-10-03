@@ -303,6 +303,8 @@ constexpr std::string_view toString(Key value) {
     return "A";
   case Key::C:
     return "C";
+  case Key::R:
+    return "R";
   case Key::V:
     return "V";
   case Key::X:

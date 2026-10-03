@@ -68,11 +68,13 @@ struct OrbitProps {
   double minimumDistance{.1}, maximumDistance{1000},
       maximumPitch{1.5533430342749532};
   world::SpatialLimits limits;
+  CameraProps lens;
 };
 
 struct OrbitIntent {
   math::Vec2f radians{};
   double zoom{};
+  double zoomLog{};
 };
 
 class OrbitController {
@@ -85,7 +87,9 @@ public:
 
   void setProps(OrbitProps);
   void update(OrbitIntent);
-  WorldCamera camera(CameraProps lens = {}) const;
+  void pan(math::Vec2f logicalPixels, double viewportHeight);
+  WorldCamera camera() const;
+  WorldCamera camera(CameraProps lens) const;
 };
 
 struct FreeCameraProps {

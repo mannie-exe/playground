@@ -131,8 +131,8 @@ Demo3DApp::Demo3DApp(DemoKind kind)
                       {.action = "backward", .code = SDL_SCANCODE_S},
                       {.action = "strafe-left", .code = SDL_SCANCODE_A},
                       {.action = "strafe-right", .code = SDL_SCANCODE_D},
-                      {.action = "rise", .code = SDL_SCANCODE_PAGEUP},
-                      {.action = "fall", .code = SDL_SCANCODE_PAGEDOWN},
+                      {.action = "rise", .code = SDL_SCANCODE_SPACE},
+                      {.action = "fall", .code = SDL_SCANCODE_LSHIFT},
                       {.action = "exposure-up", .code = SDL_SCANCODE_E},
                       {.action = "exposure-down", .code = SDL_SCANCODE_Q},
                       {.action = "reset", .code = SDL_SCANCODE_R},
@@ -140,7 +140,7 @@ Demo3DApp::Demo3DApp(DemoKind kind)
                       {.action = "free-look", .code = SDL_SCANCODE_LALT},
                       {.action = "aim", .code = SDL_SCANCODE_LSHIFT},
                       {.action = "recenter", .code = SDL_SCANCODE_C},
-                      {.action = "pause", .code = SDL_SCANCODE_SPACE},
+                      {.action = "pause", .code = SDL_SCANCODE_P},
                       {.action = "light", .code = SDL_SCANCODE_L}});
 }
 
@@ -281,6 +281,16 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     if (_kind == DemoKind::Bistro || _kind == DemoKind::Benchmark)
       _initialCamera = bistroView(_space, _world.snapshot().epoch());
     _freeCamera.setProps(_initialCamera);
+    if (_kind == DemoKind::Chess) {
+      const auto center = (box.minimum + box.maximum) * .5f;
+      _camera.setProps({.target = {_space, {center.x, center.y, center.z}},
+                        .epoch = _world.snapshot().epoch(),
+                        .pitch = .55,
+                        .distance = radius * 1.7,
+                        .minimumDistance = .02,
+                        .maximumDistance = std::max(1000., double(radius) * 10),
+                        .lens = {.nearPlane = .02f, .farPlane = 5000}});
+    }
   }
   _director.setFallback(camera());
   _interactiveCamera = _director.add({.camera = camera()});
@@ -299,14 +309,15 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
       ctx.assets(),
       ui::TextProps{
           .value =
-              (_kind == DemoKind::Material
-                   ? std::string{"BoomBox / Flight Helmet / SciFi Helmet | "
-                                 "Arrows: orbit | W/S: zoom | Space: smoke"}
-                   : std::string{"WASD: fly | Arrows: look | PgUp/PgDn: "
-                                 "rise/fall | F: follow/free | R: reset"}) +
-              " | RMB: engage/unlock | Esc: unlock/settings | Q/E: exposure | "
-              "L: "
-              "light" +
+              (inspecting()
+                   ? std::string{"MMB: orbit | Shift+MMB: pan | "
+                                 "Ctrl+MMB/wheel: zoom | "
+                                 "Alt+LMB: MMB alternative | R: reset pan"} +
+                         (_kind == DemoKind::Material ? " | P: smoke" : "")
+                   : std::string{"WASD: fly | Arrows: look | Space/Left Shift: "
+                                 "rise/fall | F: follow/free | R: reset | RMB: "
+                                 "engage/unlock"}) +
+              " | Esc: cancel/settings | Q/E: exposure | L: light" +
               (warningCount ? " | Approximate materials (see log)" : ""),
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 16}}),
           .wrap = ui::TextWrap::AvailableInlineSize,
@@ -326,7 +337,19 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
   props.lighting.irradiance = _lighting ? math::Vec3f{3, 3, 3} : math::Vec3f{};
   props.exposure = _exposure;
   props.toneMap = true;
-  auto view = std::make_unique<ui::SceneView>(props);
+  std::unique_ptr<ui::SceneView> view;
+  if (inspecting()) {
+    auto inspection = std::make_unique<ui::InspectionView>(
+        props, _camera.props(),
+        ui::InspectionProps{_preferences.mouseLookSensitivity,
+                            _preferences.zoomSensitivity,
+                            _preferences.mouseInvertY});
+    _inspection = inspection.get();
+    _inspectionChanged = inspection->onCameraChanged(
+        [this](scene::WorldCamera) { updateView(); });
+    view = std::move(inspection);
+  } else
+    view = std::make_unique<ui::SceneView>(props);
   _view = view.get();
   if (_kind == DemoKind::Benchmark)
     prepareBenchmark(ctx);
@@ -336,8 +359,8 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
 
 scene::WorldCamera Demo3DApp::camera() const {
   return _followMode ? _follow.camera()
-         : _kind == DemoKind::Material
-             ? _camera.camera()
+         : inspecting()
+             ? (_inspection ? _inspection->camera() : _camera.camera())
              : _freeCamera.camera({.nearPlane = .02f, .farPlane = 5000});
 }
 
@@ -374,6 +397,18 @@ void Demo3DApp::onActions(AppContext &ctx,
       restartBenchmark(ctx);
     return;
   }
+  if (_kind == DemoKind::Material && actions["pause"].pressed)
+    _playback.setPaused(!_playback.isPaused());
+  if (actions["light"].pressed)
+    _lighting = !_lighting;
+  if (actions["exposure-up"].pressed)
+    _exposure = std::min(16.f, _exposure * 1.25f);
+  if (actions["exposure-down"].pressed)
+    _exposure = std::max(.0625f, _exposure / 1.25f);
+  if (inspecting()) {
+    updateView();
+    return;
+  }
   _navigation = {};
   _keyboardLook = _gamepadLook = _gamepadMove = {};
   const auto keyboard = input::InputDevice{input::DeviceKind::Keyboard, 0};
@@ -387,8 +422,8 @@ void Demo3DApp::onActions(AppContext &ctx,
   };
   const float rawMovement = rawKey(SDL_SCANCODE_W) || rawKey(SDL_SCANCODE_S) ||
                             rawKey(SDL_SCANCODE_A) || rawKey(SDL_SCANCODE_D) ||
-                            rawKey(SDL_SCANCODE_PAGEUP) ||
-                            rawKey(SDL_SCANCODE_PAGEDOWN);
+                            rawKey(SDL_SCANCODE_SPACE) ||
+                            rawKey(SDL_SCANCODE_LSHIFT);
   if (_controls.accept(input::ViewChannel::Movement, keyboard, rawMovement,
                        movement > 0))
     _navigation = actions;
@@ -438,9 +473,7 @@ void Demo3DApp::onActions(AppContext &ctx,
                             float(actions["pointer-look"].value.y *
                                   _preferences.mouseLookSensitivity *
                                   (_preferences.mouseInvertY ? 1 : -1))};
-    if (_kind == DemoKind::Material)
-      _camera.update({.radians = {-delta.x, delta.y}});
-    else if (_followMode)
+    if (_followMode)
       _look.advance({.deltaRadians = delta}, 0);
     else
       _freeCamera.advance({.radians = delta}, 0);
@@ -452,8 +485,6 @@ void Demo3DApp::onActions(AppContext &ctx,
     if (_followMode && _poses)
       _follow.advance(scene::cameraTarget(_poses->current()), _look.state(),
                       {zoom, 0}, 0);
-    else if (_kind == DemoKind::Material)
-      _camera.update({.zoom = zoom});
     else {
       auto props = _freeCamera.props();
       props.unitsPerSecond = std::clamp(
@@ -462,8 +493,7 @@ void Demo3DApp::onActions(AppContext &ctx,
       _freeCamera.setProps(props);
     }
   }
-  if (actions["follow"].pressed && _view &&
-      (_kind == DemoKind::Bistro || _kind == DemoKind::Chess)) {
+  if (actions["follow"].pressed && _view && _kind == DemoKind::Bistro) {
     if (!_followMode) {
       auto props = _world.snapshot().resolve(_world.handle(_subject)).props;
       props.pose = _freeCamera.camera().pose;
@@ -493,21 +523,6 @@ void Demo3DApp::onActions(AppContext &ctx,
     _keyboardLook = _gamepadLook = _gamepadMove = {};
     _facing.reset();
   }
-  if (actions["pause"].pressed)
-    _playback.setPaused(!_playback.isPaused());
-  if (actions["light"].pressed)
-    _lighting = !_lighting;
-  if (actions["exposure-up"].pressed)
-    _exposure = std::min(16.f, _exposure * 1.25f);
-  if (actions["exposure-down"].pressed)
-    _exposure = std::max(.0625f, _exposure / 1.25f);
-  if (_kind == DemoKind::Material &&
-      _controls.state()
-          .channels[unsigned(input::ViewChannel::Movement)]
-          .enabled)
-    _camera.update({.zoom = (float(actions["backward"].pressed) -
-                             float(actions["forward"].pressed)) *
-                            .25f});
   if (actions["reset"].pressed && _view && !_followMode &&
       _kind != DemoKind::Material)
     _freeCamera.setProps(_initialCamera);
@@ -564,6 +579,8 @@ EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
     return EventResult::Ignored; // InputMap receives the displacement once,
                                  // without UI hover/scroll.
   const auto result = _ui.handleEvent(event);
+  if (inspecting())
+    return result;
   if (result != EventResult::Ignored)
     return result;
   if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
@@ -649,6 +666,9 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
       SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Scene preparation failed: %s",
                   e.what());
       _view = nullptr;
+      _inspection = nullptr;
+      _inspectionChanged.disconnect();
+      _caption = nullptr;
       _scene.reset();
       _resources = {};
       _ui.root().setContent(std::make_unique<ui::Text>(
@@ -664,8 +684,7 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
   }
   if (_view && _kind == DemoKind::Benchmark)
     updateBenchmark(ctx);
-  if (_view && !_followMode && _kind != DemoKind::Material &&
-      _kind != DemoKind::Benchmark) {
+  if (_view && !_followMode && !inspecting() && _kind != DemoKind::Benchmark) {
     auto held = [&](const char *key) { return float(_navigation[key].held); };
     _freeCamera.advance(
         {.movement = {held("strafe-right") - held("strafe-left") +
@@ -678,8 +697,6 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
     updateView();
   }
   if (_view && _kind == DemoKind::Material) {
-    _camera.update({.radians = {-(_keyboardLook.x + _gamepadLook.x) * dt,
-                                -(_keyboardLook.y + _gamepadLook.y) * dt}});
     _playback.advance(dt);
     auto props = _scene->props(_smoke);
     const auto size = _resources.smoke->levels().front().size;
@@ -691,7 +708,7 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
          .pixels = scene::FlipbookProps::PixelGrid{size, {256, 256}}},
         _playback);
     props.transform = scene::billboard(
-        {1, -1, 0}, _camera.camera().localCamera({{_space, {}}, 1}, {}),
+        {1, -1, 0}, camera().localCamera({{_space, {}}, 1}, {}),
         {1.5f, 1.5f, 1.5f});
     const auto &previous = _scene->props(_smoke);
     if (previous.transform != props.transform ||
@@ -712,6 +729,10 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
 
 void Demo3DApp::applyControls(AppContext &ctx) {
   const auto preferences = ctx.controlsState().requested;
+  if (_inspection)
+    _inspection->setNavigationProps({preferences.mouseLookSensitivity,
+                                     preferences.zoomSensitivity,
+                                     preferences.mouseInvertY});
   if (preferences != _preferences) {
     _controls.suspend(input::ControlReason::Explicit);
     _navigation = {};
@@ -1024,6 +1045,8 @@ void Demo3DApp::onExit(AppContext &ctx) {
   _ui.clear();
   _view = nullptr;
   _caption = nullptr;
+  _inspectionChanged.disconnect();
+  _inspection = nullptr;
   _projection.reset();
   _scene.reset();
   _resources = {};
