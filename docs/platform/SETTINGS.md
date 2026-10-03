@@ -27,12 +27,13 @@ or PATH change is required. Install prepares runtime files. Running directly fro
 the build tree need not find `project.toml`; absent files retain compiled defaults.
 The project root is not treated as a writable preferences directory.
 
-Settings readers accept integer schema versions 1 through 6; writers emit version 6.
+Settings readers accept integer schema versions 1 through 7; writers emit version 7.
 Version 1 settings retain their defaults and are upgraded on the next explicit
 save. Renderer and interaction preference fields are additive and accepted by this
 reader in older documents; older readers reject unknown fields. Version 3 adds
 accessibility/navigation preferences; version 4 adds appearance; version 5 adds
-shared graphics and runtime policy; version 6 adds shared audio preferences.
+shared graphics and runtime policy; version 6 adds shared audio preferences;
+version 7 adds shared control preferences.
 See [GRAPHICS.md](GRAPHICS.md) and [audio settings](#shared-audio).
 Session readers accept versions 1 and 2; writers emit version 2. Version 1 requires
 normal-window size, position and display name. Version 2 keeps size and display
@@ -83,7 +84,7 @@ scheme/contrast use light/normal fallbacks. No OS setting is modified.
 Both project and user files use this shape; every field inside the tables is optional:
 
 ```toml
-schema_version = 6
+schema_version = 7
 
 [defaults]
 accessibility = "auto"
@@ -427,3 +428,57 @@ failed validation, switching or persistence preserves the applied preferences.
 Background mute keeps voice clocks advancing; pause retains bounded stream data
 and suspends decode until resume. Neither changes online session time. Scoped
 pause policy while Settings is open follows the [audio contract](../audio/README.md).
+
+## Shared control preferences
+
+`ControlsSettings` supplies device and interaction preferences across sub-apps;
+`SettingsStore::controls()` returns requested values. `AppContext::requestControls`
+queues a validated replacement; `controlsState()` exposes requested/effective
+values and app restrictions. An app declares supported interaction/profile choices;
+a disabled field reports the restriction without erasing the user's preference.
+Forced benchmark playback does not become interactive because a preference changes.
+
+| Field | Values / units / default |
+|---|---|
+| `mouse_look_sensitivity` | Positive finite radians per relative motion unit; 0.003 |
+| `mouse_invert_y`, `stick_invert_y` | Independent booleans; false |
+| `stick_look_speed` | Positive finite radians/second at full deflection; 2.5 |
+| `stick_inner_dead_zone` | Radial activation dead zone in [0, 1); 0.15 |
+| `stick_saturation_threshold` | Saturation threshold above inner dead zone, at most 1; 1 |
+| `stick_response_exponent` | Positive finite magnitude exponent after radial remapping; 1 |
+| `zoom_sensitivity` | Positive finite multiplier of the app's wheel-distance impulse; 1 |
+| `mouse_capture` | `toggle` / `hold`; `toggle`, always explicit engagement |
+| `locomotion_profile` | `steered` / `strafe` / `tank`; `steered` where applicable |
+| `steering_recipe` | `out-of-nowhere` / `responsive`; `out-of-nowhere` |
+| `perspective` | `automatic` / `first-person` / `third-person`; `automatic` for follow rigs |
+
+Store these fields under `[controls]`. Validate the whole draft before publication;
+reject nonfinite numbers, unknown enum values and contradictory dead-zone/saturation thresholds.
+Radial processing preserves direction, remaps magnitude between neutral/saturation
+thresholds, applies the exponent, then clamps to one. Neutral rearming uses the
+inner zone; intentional takeover requires an app-defined higher activation
+threshold. Per-axis dead zones must not distort this paired-stick result.
+
+The Controls tab groups Mouse, Gamepad, and Locomotion/Camera fields. It uses the
+existing Apply/Save/Revert transaction: editing a draft does not recapture the
+cursor or move the camera. Apply publishes at the owner-thread boundary, cancels
+affected channel state and preserves the displayed view. Save applies and persists;
+failure preserves previous applied values. Opening Settings already suspends local
+control; closing requires the normal explicit re-engagement. Saving controls
+preserves unrelated graphics, appearance and audio preferences.
+
+Sensitivity and inversion are device preferences. Follow offsets, lens limits,
+perspective thresholds, movement speed, turn response and allowed profile
+combinations are typed app/rig configuration. They are not arbitrary global user
+physics settings. Requested profile and perspective remain independent; context
+such as aiming may temporarily override the effective profile without saving it.
+Free-camera and material-inspection apps report follow-only fields as inapplicable.
+
+Use effective reduced-motion policy for optional camera presentation transitions
+and damping, not to change authoritative movement, steering limits or direct mouse
+response. Relative mode requires window focus; no preference enables background
+local gameplay or automatic recapture after focus return. Runtime device IDs,
+current target, held inputs and ownership tokens are never serialized.
+
+See [runtime routing](RUNTIME.md#viewport-control-sessions),
+[locomotion recipes](LOCOMOTION.md#profiles) and [camera placement](../render/CAMERAS.md).
