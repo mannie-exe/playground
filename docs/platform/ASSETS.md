@@ -182,7 +182,9 @@ and decoder/mesh scratch use the provider's ledger.
 before caching; existing handles win duplicate publication. Workers never mutate
 owner caches. Independent concurrent requests may prepare the same missing asset;
 publication reconciles identity. All-cache-hit requests are ready immediately and
-need no worker admission. Cancellation suppresses publication, not necessarily
+need no worker admission; their readiness callback runs on the requesting thread
+after the result slot is installed. Worker results notify from the worker thread.
+Cancellation suppresses publication, not necessarily
 already-running computation. Wake callbacks signal readiness without capturing views.
 
 Environment cache keys include source revision, diffuse/specular widths, BRDF size,

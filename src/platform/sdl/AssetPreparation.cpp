@@ -184,6 +184,11 @@ runtime::TaskAdmission AssetPreparation::start(runtime::Executor &executor,
   ++_generation;
   _ticket = std::move(ticket);
   _future = std::move(future);
+  if (!missing && wake)
+    try {
+      wake();
+    } catch (...) {
+    }
   return runtime::TaskAdmission::Accepted;
 }
 

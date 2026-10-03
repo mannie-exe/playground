@@ -134,12 +134,14 @@ int main() {
     workerResources.trimRetained();
     test::require(!retained.expired(),
                   "normal reclamation retains bounded prepared assets");
+    unsigned cachedWakes{};
     runtime::Executor closed;
     closed.close();
-    test::require(request.start(closed, workerResources, batch) ==
-                          runtime::TaskAdmission::Accepted &&
-                      request.isReady(),
-                  "warm assets need no executor admission or worker poll");
+    test::require(
+        request.start(closed, workerResources, batch, [&] { ++cachedWakes; }) ==
+                runtime::TaskAdmission::Accepted &&
+            request.isReady() && cachedWakes == 1,
+        "warm assets need no executor admission or worker poll");
     auto warm = request.poll();
     test::require(warm->assets.models.front().model == retained.lock(),
                   "revisit preserves prepared immutable identity");
