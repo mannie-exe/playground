@@ -15,7 +15,7 @@ int main() {
     const WorldId id{1};
     const SpaceId space{id, 1}, foreign{id, 2};
     const EntityId a{id, 1}, b{id, 2};
-    auto ledger = std::make_shared<rendering::ResourceLedger>();
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
     World world{id, ledger};
     const std::array<WorldMutation, 3> seed{
         CreateSpace{{space, {}}},
@@ -167,7 +167,7 @@ int main() {
     auto budgets = ledger->snapshot().budgets;
     budgets.cpuBytes = ledger->snapshot().memory[0].bytes;
     ledger->setBudgets(budgets);
-    test::rejects<rendering::ResourcePressure>(
+    test::rejects<runtime::ResourcePressure>(
         [&] { SpatialQueries::raycast(index, ray, 3); },
         "query output admitted through shared ledger");
   });

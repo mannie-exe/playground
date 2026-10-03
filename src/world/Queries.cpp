@@ -145,18 +145,17 @@ QueryResult &QueryResult::operator=(QueryResult &&other) noexcept {
 }
 
 struct SpatialSnapshot::State {
-  rendering::ResourceLedger::Token charge;
+  runtime::ResourceLedger::Token charge;
   WorldSnapshot world;
   SpatialCoverage coverage;
   SpatialSnapshotProps props;
-  std::shared_ptr<rendering::ResourceLedger> ledger;
+  std::shared_ptr<runtime::ResourceLedger> ledger;
   std::uint64_t revision{};
   std::vector<QueryPrimitive> primitives;
   std::vector<WorldBounds> boxes;
 
   State(WorldSnapshot source, SpatialCoverage area, SpatialSnapshotProps limits,
-        std::shared_ptr<rendering::ResourceLedger> accounting,
-        std::uint64_t rev)
+        std::shared_ptr<runtime::ResourceLedger> accounting, std::uint64_t rev)
       : world{std::move(source)}, coverage{area}, props{limits},
         ledger{std::move(accounting)}, revision{rev} {}
 
@@ -199,9 +198,9 @@ struct SpatialSnapshot::State {
       return output;
     const auto capacity = std::min(budget.hits, primitives.size());
     output.charge = ledger->reserve(
-        rendering::MemoryClass::CPU, rendering::ResourceKind::Preparation,
+        runtime::MemoryClass::CPU, runtime::ResourceKind::Preparation,
         sizeof(QueryResult) + capacity * sizeof(QueryHit),
-        "Spatial query output");
+        "Spatial query output", {world.id().value, world.epoch(), 0});
     output.hits.reserve(capacity);
     for (std::size_t i = 0; i < primitives.size(); ++i) {
       if (output.work == budget.work) {
@@ -237,7 +236,7 @@ struct SpatialSnapshot::State {
       }
     }
     std::sort(output.hits.begin(), output.hits.end(), ordered);
-    output.charge->setState(rendering::AllocationState::Owned);
+    output.charge->setState(runtime::AllocationState::Owned);
     return output;
   }
 };
@@ -245,7 +244,7 @@ struct SpatialSnapshot::State {
 SpatialSnapshot::SpatialSnapshot(
     WorldSnapshot world, SpatialCoverage coverage, std::uint64_t revision,
     std::span<const QueryPrimitive> primitives,
-    std::shared_ptr<rendering::ResourceLedger> ledger,
+    std::shared_ptr<runtime::ResourceLedger> ledger,
     SpatialSnapshotProps props) {
   if (!ledger || !revision || !props.maxPrimitives || !props.maxOutputHits ||
       !props.maxExclusions)
@@ -268,10 +267,10 @@ SpatialSnapshot::SpatialSnapshot(
       coverage.status != QueryStatus::Unavailable)
     throw std::invalid_argument("Invalid spatial coverage status");
   auto charge = ledger->reserve(
-      rendering::MemoryClass::CPU, rendering::ResourceKind::Asset,
+      runtime::MemoryClass::CPU, runtime::ResourceKind::World,
       sizeof(State) +
           primitives.size() * (sizeof(QueryPrimitive) + sizeof(WorldBounds)),
-      "Spatial snapshot");
+      "Spatial snapshot", {world.id().value, world.epoch(), 0});
   auto state = std::make_shared<State>(std::move(world), coverage, props,
                                        std::move(ledger), revision);
   state->charge = std::move(charge);
@@ -309,7 +308,7 @@ SpatialSnapshot::SpatialSnapshot(
       throw std::invalid_argument("Query bounds in a different space");
     state->boxes.push_back(box);
   }
-  state->charge->setState(rendering::AllocationState::Owned);
+  state->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(state);
 }
 

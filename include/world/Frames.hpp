@@ -112,11 +112,11 @@ public:
 
 class ReferenceFrames {
   ReferenceFramesProps _props;
-  std::shared_ptr<rendering::ResourceLedger> _ledger;
+  std::shared_ptr<runtime::ResourceLedger> _ledger;
   std::shared_ptr<const detail::FrameState> _state;
 
 public:
-  ReferenceFrames(WorldSnapshot, std::shared_ptr<rendering::ResourceLedger>,
+  ReferenceFrames(WorldSnapshot, std::shared_ptr<runtime::ResourceLedger>,
                   ReferenceFramesProps = {});
   ReferenceFrames(const ReferenceFrames &) = delete;
   ReferenceFrames &operator=(const ReferenceFrames &) = delete;

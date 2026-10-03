@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-#include <rendering/ResourceLedger.hpp>
+#include <runtime/ResourceLedger.hpp>
 #include <world/Spatial.hpp>
 
 namespace playground::world {
@@ -105,11 +105,11 @@ using WorldMutation =
 // bodies.
 class World {
   WorldProps _props;
-  std::shared_ptr<rendering::ResourceLedger> _ledger;
+  std::shared_ptr<runtime::ResourceLedger> _ledger;
   std::shared_ptr<const detail::WorldState> _state;
 
 public:
-  explicit World(WorldId, std::shared_ptr<rendering::ResourceLedger>,
+  explicit World(WorldId, std::shared_ptr<runtime::ResourceLedger>,
                  WorldProps = {});
   World(const World &) = delete;
   World &operator=(const World &) = delete;

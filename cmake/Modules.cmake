@@ -19,7 +19,7 @@ playground_add_module(playground_runtime
     src/runtime/Services.cpp
     src/input/InputMap.cpp)
 playground_add_module(playground_world src/world/Spatial.cpp src/world/World.cpp src/world/Queries.cpp src/world/Frames.cpp)
-target_link_libraries(playground_world PUBLIC playground_math playground_rendering)
+target_link_libraries(playground_world PUBLIC playground_math playground_runtime)
 playground_add_module(playground_rendering
     src/rendering/RendererTypes.cpp
     src/rendering/RenderSettings.cpp
@@ -27,7 +27,7 @@ playground_add_module(playground_rendering
     src/rendering/Shader.cpp
     src/rendering/Texture.cpp)
 target_sources(playground_rendering PRIVATE src/rendering/TextureStorage.cpp)
-target_link_libraries(playground_rendering PUBLIC playground_math)
+target_link_libraries(playground_rendering PUBLIC playground_math playground_runtime)
 target_link_libraries(playground_rendering PRIVATE spirv-reflect-static)
 playground_add_module(playground_scene
     src/scene/SceneRenderer.cpp

@@ -59,7 +59,7 @@ std::vector<math::ColorRGBA8> pixels(const rendering::PaintImageHandle &image) {
 
 int main() {
   return test::run([] {
-    auto ledger = std::make_shared<rendering::ResourceLedger>();
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
     const auto mesh = scene::makeMesh(
         {{{{-.5f, -.5f, 0}}, {{.5f, -.5f, 0}}, {{0, .5f, 0}}}, {0, 1, 2}});
     const SpaceId space{{1}, 1}, other{{1}, 2};

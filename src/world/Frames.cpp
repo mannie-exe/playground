@@ -10,7 +10,7 @@
 namespace playground::world {
 namespace detail {
 struct FrameState {
-  rendering::ResourceLedger::Token charge;
+  runtime::ResourceLedger::Token charge;
   WorldSnapshot world;
   std::uint64_t revision{};
   std::vector<FrameRecord> records;
@@ -142,18 +142,18 @@ const FrameSample &FrameSnapshot::resolve(FrameId id) const {
 }
 
 ReferenceFrames::ReferenceFrames(
-    WorldSnapshot world, std::shared_ptr<rendering::ResourceLedger> ledger,
+    WorldSnapshot world, std::shared_ptr<runtime::ResourceLedger> ledger,
     ReferenceFramesProps props)
     : _props{props}, _ledger{std::move(ledger)} {
   props.validate();
   if (!_ledger)
     throw std::invalid_argument("Frame accounting required");
-  auto charge = _ledger->reserve(rendering::MemoryClass::CPU,
-                                 rendering::ResourceKind::Asset, estimate(0),
-                                 "Frame snapshot");
+  auto charge = _ledger->reserve(
+      runtime::MemoryClass::CPU, runtime::ResourceKind::World, estimate(0),
+      "Frame snapshot", {world.id().value, world.epoch(), 0});
   auto state = std::make_shared<detail::FrameState>(std::move(world));
   state->charge = std::move(charge);
-  state->charge->setState(rendering::AllocationState::Owned);
+  state->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(state);
 }
 
@@ -179,9 +179,9 @@ FrameVersion ReferenceFrames::apply(WorldSnapshot world,
       ++count;
     }
   }
-  auto charge = _ledger->reserve(rendering::MemoryClass::CPU,
-                                 rendering::ResourceKind::Asset,
-                                 estimate(count), "Frame snapshot candidate");
+  auto charge = _ledger->reserve(
+      runtime::MemoryClass::CPU, runtime::ResourceKind::World, estimate(count),
+      "Frame snapshot candidate", {world.id().value, world.epoch(), 0});
   auto candidate = std::make_shared<detail::FrameState>(std::move(world));
   candidate->charge = std::move(charge);
   candidate->revision = increment(_state->revision);
@@ -285,7 +285,7 @@ FrameVersion ReferenceFrames::apply(WorldSnapshot world,
   };
   for (std::size_t i = 0; i < candidate->records.size(); ++i)
     sample(sample, i, 1);
-  candidate->charge->setState(rendering::AllocationState::Owned);
+  candidate->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(candidate);
   return snapshot().version();
 }

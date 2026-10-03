@@ -12,7 +12,7 @@ using test::require;
 
 int main() {
   return test::run([] {
-    auto ledger = std::make_shared<rendering::ResourceLedger>();
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
     World world{{7}, ledger};
     const SpaceId space{{7}, 1}, other{{7}, 2};
     const std::array<WorldMutation, 2> spaces{CreateSpace{{space, {}}},
@@ -155,7 +155,7 @@ int main() {
     auto budgets = ledger->snapshot().budgets;
     budgets.cpuBytes = ledger->snapshot().memory[0].bytes;
     ledger->setBudgets(budgets);
-    test::rejects<rendering::ResourcePressure>(
+    test::rejects<runtime::ResourcePressure>(
         [&] {
           restored.apply(world.snapshot(), {}, restored.snapshot().version());
         },
