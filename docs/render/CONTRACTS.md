@@ -59,6 +59,13 @@ coordinates, UI logical coordinates and target pixels remain distinct. SDL GPU
 normalizes native backend differences; do not add Vulkan-specific shader flips.
 Importers convert source units, axes, winding and UV conventions at their boundary.
 
+[World positions](../platform/WORLDS.md#coordinates-and-numerical-bounds) carry a
+SpaceId and double coordinates in meters. Render matrices remain local floats;
+conversion subtracts the submission's per-view RenderOrigin before narrowing.
+Models, camera, lights, bounds and picking share that origin. Rebasing changes no
+logical pose, asset identity or immutable upload. World queries report incomplete
+coverage separately from no hit; render visibility does not imply query membership.
+
 Rotation is represented by a normalized quaternion; scaling remains separate.
 Negative scales reverse orientation. Singular transforms cannot be inverted for
 picking or normal transformation. Public CPU math has no SIMD alignment promise:
@@ -71,7 +78,7 @@ storage layout, shader buffer layout and public values accidentally identical.
 | Kiwi layout relations | Linear relations inside ConstraintLayout only |
 | Scene hierarchy | Parent/local transforms derive world transforms; reject cycles |
 | Renderer limits | Validate target extent, formats and allocation policy before work |
-| Future physics/navigation | Update model poses/results; do not mutate UI or GPU resources from workers |
+| Navigation / future physics adapter | Request motion and publish model results; workers never mutate UI or GPU resources |
 
 These systems exchange values and handles, not a universal constraint solver.
 
@@ -131,9 +138,9 @@ must share layout semantics with CPU text. Full-text raster uploads remain the
 compatibility path until glyph drawing supports those semantics. SVG remains
 rasterize-at-density then upload; direct vector-path rendering is separate.
 
-Software/GPU 3D share an unlit capability; GPU additionally supports PBR. SceneView prepares after layout,
-caches by scene revision, pixel extent and both scene/image resource domains, and supports independent
-resolutionScale. Scene3D provides immutable draw snapshots, cycle-safe parenting,
+Software/GPU 3D share an unlit capability; GPU additionally supports PBR. SceneView
+prepares after layout, caches by scene/world source revisions, view origin, pixel
+extent and both scene/image resource domains, and supports independent resolutionScale. Scene3D provides immutable draw snapshots, cycle-safe parenting,
 checked identities, mesh bounds and CPU triangle picking. Scene2D is a separate
 ordered affine display list; Scene2DView uses either 2D painter.
 Rigid TRS animation changes scene-authored state. PBR requires metallicRoughness

@@ -18,6 +18,9 @@ separate artifacts. Executable-app authoring/loading and its browser are
 | model/save version | Persistence schema and transactional migration policy |
 | asset revision | Authored generation within catalogs; not a globally unique version or content hash |
 | tool version | Manifest/cook implementation identity used for reproducibility and cache invalidation |
+| world/cell schema | Space, identity, bounds, payload and save interpretation; explicit migrations |
+| generator identity/version | Exact algorithm/build contract, seed encoding, configuration digest and output compatibility |
+| derived product key | Source/neighbor revisions, profile/settings, cooker version and target encoding |
 
 Use [SemVer](https://semver.org/spec/v2.0.0.html) for released app/pack
 contracts: exported asset IDs, kinds and documented interpretation form the pack's
@@ -67,6 +70,31 @@ external identity, then manifest and member bytes before publication. Checksums
 alone do not establish publisher authenticity; authenticated indexes carry the
 trust and update policy.
 
+## World and generated content
+
+World manifests declare stable world-definition/space/cell names, numerical bounds,
+cell payload references, exact content locks and optional generator recipes. A
+runtime WorldId identifies an instance/save rather than the reusable definition.
+Definition-local space/entity names bind to world-qualified identities on creation;
+loading the same definition into two worlds cannot alias their runtime state.
+Registered definition schemas use inspectable JSON for world/cell records; large
+products use explicit bounded binary encodings. Canonical field/record ordering,
+finite doubles and lossless stable-ID/integer encoding are required. Large integer
+identities/addresses use canonical decimal strings in JSON to avoid consumer
+precision loss; wire/binary encodings use defined integer widths and byte order.
+
+World/cell validation checks units, duplicate identities, frame/reference cycles,
+checked address ranges, content closure and supported generator/profile schemas.
+Cook outputs record dependencies on voxel neighbors, navigation profiles and tool
+versions. Edit invalidation follows those dependencies rather than package names.
+Generated temporary/runtime products need not become a new published pack.
+
+Saves pin baseline content and generator identity separately from derived cache
+versions. Content updates require explicit migration/compatibility before replacing
+an active baseline; navigation/mesh caches can be regenerated without rewriting
+authoritative edits. See [world persistence](WORLDS.md#state-activation-and-persistence)
+and [generation contracts](PROCEDURAL.md).
+
 ## Local authoring, build, install and CPack
 
 ```text
@@ -114,6 +142,11 @@ remote sources into PackageStore, with progress, cancellation, quota checks and
 verification. Required closure is ready before activation; an optional declared
 pack is prepared and mounted transactionally at a safe owner-thread boundary.
 AssetReader never fetches the network. Offline installed closures remain usable.
+
+Package readiness means verified content is available locally, not that every
+world cell is decoded, simulated or on the GPU. [World streaming](STREAMING.md)
+uses indexed local reads and bounded preparation; optional remote dependencies
+require explicit acquisition before they can satisfy cell readiness.
 
 Acquisition has Queued, Fetching, Verifying, Ready, Failed and Cancelled outcomes.
 Its durable result survives notification-queue pressure. A request generation

@@ -1,5 +1,9 @@
 # Scene verification workloads
 
+[World verification](../platform/WORLD_TESTING.md) adds far-origin/multiple-view,
+streaming, generation, persistence, navigation and spatial replication workloads.
+Scene rendering tests do not establish those contracts merely by loading a model.
+
 ## Deterministic contracts
 
 Camera path sampling depends only on explicit time; wrap seams, finite values,

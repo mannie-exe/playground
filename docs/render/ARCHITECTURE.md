@@ -76,13 +76,15 @@ are not measurements of free VRAM, and the live-pool cap is not a whole-device c
 
 ## Observer and viewport
 
-CameraProps defines an observer (eye, target, up and perspective/orthographic
-projection). A viewport maps a UI content rectangle—not its border/padding—to
+WorldCamera defines a precise space-identified observer; the view's RenderOrigin
+produces local CameraProps (eye, target, up and perspective/orthographic projection).
+SceneProjection derives local draws from the same world snapshot and origin without
+mutating shared assets. A viewport maps a UI content rectangle—not its border/padding—to
 normalized camera coordinates and a physical render extent. It supplies:
 
 - camera view/projection at logical aspect;
 - logical-to-normalized pointer mapping with outside/empty rejection;
-- a picking ray in world space;
+- a local picking ray with its captured RenderOrigin for world conversion;
 - pixel extent derived from density and an independent render scale;
 - ordered submissions, without changing the scene model's storage order.
 

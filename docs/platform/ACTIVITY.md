@@ -1,5 +1,12 @@
 # Application activity and full-frame presentation
 
+World streaming, generation, navigation and save services publish pending work and
+wake deadlines through the [runtime service pump](RUNTIME.md#service-processing).
+Workers retain results before waking the owner. Clean views do not suppress service
+progress; pending disk/network work does not force continuous redraw. Accepted
+world changes invalidate affected views/products, and active path following or
+simulation requests its own update cadence independently of camera activity.
+
 Applications declare update and paint policy separately. Continuous behavior is
 the compatibility default; an on-demand app must declare scheduled work, visual
 changes and queued completions. An unchanged UI does not imply a paused game.

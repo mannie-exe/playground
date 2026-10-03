@@ -111,14 +111,27 @@ same voice lifecycle. Oscillators and envelopes produce finite samples under a
 bounded per-voice work contract; phase and envelope state survive block boundaries.
 Tests use deterministic offline signals and the native device separately.
 
-Spatialization consumes listener/emitter snapshots, uses scene coordinates (+Y up)
-and explicit world-units-per-meter conversion, and applies distance attenuation
-and stereo positioning. Validate positive distance bounds and finite poses. Mono
+Spatialization consumes listener/emitter snapshots identified by world epoch,
+SpaceId, tick and discontinuity. [World coordinates](../platform/WORLDS.md) use
+meters and +Y up; legacy/authored scale converts at the input boundary. Resolve
+moving-frame poses consistently, subtract precise listener position before any
+float conversion, then apply distance attenuation and stereo positioning.
+Unconnected spaces do not mix spatial voices; cross-space audio requires an
+explicit app mix policy rather than subtracting unrelated coordinates. Teleports
+reset position history; render-origin shifts do not move emitters or restart voices.
+Validate positive distance bounds and finite poses. Mono
 sources pan by listener-relative position; stereo sources preserve their authored
 image unless explicitly downmixed for spatialization. Processing stages accept
 bounded parameter updates. HRTF, Doppler, occlusion, reverberation and acoustic
 simulation require a separately specified processor; no scene raycasts run in the
 audio callback. The voice API does not imply those effects are enabled.
+
+World/cell streaming can retain audio source data independently of visible geometry.
+The app declares whether emitter deactivation stops, fades or virtualizes playback;
+CPU/GPU scene eviction alone does not destroy a logical emitter. Publish bounded
+copied spatial snapshots on the control path, never query the live world, navigate
+or load cells in the audio callback. Multi-listener mixing is explicit per output,
+not inferred from whichever viewport rendered last.
 
 Tests cover sample-accurate starts/loops/fades, seek generations, invalid values,
 queue saturation, repeated stop, stale handles, stealing, streaming starvation,

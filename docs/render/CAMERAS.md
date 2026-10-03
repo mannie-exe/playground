@@ -11,7 +11,8 @@ physics or collision support.
 | API | Contract |
 |---|---|
 | `Scene2DViewProps::camera` | Affine scene-to-content mapping |
-| `CameraProps` | Resolved 3D eye/target/up and explicit lens values |
+| `WorldCamera` | Precise space-identified position, orientation, focus distance and lens values |
+| `CameraProps` | View-local float eye/target/up and lens values after render-origin conversion |
 | `SceneViewport` | Content bounds, aspect, pixel extent and projection/picking mapping |
 | `OrbitController` | Angular/distance intent around an inspection target |
 | `FreeCameraController` | Unconstrained local movement/look intent |
@@ -19,7 +20,7 @@ physics or collision support.
 | `FollowCameraRig` | Subject anchors, first/third-person placement, zoom and follow damping |
 | `CameraDirector` | Viewport-local source selection and explicit pose/lens hand-off |
 | `CameraPath` | Immutable timed looping camera samples |
-| `PoseHistory` | Previous/current model poses and presentation interpolation |
+| `PoseHistory` | Previous/current WorldPose samples, epoch/tick and discontinuity-aware interpolation |
 | `ViewControlSession` | Viewport input eligibility and scoped pointer ownership; see [runtime](../platform/RUNTIME.md#viewport-control-sessions) |
 
 Controllers consume intent and copied state, never SDL events, GPU handles or UI
@@ -28,11 +29,18 @@ from a user, scripted behavior or replay. Rendering consumes resolved values;
 changing one viewport must not mutate a global active camera.
 
 The composition is input ownership -> look/locomotion -> subject presentation
-sample -> camera rig -> director -> CameraProps -> viewport. A rig evaluates an
-anchor even without an avatar mesh. No dummy scene objects or general rig class
-hierarchy are required to keep body heading, orbit and eye placement independent.
+sample -> camera rig -> director -> WorldCamera -> render-origin conversion ->
+CameraProps -> viewport. A rig evaluates an anchor even without an avatar mesh.
+No dummy scene objects or general rig class hierarchy are required to keep body heading, orbit and eye placement independent.
 
 ## Coordinates and clocks
+
+Camera rigs, director sources and authored paths use [world coordinates](../platform/WORLDS.md),
+not float scene matrices as authoritative positions. Camera orientation and focus
+distance remain independent of the large world position. Each viewport derives a
+RenderOrigin and local CameraProps together with its render submission. Picking
+converts a local ray back through that exact origin into a space-identified query;
+an origin change cannot mix a new origin with an old depth or picking sample.
 
 Pointer coordinates pass through window/UI mapping into viewport content,
 including letterboxing. Reject gestures started outside content; an accepted
@@ -62,8 +70,8 @@ relevant damping. Pause/resume rebases time without integrating the suspended ga
 
 ## Follow targets and rig state
 
-`CameraTargetSample` contains a validated subject identity/generation, world pose,
-world-space follow and eye anchors, and an explicit discontinuity marker. Resolve
+`CameraTargetSample` contains a validated world/entity identity, epoch/tick, WorldPose,
+space-identified follow and eye anchors, and an explicit discontinuity marker. Resolve
 identities in the app/model and pass copied samples. Removed/replaced targets
 cancel follow ownership and select an app-declared fallback; retained pointers
 cannot extend the target's lifetime. Eye/follow anchors already include model
@@ -78,7 +86,7 @@ inheriting the body's turning a second time.
 | `FollowCameraRig::adoptView(camera, target)` | Seed reachable look/placement from an outgoing view; expose constrained results |
 | `FollowCameraRig::reset(target, look)` | Reset placement/history on teleport or explicit reset |
 | `FollowCameraRig::state()` | Requested/effective perspective, requested/resolved distance, transition and target status |
-| `FollowCameraRig::camera()` | Resolved CameraProps, independent of renderer allocation |
+| `FollowCameraRig::camera()` | Resolved WorldCamera, independent of renderer allocation and view origin |
 
 `FollowCameraProps` contains anchor blending and shoulder placement, lens values,
 zoom range, perspective policy, entry/exit thresholds and response half-lives.
@@ -141,6 +149,12 @@ FOV, near/far planes and orthographic height; never projection matrices. Smooths
 weighting applies to the blend parameter; moving endpoints need not have zero
 world velocity. `transitioning()` exposes activity demand.
 
+Blend only samples in the same world epoch and space. Resolve moving-frame samples
+to that space at a consistent presentation time before blending. A cross-space
+selection waits for the app's prepared transfer/readiness policy, then cuts and
+resets history; seamless portal blending is future. RenderOrigin changes alone
+neither restart transitions nor create discontinuities.
+
 Removing/disabling the winner chooses the next eligible source. With no source,
 select the configured fallback or hold the last view and stop transitioning.
 Target removal may require immediate fallback and control revocation rather than
@@ -185,6 +199,12 @@ constant-speed spline. Across projection modes, hold the previous camera until
 the next key cuts. Authored paths remain responsible for avoiding geometry.
 Named shots store pose/lens values, not matrices or borrowed scene pointers.
 
+Path keys use WorldCamera values in one declared space, or bounded local poses in
+one explicitly sampled reference frame. Cross-space travel is a sequence of app
+transfers and separate paths, not interpolation between unrelated coordinates.
+Predicted path positions can supply bounded streaming demand; camera priority does
+not authorize loading beyond world budgets or moving the controlled subject.
+
 ## Future camera obstruction
 
 Camera obstruction, static collision baking and physics integration are future
@@ -210,6 +230,11 @@ must not be substituted with bounds picking and described as collision safety.
 Character contacts, grounding, vehicle dynamics and root motion are separate
 future [movement realizations](../platform/LOCOMOTION.md#future-physics-and-root-motion).
 Camera obstruction alone cannot prevent a subject moving through a wall.
+
+The backend uses [snapshot and coverage semantics](../platform/WORLDS.md#spatial-queries)
+and the [physics adapter boundary](../platform/PHYSICS.md). A supported sweep with
+missing collision coverage is unresolved, never clear. Query availability is
+independent of whether geometry happens to be rendered in the current view.
 
 ## References
 

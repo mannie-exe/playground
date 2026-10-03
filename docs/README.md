@@ -8,6 +8,8 @@ scope. Contract text is not a report of implementation or test status.
 |---|---|
 | Build, install and release | [Contributing](../CONTRIBUTING.md), [manifest generation](platform/MANIFESTS.md) |
 | Applications and models | [Applications](platform/APPLICATIONS.md), [runtime](platform/RUNTIME.md), [activity](platform/ACTIVITY.md) |
+| Worlds and space | [Identity, coordinates, frames and persistence](platform/WORLDS.md), [streaming](platform/STREAMING.md), [verification](platform/WORLD_TESTING.md) |
+| Generation and autonomous movement | [Procedural/voxel data](platform/PROCEDURAL.md), [navigation](platform/NAVIGATION.md), [physics boundary](platform/PHYSICS.md) |
 | Locomotion and cameras | [Profiles and facing](platform/LOCOMOTION.md), [rigs and hand-off](render/CAMERAS.md), [verification](render/TESTING.md) |
 | Content | [Asset ownership](platform/ASSETS.md), [packs](platform/PACKAGES.md), [versions/manifests](platform/MANIFESTS.md) |
 | Audio | [Playback, synthesis, spatial state and accounting](audio/README.md) |
@@ -24,6 +26,12 @@ scope. Contract text is not a report of implementation or test status.
 - [Runtime UI documents and editor](ui/DOCUMENTS.md)
 - [Camera obstruction](render/CAMERAS.md#future-camera-obstruction)
 - [Physics-backed movement and root motion](platform/LOCOMOTION.md#future-physics-and-root-motion)
+- [Physics backend and dynamics](platform/PHYSICS.md#future-implementation)
+- [Planetary frames, seamless portals and distributed transfers](platform/WORLDS.md#future-capabilities)
+- [Prediction/rollback and authority migration](platform/NETWORKING.md#future-session-capabilities)
+- Partial texture-mip residency and automatic HLOD in [streaming](platform/STREAMING.md#content-and-missing-regions)
+- Smooth density terrain, fluid simulation and multiresolution terrain in [procedural content](platform/PROCEDURAL.md#voxel-coordinates-and-edits)
+- Volume planners and crowd avoidance in [navigation](platform/NAVIGATION.md)
 - Combobox and Autocomplete in [control contracts](ui/CONTROLS.md)
 
 [C++ notes](NOTES.md), the [historical migration guide](CATCH_UP.md), and
