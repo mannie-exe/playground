@@ -315,6 +315,11 @@ Scene3D::snapshot(std::span<const ObjectId> exclusions) const {
   return result;
 }
 
+std::span<const MeshDraw> Scene3D::draws() const {
+  refreshWorldCache();
+  return _cachedDraws;
+}
+
 Ray3 pickingRay(const CameraView &camera, math::Vec2f position) {
   if (!math::isFinite(position))
     throw std::invalid_argument("Nonfinite viewport position");

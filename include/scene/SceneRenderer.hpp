@@ -72,6 +72,7 @@ struct MetallicRoughnessProps {
   float normalScale{1}, occlusionStrength{1};
   rendering::TextureBinding baseColorTexture, metallicRoughnessTexture,
       normalTexture, occlusionTexture, emissiveTexture;
+  bool operator==(const MetallicRoughnessProps &) const = default;
 };
 
 struct MaterialProps {
@@ -88,12 +89,14 @@ struct MaterialProps {
   // Present selects PBR; absent keeps the existing explicit unlit path.
   std::optional<MetallicRoughnessProps> pbr;
   rendering::TextureBinding colorTexture;
+  bool operator==(const MaterialProps &) const = default;
 };
 
 struct MeshDraw {
   MeshHandle mesh;
   MaterialProps material;
   math::Matrix4 model;
+  bool operator==(const MeshDraw &) const = default;
 };
 
 struct CameraView {

@@ -191,6 +191,7 @@ struct TextureBinding {
   unsigned uvSet{};
   UVTransform transform;
   void validate() const;
+  bool operator==(const TextureBinding &) const = default;
 };
 
 } // namespace playground::rendering
