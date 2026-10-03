@@ -108,6 +108,9 @@ int main(int argc, char **argv) {
     std::vector<double> renderTimes;
     bool warm{}, raised{}, sized{}, completed{};
     double measuredAt{};
+    std::optional<double> quietStarted;
+    double quietSince{};
+    std::uint64_t quietMeshHits{};
     std::uint64_t resumedMeshHits{};
     unsigned cameraStage{};
     std::optional<unsigned> focusStage;
@@ -143,8 +146,12 @@ int main(int argc, char **argv) {
           if (!raised && sized && elapsed > 2) {
             int count{};
             auto windows = SDL_GetWindows(&count);
-            for (int i = 0; i < count; ++i)
+            for (int i = 0; i < count; ++i) {
+              SDL_WarpMouseInWindow(windows[i],
+                                    host.windowState().actualSize.x / 2.f,
+                                    host.windowState().actualSize.y / 2.f);
               SDL_RaiseWindow(windows[i]);
+            }
             SDL_free(windows);
             raised = true;
           }
@@ -336,7 +343,38 @@ int main(int argc, char **argv) {
             }
             stageAt = std::chrono::steady_clock::now();
           } else if (!camera && elapsed > 30 && state.sceneWork.uploads) {
+            if (!host.windowServices().focused()) {
+              std::cerr
+                  << "Native focus unavailable for scene camera workload\n";
+              log.invalid = true;
+              host.request({.type = AppCommandType::Quit});
+              return;
+            }
             if (!warm) {
+              if (inspection) {
+                if (!quietStarted) {
+                  if (scene == "material") {
+                    key(SDL_SCANCODE_P, true);
+                    key(SDL_SCANCODE_P, false);
+                  }
+                  quietStarted = quietSince = elapsed;
+                  quietMeshHits = state.sceneWork.meshHits;
+                  return;
+                }
+                if (state.sceneWork.meshHits != quietMeshHits) {
+                  quietSince = elapsed;
+                  quietMeshHits = state.sceneWork.meshHits;
+                }
+                if (elapsed - quietSince < .5) {
+                  if (elapsed - *quietStarted > 3) {
+                    std::cerr << "Inspection scene did not become stationary "
+                                 "before camera input\n";
+                    log.invalid = true;
+                    host.request({.type = AppCommandType::Quit});
+                  }
+                  return;
+                }
+              }
               baseline = state.sceneWork;
               baselineSamples = state.cpuSamples;
               warm = true;
@@ -350,13 +388,6 @@ int main(int argc, char **argv) {
                 event.button.y = host.windowState().actualSize.y / 2.f;
                 SDL_PushEvent(&event);
               } else {
-                if (!host.windowServices().focused()) {
-                  std::cerr
-                      << "Native focus unavailable for free-camera workload\n";
-                  log.invalid = true;
-                  host.request({.type = AppCommandType::Quit});
-                  return;
-                }
                 SDL_Event event{};
                 event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
                 event.button.button = SDL_BUTTON_RIGHT;
@@ -400,9 +431,11 @@ int main(int argc, char **argv) {
                         << state.sceneWork.uploads - baseline.uploads
                         << " upload_bytes="
                         << state.sceneWork.uploadBytes - baseline.uploadBytes
-                        << '\n';
+                        << " mesh_hits="
+                        << state.sceneWork.meshHits - baseline.meshHits << '\n';
               log.invalid = log.invalid ||
                             state.sceneWork.uploads != baseline.uploads ||
+                            state.sceneWork.meshHits <= baseline.meshHits ||
                             renderTimes.empty();
               completed = !log.invalid;
               host.request({.type = AppCommandType::Quit});
