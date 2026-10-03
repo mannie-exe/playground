@@ -179,47 +179,53 @@ void Demo3DApp::onEnter(AppContext &ctx) {
   auto promise = std::make_shared<std::promise<Resources>>();
   _pending = promise->get_future();
   auto catalog = ctx.resources().catalogHandle();
-  _task = ctx.workers().submit(
-      [catalog, promise, kind = _kind](std::stop_token stop) noexcept {
-        try {
-          Resources result;
-          const auto ids =
-              kind == DemoKind::Material
-                  ? std::vector{propId, flightId, helmetId}
-              : (kind == DemoKind::Bistro || kind == DemoKind::Benchmark)
-                  ? std::vector{bistroId}
-                  : std::vector{chessId};
-          for (const auto &id : ids) {
-            try {
-              result.models.push_back(sdl::prepareModel(*catalog, id, stop));
-            } catch (const std::exception &error) {
-              throw std::runtime_error(id.value + ": " + error.what());
-            }
-          }
-          auto bytes = catalog->read(catalog->definition(environmentId).source,
-                                     16 * 1024 * 1024);
-          auto hdr = sdl::decodeHDR(bytes);
-          result.environment = scene::prepareEnvironment(*hdr, {}, stop);
-          if (kind == DemoKind::Material) {
-            result.environmentReference =
-                std::make_shared<const rendering::Texture>(
-                    rendering::TextureRole::Color, hdr->levels());
-            bytes = catalog->read(catalog->definition(smokeId).source,
-                                  16 * 1024 * 1024);
-            // Unpadded atlas: no whole-sheet mips, which would blend adjacent
-            // frames.
-            result.smoke = sdl::decodeTexture(bytes, "image/png",
-                                              rendering::TextureRole::Color,
-                                              rendering::MipPolicy::None);
-          }
-          if (stop.stop_requested())
-            throw std::runtime_error("Demo 3D preparation canceled");
-          promise->set_value(std::move(result));
-        } catch (...) {
-          promise->set_exception(std::current_exception());
-        }
-      },
-      512 * 1024 * 1024);
+  _task =
+      ctx.workers()
+          .submit(
+              [catalog, promise, kind = _kind](std::stop_token stop) noexcept {
+                try {
+                  Resources result;
+                  const auto ids = kind == DemoKind::Material
+                                       ? std::vector{propId, flightId, helmetId}
+                                   : (kind == DemoKind::Bistro ||
+                                      kind == DemoKind::Benchmark)
+                                       ? std::vector{bistroId}
+                                       : std::vector{chessId};
+                  for (const auto &id : ids) {
+                    try {
+                      result.models.push_back(
+                          sdl::prepareModel(*catalog, id, stop));
+                    } catch (const std::exception &error) {
+                      throw std::runtime_error(id.value + ": " + error.what());
+                    }
+                  }
+                  auto bytes =
+                      catalog->read(catalog->definition(environmentId).source,
+                                    16 * 1024 * 1024);
+                  auto hdr = sdl::decodeHDR(bytes);
+                  result.environment =
+                      scene::prepareEnvironment(*hdr, {}, stop);
+                  if (kind == DemoKind::Material) {
+                    result.environmentReference =
+                        std::make_shared<const rendering::Texture>(
+                            rendering::TextureRole::Color, hdr->levels());
+                    bytes = catalog->read(catalog->definition(smokeId).source,
+                                          16 * 1024 * 1024);
+                    // Unpadded atlas: no whole-sheet mips, which would blend
+                    // adjacent frames.
+                    result.smoke = sdl::decodeTexture(
+                        bytes, "image/png", rendering::TextureRole::Color,
+                        rendering::MipPolicy::None);
+                  }
+                  if (stop.stop_requested())
+                    throw std::runtime_error("Demo 3D preparation canceled");
+                  promise->set_value(std::move(result));
+                } catch (...) {
+                  promise->set_exception(std::current_exception());
+                }
+              },
+              512 * 1024 * 1024)
+          .ticket;
   if (!_task)
     throw std::runtime_error("Demo 3D worker admission refused");
   synchronize(ctx);

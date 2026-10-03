@@ -679,11 +679,6 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
       auto slot = std::make_shared<Impl::Slot>();
       const auto bytes = add(add(s.props.productBytes, s.props.scratchBytes),
                              sizeof(detail::CellGeneration));
-      const auto worker = s.executor.stats();
-      if (worker.closed)
-        throw std::logic_error("Cell executor is closed");
-      if (bytes > worker.maxReservedBytes)
-        throw std::length_error("Cell preparation exceeds executor byte cap");
       slot->charge = s.ledger->reserve(
           runtime::MemoryClass::CPU, runtime::ResourceKind::Preparation, bytes,
           "Cell preparation", {s.world.value, s.epoch, 1});
@@ -723,13 +718,17 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
               }
           },
           bytes);
-      if (!ticket) {
+      if (ticket.admission == runtime::TaskAdmission::Closed ||
+          ticket.admission == runtime::TaskAdmission::TooLarge)
+        throw std::runtime_error(
+            std::string{runtime::describe(ticket.admission)});
+      if (!ticket.ticket) {
         e.status = CellStatus::Queued;
         e.retryAt = now + retryDelay;
         e.diagnostic = "Cell worker capacity unavailable";
         continue;
       }
-      slot->ticket = std::move(ticket);
+      slot->ticket = std::move(ticket.ticket);
       e.job = std::move(slot);
       e.status = CellStatus::Preparing;
       e.diagnostic.clear();

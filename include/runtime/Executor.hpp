@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <stop_token>
+#include <string_view>
 
 #include <support/MoveOnlyFunction.hpp>
 
@@ -39,6 +40,14 @@ public:
   }
 };
 
+enum class TaskAdmission { Accepted, Busy, TooLarge, Closed };
+std::string_view describe(TaskAdmission) noexcept;
+
+struct TaskSubmission {
+  TaskAdmission admission;
+  std::optional<TaskTicket> ticket;
+};
+
 struct ExecutorStats {
   std::size_t outstanding{}, reservedBytes{};
   std::size_t maxReservedBytes{};
@@ -58,7 +67,7 @@ public:
   ~Executor();
   Executor(const Executor &) = delete;
   Executor &operator=(const Executor &) = delete;
-  std::optional<TaskTicket> submit(Job, std::size_t reservedBytes);
+  TaskSubmission submit(Job, std::size_t reservedBytes);
   ExecutorStats stats() const;
   void close();
 };
