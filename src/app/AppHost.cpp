@@ -810,6 +810,17 @@ void AppHost::executeCommand(PendingAppCommand command) {
                 {.budgets = graphics.budgets, .pacing = graphics.pacing});
           },
           [&] { restore(previous); });
+      _activeApp->input().cancelAll();
+      AppContext context{*this, *_activeApp};
+      _activeApp->onActivityInterrupted(context, AppInterruption::Settings);
+      if (_settingsView) {
+        _settingsView->setControls(controlsState());
+        _settingsView->setResult(_quality.state().requested,
+                                 command.persist
+                                     ? "Saved shared settings."
+                                     : "Applied shared settings for this run.");
+      }
+      requestRepaint();
     }
     return;
   case AppCommandType::RecoverRenderer:
@@ -940,6 +951,19 @@ void AppHost::showSettings(bool visible) {
          .returnToMenu =
              [this] {
                request(PendingAppCommand{.type = AppCommandType::ReturnToMenu});
+             },
+         .controls = controlsState(),
+         .applyShared =
+             [this](auto graphics, auto controls, bool persist) {
+               graphics.validate();
+               controls.validate();
+               auto document = _settings.user();
+               document.graphics = graphics;
+               document.controls = controls;
+               request(
+                   PendingAppCommand{.type = AppCommandType::SetUserSettings,
+                                     .settings = std::move(document),
+                                     .persist = persist});
              }});
     if (!view)
       throw std::invalid_argument("Settings view factory returned no view");

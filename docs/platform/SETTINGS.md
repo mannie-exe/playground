@@ -433,8 +433,9 @@ pause policy while Settings is open follows the [audio contract](../audio/README
 
 `ControlsSettings` supplies device and interaction preferences across sub-apps;
 `SettingsStore::controls()` returns requested values. `AppContext::requestControls`
-queues a validated replacement; `controlsState()` exposes requested/effective
-values and app restrictions. An app declares supported interaction/profile choices;
+queues a validated replacement; `controlsState()` exposes requested values,
+app capabilities and their restriction explanation. Device fields take effect in
+supported contexts; unsupported groups are disabled without erasing preferences. An app declares supported interaction/profile choices;
 a disabled field reports the restriction without erasing the user's preference.
 Forced benchmark playback does not become interactive because a preference changes.
 
@@ -459,7 +460,9 @@ thresholds, applies the exponent, then clamps to one. Neutral rearming uses the
 inner zone; intentional takeover requires an app-defined higher activation
 threshold. Per-axis dead zones must not distort this paired-stick result.
 
-The Controls tab groups Mouse, Gamepad, and Locomotion/Camera fields. It uses the
+The Controls tab groups Mouse, Gamepad, and Locomotion/Camera fields.
+`input::controlsSettingsSchema()` supplies stable names, ranges and choices for
+storage and UI. `stickResponse` performs paired radial remapping. It uses the
 existing Apply/Save/Revert transaction: editing a draft does not recapture the
 cursor or move the camera. Apply publishes at the owner-thread boundary, cancels
 affected channel state and preserves the displayed view. Save applies and persists;

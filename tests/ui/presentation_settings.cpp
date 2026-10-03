@@ -216,7 +216,7 @@ int main() {
                       replacement.viewport.followSystemScale,
                   "removing user overrides resolves from project/app values, "
                   "not previous effective settings");
-    user.files["settings.toml"] = "schema_version=6";
+    user.files["settings.toml"] = "schema_version=8";
     test::rejects([&] { store.reload(); }, "unsupported schema rejected");
     test::require(platform::serializeSettings(store.user()) == saved,
                   "failed reload preserves published settings");
@@ -421,5 +421,29 @@ int main() {
     test::rejects<std::logic_error>(
         [&] { readOnly.replace("settings.toml", ""); },
         "project store remains read-only");
+    auto controls = platform::parseSettings(
+        "schema_version=7\n[controls]\nmouse_capture='hold'\nmouse_invert_y="
+        "true\nlocomotion_profile='tank'\nstick_inner_dead_zone=0.2\n");
+    test::require(
+        controls.controls &&
+            controls.controls->mouseCapture == input::MouseCapture::Hold &&
+            controls.controls->locomotion == input::LocomotionPreference::Tank,
+        "shared controls parsed as typed preferences");
+    test::require(platform::parseSettings(platform::serializeSettings(controls))
+                          .controls == controls.controls,
+                  "control preferences round trip with stable names");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=7\n[controls]\nstick_inner_dead_zone=0.5\nstick_"
+              "saturation_threshold=0.4\n");
+        },
+        "invalid complete controls draft rejects before publication");
+    test::rejects(
+        [] {
+          platform::parseSettings(
+              "schema_version=7\n[controls]\nlocomotion_profile='unknown'\n");
+        },
+        "unknown locomotion choice rejected");
   });
 }

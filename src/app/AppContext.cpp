@@ -170,3 +170,15 @@ void AppContext::requestGraphics(
 void AppContext::requestSettings(bool visible) {
   _host.requestSettings(visible);
 }
+
+playground::input::ControlsState AppContext::controlsState() const {
+  return _host.controlsState();
+}
+
+void AppContext::requestControls(playground::input::ControlsSettings controls,
+                                 bool persist) {
+  controls.validate();
+  auto document = userSettings();
+  document.controls = controls;
+  requestUserSettings(std::move(document), persist);
+}

@@ -334,6 +334,7 @@ public:
   std::optional<double> nextDelay() const noexcept;
   MotionStats stats() const noexcept;
   void setPreference(MotionPreference, bool systemReduced = false);
+  MotionPreference effectivePreference() const noexcept;
 };
 
 namespace motion {

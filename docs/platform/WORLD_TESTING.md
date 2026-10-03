@@ -49,10 +49,16 @@ unsupported native execution is reported as skipped, not passed coverage.
 
 ## Integrated workloads
 
-The small streaming fixture combines authored cells, a generated voxel boundary,
-an autonomous agent and persistent edits. A scripted traversal crosses boundaries,
-revisits evicted cells, prepares a transfer and replaces the world while work is
-pending. Exercise both a renderer-free authority and interactive presentation.
+`world_workflow` streams compiled query/navigation cells through scoped services,
+plans a route, realizes autonomous locomotion at fixed ticks, publishes follow
+camera samples, tracks zone crossings, prepares a cross-space transfer and restores
+a durable checkpoint with a fresh epoch. It asserts zero live accounted storage
+and owners after teardown. The fixture reports ticks, distance, cell publications,
+CPU peak bytes and elapsed time. `world_streaming` separately stresses repeated
+crossings, revisions, cancellation and retained leases; `world_store` injects
+storage failures. Procedural/voxel and replication workloads remain separate
+acceptance requirements for their respective domains. Exercise interactive camera
+presentation through the scene host workload.
 Settings/focus pause local input according to policy without stopping required
 services or an online authority.
 

@@ -567,6 +567,10 @@ void WindowServices::releaseRelativeMouse() noexcept {
   ++_impl->relativeGeneration;
 }
 
+bool WindowServices::focused() const noexcept {
+  return SDL_GetWindowFlags(_impl->window) & SDL_WINDOW_INPUT_FOCUS;
+}
+
 bool WindowServices::relativeMouseActive() const noexcept {
   return _impl->relative && _impl->relativeOwner.isActive() &&
          SDL_GetWindowRelativeMouseMode(_impl->window);

@@ -77,7 +77,8 @@ int main() {
                                                 CreateSpace{{other, {}}},
                                                 SpawnEntity{id, props}};
       world.apply(create, world.snapshot().version(), 0);
-      scene::WorldCamera camera{.pose = {{space, {offset, 0, 0}}, {}}};
+      scene::WorldCamera camera{.pose = {{space, {offset, 0, 0}}, {}},
+                                .epoch = world.snapshot().epoch()};
       const RenderOrigin origin{camera.pose.position, 1};
       const auto extracted =
           projection.extract(world.snapshot(), camera, origin);
@@ -150,6 +151,31 @@ int main() {
                   extracted->draws()[0].model.at(0, 3) < .03,
               "model edits invalidate extracted values without changing assets "
               "or old snapshots");
+      auto hidden = node->props();
+      hidden.visibility.entities = {id};
+      node->setProps(hidden);
+      root.prepare({.scenes = &renderer});
+      require(pixel(renderer.image).r == 0,
+              "subject exclusion hides only this view");
+      secondRoot.prepare({.scenes = &secondRenderer});
+      require(pixel(secondRenderer.image).r == 230,
+              "other viewport retains subject visibility");
+      test::rejects(
+          [&] {
+            auto invalid = hidden;
+            invalid.visibility.entities = {EntityId{space.world, 999}};
+            node->setProps(invalid);
+          },
+          "missing entity exclusion rejected");
+      scene::Scene3D local;
+      const auto object = local.create({.mesh = mesh});
+      const std::array exclusions{object};
+      require(local.snapshot(exclusions).empty() &&
+                  local.snapshot().size() == 1,
+              "local exclusion never changes shared visibility");
+      local.remove(object);
+      test::rejects([&] { local.snapshot(exclusions); },
+                    "stale object exclusion rejected");
       auto oversized = math::Matrix4{};
       oversized.at(0, 0) = 40000;
       scene::SceneProjection oversizedProjection({{id, {mesh, {}, oversized}}},
@@ -166,7 +192,8 @@ int main() {
           "objects outside representable view extent are explicitly counted");
     }
     scene::WorldCamera smallTurn{
-        .pose = {{space, {5000, 0, 0}}, math::axisAngle({0, 1, 0}, .00001f)}};
+        .pose = {{space, {5000, 0, 0}}, math::axisAngle({0, 1, 0}, .00001f)},
+        .epoch = 1};
     const auto direct = smallTurn.view({{space, {}}, 1}, {}, 1);
     require(
         std::abs(direct.view.at(0, 2)) > .000009,

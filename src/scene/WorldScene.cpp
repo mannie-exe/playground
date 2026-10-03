@@ -15,12 +15,42 @@ std::size_t bytes(std::size_t count, std::size_t element,
 }
 } // namespace
 
+void WorldCamera::validate(const world::SpatialLimits &limits) const {
+  world::validate(pose, limits);
+  auto camera = lens;
+  camera.eye = {};
+  camera.target = {0, 0, 1};
+  camera.up = {0, 1, 0};
+  camera.view(1);
+  camera.orthographicHeight.reset();
+  camera.view(1);
+  if (!epoch || !std::isfinite(focusDistance) || focusDistance <= 0)
+    throw std::invalid_argument(
+        "World camera requires an epoch and positive focus distance");
+}
+
+WorldCamera WorldCamera::fromLocal(CameraProps camera,
+                                   world::RenderOrigin origin,
+                                   std::uint64_t epoch,
+                                   const world::SpatialLimits &limits) {
+  camera.view(1);
+  const auto forward = camera.target - camera.eye;
+  WorldCamera result{
+      {world::worldPosition(camera.eye, origin, limits),
+       math::lookRotation(forward, camera.up)},
+      camera,
+      std::hypot(double(forward.x), double(forward.y), double(forward.z)),
+      epoch};
+  result.lens.eye = {};
+  result.lens.target = {0, 0, 1};
+  result.lens.up = {0, 1, 0};
+  result.validate(limits);
+  return result;
+}
+
 CameraProps WorldCamera::localCamera(world::RenderOrigin origin,
                                      const world::SpatialLimits &limits) const {
-  world::validate(pose, limits);
-  lens.view(1);
-  if (!std::isfinite(focusDistance) || focusDistance <= 0)
-    throw std::invalid_argument("World camera focus distance must be positive");
+  validate(limits);
   auto result = lens;
   result.eye = world::renderPosition(pose.position, origin, limits);
   const auto forward = world::rotate(pose.orientation, {0, 0, 1});
@@ -83,6 +113,8 @@ SceneProjection::SceneProjection(
 std::shared_ptr<const WorldSceneSnapshot>
 SceneProjection::extract(world::WorldSnapshot state, const WorldCamera &camera,
                          world::RenderOrigin origin) const {
+  if (camera.epoch != state.epoch())
+    throw std::invalid_argument("Camera belongs to another world epoch");
   if (const auto last = _last.lock();
       last && last->world().version() == state.version() &&
       last->camera() == camera && last->origin() == origin)
@@ -96,7 +128,7 @@ SceneProjection::extract(world::WorldSnapshot state, const WorldCamera &camera,
       rendering::MemoryClass::CPU, rendering::ResourceKind::Preparation,
       bytes(_visuals.size(), sizeof(MeshDraw) + sizeof(world::EntityId),
             sizeof(WorldSceneSnapshot)),
-      "World scene extraction");
+      "World scene extraction", {state.id().value, state.epoch(), 0});
   auto result = std::shared_ptr<WorldSceneSnapshot>(
       new WorldSceneSnapshot{std::move(state)});
   result->_charge = std::move(charge);

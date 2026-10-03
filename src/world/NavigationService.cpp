@@ -19,6 +19,7 @@ struct NavigationService::Impl {
 
   struct Entry {
     NavigationRequest request;
+    runtime::ActivityClock::time_point queuedAt{runtime::ActivityClock::now()};
     NavigationResult result;
     std::shared_ptr<Slot> slot;
     std::optional<runtime::TaskTicket> task;
@@ -152,6 +153,35 @@ void NavigationService::forget(std::uint64_t id) {
   s.active();
   s.cancel(s.entries.at(id));
   s.entries.erase(id);
+}
+
+NavigationStats NavigationService::stats() const {
+  NavigationStats result;
+  const auto now = runtime::ActivityClock::now();
+  for (const auto &[id, entry] : _impl->entries) {
+    const auto &sample = entry.result;
+    if (sample.status == NavigationStatus::Planning) {
+      if (entry.task)
+        ++result.planning;
+      else {
+        ++result.queued;
+        result.oldestQueueSeconds = std::max(
+            result.oldestQueueSeconds,
+            std::chrono::duration<double>(now - entry.queuedAt).count());
+      }
+    } else if (sample.status == NavigationStatus::Cancelled)
+      ++result.cancelled;
+    else if (sample.status == NavigationStatus::Failed ||
+             sample.status == NavigationStatus::BudgetExceeded)
+      ++result.failed;
+    else
+      ++result.completed;
+    result.planningSeconds += sample.planningSeconds;
+    result.expansions += sample.expansions;
+    result.edgeVisits += sample.edgeVisits;
+    result.peakFrontier = std::max(result.peakFrontier, sample.peakFrontier);
+  }
+  return result;
 }
 
 NavigationResult NavigationService::poll(std::uint64_t id) const {

@@ -9,6 +9,7 @@
 
 #include <app/IApp.hpp>
 #include <assets/AssetCatalog.hpp>
+#include <input/ViewControlSession.hpp>
 #include <platform/sdl/UISession.hpp>
 #include <runtime/Benchmark.hpp>
 #include <runtime/Executor.hpp>
@@ -18,6 +19,7 @@
 #include <scene/ModelImport.hpp>
 #include <ui/content/SceneView.hpp>
 #include <ui/content/Text.hpp>
+#include <world/Locomotion.hpp>
 
 namespace playground::demo3d {
 void registerAssets(assets::AssetCatalog &catalog);
@@ -36,12 +38,27 @@ class Demo3DApp final : public IApp {
   std::shared_ptr<scene::Scene3D> _scene;
   scene::ObjectId _smoke;
   scene::Playback _playback;
+  world::World _world;
+  world::SpaceId _space;
+  world::EntityId _scenery, _subject;
+  scene::FollowCameraRig _follow;
+  scene::LookController _look;
+  world::CharacterFacingController _facing;
+  std::optional<scene::PoseHistory> _poses;
+  bool _followMode{};
+  math::Vec2f _keyboardLook, _gamepadLook, _gamepadMove;
+  std::optional<std::uint32_t> _gamepad;
+  std::optional<input::ContextId> _gamepadContext;
+  input::ControlsSettings _preferences;
+  void applyControls(AppContext &);
+  std::unique_ptr<scene::SceneProjection> _projection;
+  std::uint64_t _projectedRevision{};
   scene::OrbitController _camera;
   scene::FreeCameraController _freeCamera;
   scene::FreeCameraProps _initialCamera;
-  scene::CameraDirector _director{{}, 0};
+  scene::CameraDirector _director;
   scene::CameraId _interactiveCamera{};
-  ui::Connection _mouseLock;
+  input::ViewControlSession _controls;
   scene::CameraId _pathCamera{};
   runtime::BenchmarkRun _benchmark;
   ui::Text *_caption{};
@@ -60,9 +77,11 @@ class Demo3DApp final : public IApp {
   void reportBenchmark(AppContext &, bool final);
   void restartBenchmark(AppContext &);
   void prepareBenchmark(AppContext &);
-  static const scene::CameraPath &benchmarkPath();
+  scene::CameraPath benchmarkPath() const;
+  std::optional<scene::CameraPath> _tour;
   input::InputSnapshot _navigation;
-  scene::CameraProps camera() const;
+  scene::WorldCamera camera() const;
+  void project(ui::SceneViewProps &);
   void updateView();
   float _exposure{1};
   bool _lighting{true};
@@ -87,8 +106,12 @@ public:
 
   void onActivityInterrupted(AppContext &,
                              AppInterruption reason) noexcept override {
-    _mouseLock.disconnect();
+    _controls.suspend(reason == AppInterruption::Focus
+                          ? input::ControlReason::Focus
+                          : input::ControlReason::UI);
     _navigation = {};
+    _keyboardLook = _gamepadLook = _gamepadMove = {};
+    _facing.reset();
     if (_kind == DemoKind::Benchmark)
       _benchmark.invalidate(reason == AppInterruption::Focus
                                 ? runtime::BenchmarkInterruption::Focus
@@ -107,6 +130,32 @@ public:
 
   input::InputClaims inputClaims() override { return _ui.inputClaims(); }
 
+  input::ControlCapabilities controlCapabilities() const override {
+    const bool manual = _kind != DemoKind::Benchmark;
+    return {manual, manual, manual && _followMode, manual && _followMode};
+  }
+
+  std::string_view controlRestriction() const override {
+    return _kind == DemoKind::Benchmark
+               ? "Benchmark playback ignores manual controls."
+           : _kind == DemoKind::Material
+               ? "Material inspection uses orbit and zoom; locomotion and "
+                 "perspective preferences are inactive."
+           : _followMode
+               ? "Follow control uses a kinematic subject without gravity or "
+                 "collision. Gamepad: Start engages the selected viewport."
+               : "Free camera: F switches to follow control. Locomotion and "
+                 "perspective preferences apply in follow mode. Gamepad: Start "
+                 "engages the selected viewport.";
+  }
+
+  std::optional<runtime::SimulationTimingProps>
+  simulationTiming() const override {
+    return runtime::SimulationTimingProps{};
+  }
+
+  void fixedUpdate(AppContext &, runtime::SimulationStep,
+                   const input::InputSnapshot &) override;
   void onEnter(AppContext &) override;
   void onExit(AppContext &) override;
   void onActions(AppContext &, const input::InputSnapshot &) override;

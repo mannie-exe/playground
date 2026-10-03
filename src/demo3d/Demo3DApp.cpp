@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_scancode.h>
 
@@ -86,9 +87,43 @@ void registerAssets(assets::AssetCatalog &catalog) {
                                  "demo3d/studio_small_09_1k.hdr"}});
 }
 
-Demo3DApp::Demo3DApp(DemoKind kind) : _kind{kind} {
+Demo3DApp::Demo3DApp(DemoKind kind)
+    : _kind{kind},
+      _world{{std::uint64_t(kind) + 1}, runtime::defaultResourceLedger()},
+      _space{_world.snapshot().id(), 1}, _scenery{_world.snapshot().id(), 1},
+      _subject{_world.snapshot().id(), 2},
+      _camera{{.target = {_space, {}}, .epoch = _world.snapshot().epoch()}},
+      _freeCamera{
+          {.position = {_space, {}}, .epoch = _world.snapshot().epoch()}},
+      _director{_camera.camera(), 0},
+      _controls{
+          input(),
+          {.actions = {std::vector<std::string>{"forward", "backward",
+                                                "strafe-left", "strafe-right",
+                                                "rise", "fall", "pad-move"},
+                       std::vector<std::string>{"left", "right", "up", "down",
+                                                "pointer-look", "pad-look"},
+                       std::vector<std::string>{"wheel-zoom"},
+                       {}}}} {
+  const std::array<world::WorldMutation, 3> mutations{
+      world::CreateSpace{{_space, {}}},
+      world::SpawnEntity{_scenery,
+                         {.pose = {{_space, {}}, {}}, .velocity = {_space}}},
+      world::SpawnEntity{_subject,
+                         {.pose = {{_space, {}}, {}}, .velocity = {_space}}}};
+  _world.apply(mutations, _world.snapshot().version(), 0);
+  if (_kind == DemoKind::Benchmark)
+    _tour.emplace(benchmarkPath());
   input().addContext({.name = "demo3d"},
-                     {{.action = "left", .code = SDL_SCANCODE_LEFT},
+                     {{.action = "pointer-look",
+                       .kind = input::ActionKind::Delta,
+                       .control = input::ControlKind::PointerMotion,
+                       .contribution = {1, 1}},
+                      {.action = "wheel-zoom",
+                       .kind = input::ActionKind::Delta,
+                       .control = input::ControlKind::Wheel,
+                       .contribution = {1, 1}},
+                      {.action = "left", .code = SDL_SCANCODE_LEFT},
                       {.action = "right", .code = SDL_SCANCODE_RIGHT},
                       {.action = "up", .code = SDL_SCANCODE_UP},
                       {.action = "down", .code = SDL_SCANCODE_DOWN},
@@ -101,6 +136,10 @@ Demo3DApp::Demo3DApp(DemoKind kind) : _kind{kind} {
                       {.action = "exposure-up", .code = SDL_SCANCODE_E},
                       {.action = "exposure-down", .code = SDL_SCANCODE_Q},
                       {.action = "reset", .code = SDL_SCANCODE_R},
+                      {.action = "follow", .code = SDL_SCANCODE_F},
+                      {.action = "free-look", .code = SDL_SCANCODE_LALT},
+                      {.action = "aim", .code = SDL_SCANCODE_LSHIFT},
+                      {.action = "recenter", .code = SDL_SCANCODE_C},
                       {.action = "pause", .code = SDL_SCANCODE_SPACE},
                       {.action = "light", .code = SDL_SCANCODE_L}});
 }
@@ -128,6 +167,7 @@ AppInfo Demo3DApp::staticInfo(DemoKind kind) {
 }
 
 void Demo3DApp::onEnter(AppContext &ctx) {
+  applyControls(ctx);
   _loadStarted = nowSeconds();
   _benchmarkSubmitted = ctx.renderRuntimeState().submitted;
   _ui.root().setContent(std::make_unique<ui::Text>(
@@ -224,24 +264,28 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     _smoke = _scene->create({.transform = {.position = {1, -1, 0}},
                              .mesh = scene::makeMesh(std::move(quad)),
                              .material = smoke});
-    _camera.setProps({.target = {0, .5f, 0}, .pitch = .15f, .distance = 10});
+    _camera.setProps({.target = {_space, {0, .5, 0}},
+                      .epoch = _world.snapshot().epoch(),
+                      .pitch = .15,
+                      .distance = 10});
   } else {
     _resources.models.front()->instantiate(*_scene);
     const auto box = scene::drawBounds(_scene->snapshot());
     const auto extent = box.maximum - box.minimum;
     const float radius = std::max({extent.x, extent.y, extent.z, 1.f});
-    _initialCamera = {.position = scene::boundsCamera(box, {}, 1.f).eye,
+    const auto eye = scene::boundsCamera(box, {}, 1.f).eye;
+    _initialCamera = {.position = {_space, {eye.x, eye.y, eye.z}},
+                      .epoch = _world.snapshot().epoch(),
                       .pitch = -.3f,
                       .unitsPerSecond = radius * .15f};
     if (_kind == DemoKind::Bistro || _kind == DemoKind::Benchmark)
-      _initialCamera = bistroView;
+      _initialCamera = bistroView(_space, _world.snapshot().epoch());
     _freeCamera.setProps(_initialCamera);
   }
   _director.setFallback(camera());
   _interactiveCamera = _director.add({.camera = camera()});
   if (_kind == DemoKind::Benchmark)
-    _pathCamera =
-        _director.add({.camera = benchmarkPath().sample(0), .priority = 10});
+    _pathCamera = _director.add({.camera = _tour->sample(0), .priority = 10});
   std::size_t warningCount{};
   for (const auto &model : _resources.models) {
     warningCount += model->warnings().size();
@@ -259,8 +303,9 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
                    ? std::string{"BoomBox / Flight Helmet / SciFi Helmet | "
                                  "Arrows: orbit | W/S: zoom | Space: smoke"}
                    : std::string{"WASD: fly | Arrows: look | PgUp/PgDn: "
-                                 "rise/fall | R: reset"}) +
-              " | RMB: mouse look | Esc: unlock/settings | Q/E: exposure | L: "
+                                 "rise/fall | F: follow/free | R: reset"}) +
+              " | RMB: engage/unlock | Esc: unlock/settings | Q/E: exposure | "
+              "L: "
               "light" +
               (warningCount ? " | Approximate materials (see log)" : ""),
           .font = ctx.resources().font(app::fontAsset, {.style = {.size = 16}}),
@@ -273,9 +318,8 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
                               "Bistro benchmark: preparing resources")});
   }
   root->append(std::move(caption));
-  ui::SceneViewProps props{.scene = _scene,
-                           .camera = _director.camera(),
-                           .preferredSize = {900, 650}};
+  ui::SceneViewProps props{.preferredSize = {900, 650}};
+  project(props);
   props.lighting.diffuseEnvironment = _resources.environment.diffuse;
   props.lighting.specularEnvironment = _resources.environment.specular;
   props.lighting.brdf = _resources.environment.brdf;
@@ -290,10 +334,26 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
   _ui.root().setContent(std::move(root));
 }
 
-scene::CameraProps Demo3DApp::camera() const {
-  return _kind == DemoKind::Material
+scene::WorldCamera Demo3DApp::camera() const {
+  return _followMode ? _follow.camera()
+         : _kind == DemoKind::Material
              ? _camera.camera()
              : _freeCamera.camera({.nearPlane = .02f, .farPlane = 5000});
+}
+
+void Demo3DApp::project(ui::SceneViewProps &props) {
+  if (!_projection || _projectedRevision != _scene->revision()) {
+    std::vector<scene::EntityVisual> visuals;
+    for (const auto &draw : _scene->snapshot())
+      visuals.push_back({_scenery, draw});
+    _projection = std::make_unique<scene::SceneProjection>(
+        std::move(visuals), runtime::defaultResourceLedger());
+    _projectedRevision = _scene->revision();
+  }
+  props.scene.reset();
+  props.worldScene =
+      _projection->extract(_world.snapshot(), _director.camera(),
+                           {_director.camera().pose.position, 1});
 }
 
 void Demo3DApp::updateView() {
@@ -301,7 +361,7 @@ void Demo3DApp::updateView() {
     return;
   auto props = _view->props();
   _director.update(_interactiveCamera, {.camera = camera()});
-  props.camera = _director.camera();
+  project(props);
   props.exposure = _exposure;
   props.lighting.irradiance = _lighting ? math::Vec3f{3, 3, 3} : math::Vec3f{};
   _view->setProps(std::move(props));
@@ -314,7 +374,125 @@ void Demo3DApp::onActions(AppContext &ctx,
       restartBenchmark(ctx);
     return;
   }
-  _navigation = actions;
+  _navigation = {};
+  _keyboardLook = _gamepadLook = _gamepadMove = {};
+  const auto keyboard = input::InputDevice{input::DeviceKind::Keyboard, 0};
+  const auto mouse = input::InputDevice{input::DeviceKind::Mouse, 0};
+  const float movement = actions["forward"].held || actions["backward"].held ||
+                         actions["strafe-left"].held ||
+                         actions["strafe-right"].held || actions["rise"].held ||
+                         actions["fall"].held;
+  const auto rawKey = [&](SDL_Scancode code) {
+    return input().physicalValue(input::ControlKind::Key, code);
+  };
+  const float rawMovement = rawKey(SDL_SCANCODE_W) || rawKey(SDL_SCANCODE_S) ||
+                            rawKey(SDL_SCANCODE_A) || rawKey(SDL_SCANCODE_D) ||
+                            rawKey(SDL_SCANCODE_PAGEUP) ||
+                            rawKey(SDL_SCANCODE_PAGEDOWN);
+  if (_controls.accept(input::ViewChannel::Movement, keyboard, rawMovement,
+                       movement > 0))
+    _navigation = actions;
+  const math::Vec2f keys{
+      float(actions["right"].held) - float(actions["left"].held),
+      float(actions["up"].held) - float(actions["down"].held)};
+  const float rawLook = rawKey(SDL_SCANCODE_LEFT) ||
+                        rawKey(SDL_SCANCODE_RIGHT) || rawKey(SDL_SCANCODE_UP) ||
+                        rawKey(SDL_SCANCODE_DOWN);
+  if (_controls.accept(input::ViewChannel::Look, keyboard, rawLook,
+                       keys != math::Vec2f{}))
+    _keyboardLook = keys;
+  if (_gamepad) {
+    const input::InputDevice pad{input::DeviceKind::Gamepad, *_gamepad};
+    const auto move = actions["pad-move"].value,
+               look = actions["pad-look"].value;
+    const auto raw = [&](SDL_GamepadAxis axis) {
+      return input().physicalValue(
+          {input::ControlKind::GamepadAxis, axis, *_gamepad});
+    };
+    if (_controls.accept(input::ViewChannel::Movement, pad,
+                         std::hypot(raw(SDL_GAMEPAD_AXIS_LEFTX),
+                                    raw(SDL_GAMEPAD_AXIS_LEFTY)),
+                         move != math::Vec2f{})) {
+      _gamepadMove = input::stickResponse(move, _preferences);
+      _navigation = {};
+    }
+    if (_controls.accept(input::ViewChannel::Look, pad,
+                         std::hypot(raw(SDL_GAMEPAD_AXIS_RIGHTX),
+                                    raw(SDL_GAMEPAD_AXIS_RIGHTY)),
+                         look != math::Vec2f{})) {
+      const auto response = input::stickResponse(look, _preferences);
+      _gamepadLook = {float(response.x * _preferences.stickLookSpeed),
+                      float(response.y * _preferences.stickLookSpeed *
+                            (_preferences.stickInvertY ? -1 : 1))};
+      _keyboardLook = {};
+    }
+  }
+  if (ctx.windowServices().relativeMouseActive() &&
+      _controls.state().pointerLocked &&
+      _controls.accept(input::ViewChannel::Look, mouse,
+                       std::hypot(actions["pointer-look"].value.x,
+                                  actions["pointer-look"].value.y))) {
+    _keyboardLook = _gamepadLook = {};
+    const math::Vec2f delta{float(actions["pointer-look"].value.x *
+                                  _preferences.mouseLookSensitivity),
+                            float(actions["pointer-look"].value.y *
+                                  _preferences.mouseLookSensitivity *
+                                  (_preferences.mouseInvertY ? 1 : -1))};
+    if (_kind == DemoKind::Material)
+      _camera.update({.radians = {-delta.x, delta.y}});
+    else if (_followMode)
+      _look.advance({.deltaRadians = delta}, 0);
+    else
+      _freeCamera.advance({.radians = delta}, 0);
+  }
+  if (_controls.accept(input::ViewChannel::Zoom, mouse,
+                       std::abs(actions["wheel-zoom"].value.y))) {
+    const double zoom =
+        -actions["wheel-zoom"].value.y * .25 * _preferences.zoomSensitivity;
+    if (_followMode && _poses)
+      _follow.advance(scene::cameraTarget(_poses->current()), _look.state(),
+                      {zoom, 0}, 0);
+    else if (_kind == DemoKind::Material)
+      _camera.update({.zoom = zoom});
+    else {
+      auto props = _freeCamera.props();
+      props.unitsPerSecond = std::clamp(
+          props.unitsPerSecond * std::exp(actions["wheel-zoom"].value.y * .1),
+          .1, 100.);
+      _freeCamera.setProps(props);
+    }
+  }
+  if (actions["follow"].pressed && _view &&
+      (_kind == DemoKind::Bistro || _kind == DemoKind::Chess)) {
+    if (!_followMode) {
+      auto props = _world.snapshot().resolve(_world.handle(_subject)).props;
+      props.pose = _freeCamera.camera().pose;
+      props.pose.position =
+          world::translated(props.pose.position, {0, -1.7, 0});
+      props.pose.orientation =
+          scene::LookController{{_freeCamera.props().yaw, 0}}.orientation();
+      props.velocity = {_space};
+      const std::array<world::WorldMutation, 1> change{
+          world::SetEntity{_subject, props, true}};
+      _world.apply(change, _world.snapshot().version(),
+                   _world.snapshot().tick());
+      _poses.emplace(_world.snapshot().sample(_world.handle(_subject)));
+      _look.setState({_freeCamera.props().yaw, _freeCamera.props().pitch});
+      _follow.reset(scene::cameraTarget(_poses->current()), _look.state());
+      _followMode = true;
+    } else {
+      auto props = _freeCamera.props();
+      props.position = _follow.camera().pose.position;
+      props.yaw = _look.state().yaw;
+      props.pitch = _look.state().pitch;
+      _freeCamera.setProps(props);
+      _followMode = false;
+    }
+    _controls.suspend(input::ControlReason::Target);
+    _navigation = {};
+    _keyboardLook = _gamepadLook = _gamepadMove = {};
+    _facing.reset();
+  }
   if (actions["pause"].pressed)
     _playback.setPaused(!_playback.isPaused());
   if (actions["light"].pressed)
@@ -323,19 +501,16 @@ void Demo3DApp::onActions(AppContext &ctx,
     _exposure = std::min(16.f, _exposure * 1.25f);
   if (actions["exposure-down"].pressed)
     _exposure = std::max(.0625f, _exposure / 1.25f);
-  if (_kind == DemoKind::Material) {
-    _camera.update({.radians = {(float(actions["right"].pressed) -
-                                 float(actions["left"].pressed)) *
-                                    .12f,
-                                (float(actions["down"].pressed) -
-                                 float(actions["up"].pressed)) *
-                                    .12f},
-                    .zoom = (float(actions["backward"].pressed) -
+  if (_kind == DemoKind::Material &&
+      _controls.state()
+          .channels[unsigned(input::ViewChannel::Movement)]
+          .enabled)
+    _camera.update({.zoom = (float(actions["backward"].pressed) -
                              float(actions["forward"].pressed)) *
                             .25f});
-  } else if (actions["reset"].pressed) {
+  if (actions["reset"].pressed && _view && !_followMode &&
+      _kind != DemoKind::Material)
     _freeCamera.setProps(_initialCamera);
-  }
   updateView();
 }
 
@@ -349,37 +524,112 @@ EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
     return _ui.handleEvent(event);
   }
   auto &window = ctx.windowServices();
+  _controls.synchronize(window.focused(), _ui.inputClaims());
   if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE &&
       window.relativeMouseActive()) {
-    _mouseLock.disconnect();
+    _controls.release();
     window.releaseRelativeMouse();
     input().cancelAll();
     _navigation = {};
     return EventResult::Consumed;
   }
-  if (event.type == SDL_EVENT_MOUSE_MOTION && window.relativeMouseActive()) {
-    const math::Vec2f delta{event.motion.xrel * .003f,
-                            -event.motion.yrel * .003f};
-    if (_kind == DemoKind::Material)
-      _camera.update({.radians = {-delta.x, delta.y}});
-    else
-      _freeCamera.advance({.radians = delta}, 0);
-    updateView();
+  if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+      event.button.button == SDL_BUTTON_RIGHT &&
+      _preferences.mouseCapture == input::MouseCapture::Hold &&
+      _controls.state().pointerLocked) {
+    _controls.release();
+    _navigation = {};
     return EventResult::Consumed;
   }
+  if (event.type == SDL_EVENT_KEYBOARD_REMOVED)
+    _controls.suspend(
+        input::ControlReason::Device,
+        std::array{input::ViewChannel::Movement, input::ViewChannel::Look});
+  if (event.type == SDL_EVENT_MOUSE_REMOVED)
+    _controls.suspend(
+        input::ControlReason::Device,
+        std::array{input::ViewChannel::Look, input::ViewChannel::Zoom});
+  if (event.type == SDL_EVENT_GAMEPAD_REMOVED &&
+      _gamepad == event.gdevice.which) {
+    _controls.removeDevice({input::DeviceKind::Gamepad, *_gamepad});
+    if (_gamepadContext)
+      input().removeContext(*_gamepadContext);
+    _gamepadContext.reset();
+    _gamepad.reset();
+    _gamepadLook = _gamepadMove = {};
+  }
+  if ((event.type == SDL_EVENT_MOUSE_MOTION ||
+       event.type == SDL_EVENT_MOUSE_WHEEL) &&
+      window.relativeMouseActive() && _controls.state().pointerLocked)
+    return EventResult::Ignored; // InputMap receives the displacement once,
+                                 // without UI hover/scroll.
   const auto result = _ui.handleEvent(event);
   if (result != EventResult::Ignored)
     return result;
+  if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
+      event.gbutton.button == SDL_GAMEPAD_BUTTON_START && _view &&
+      !_ui.inputClaims().gamepad && window.focused()) {
+    if (_gamepad != event.gbutton.which) {
+      if (_gamepadContext)
+        input().removeContext(*_gamepadContext);
+      _gamepad = event.gbutton.which;
+      _gamepadContext =
+          input().addContext({.name = "view-gamepad"},
+                             {{.action = "pad-move",
+                               .kind = input::ActionKind::Vector,
+                               .control = input::ControlKind::GamepadAxis,
+                               .code = SDL_GAMEPAD_AXIS_LEFTX,
+                               .device = *_gamepad,
+                               .contribution = {1, 0}},
+                              {.action = "pad-move",
+                               .kind = input::ActionKind::Vector,
+                               .control = input::ControlKind::GamepadAxis,
+                               .code = SDL_GAMEPAD_AXIS_LEFTY,
+                               .device = *_gamepad,
+                               .contribution = {0, -1}},
+                              {.action = "pad-look",
+                               .kind = input::ActionKind::Vector,
+                               .control = input::ControlKind::GamepadAxis,
+                               .code = SDL_GAMEPAD_AXIS_RIGHTX,
+                               .device = *_gamepad,
+                               .contribution = {1, 0}},
+                              {.action = "pad-look",
+                               .kind = input::ActionKind::Vector,
+                               .control = input::ControlKind::GamepadAxis,
+                               .code = SDL_GAMEPAD_AXIS_RIGHTY,
+                               .device = *_gamepad,
+                               .contribution = {0, -1}}});
+      _controls.assign({{input::DeviceKind::Keyboard, 0},
+                        {input::DeviceKind::Mouse, 0},
+                        {input::DeviceKind::Gamepad, *_gamepad}});
+    }
+    _controls.engage({ctx.activationToken(),
+                      {input::DeviceKind::Gamepad, *_gamepad},
+                      window.focused(),
+                      true,
+                      false,
+                      {}});
+    return EventResult::Consumed;
+  }
   if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
       event.button.button == SDL_BUTTON_RIGHT && _view && _view->viewport() &&
       !_ui.inputClaims().pointer &&
       _view->viewport()->normalizedPosition(
           _ui.mapping().toLogical({event.button.x, event.button.y}))) {
     if (window.relativeMouseActive())
-      _mouseLock.disconnect();
+      _controls.release();
     else {
       try {
-        _mouseLock = window.lockRelativeMouse(ctx.activationToken());
+        _controls.engage(
+            {ctx.activationToken(),
+             {input::DeviceKind::Mouse, 0},
+             window.focused(),
+             true,
+             true,
+             [&] {
+               return std::make_shared<ui::Connection>(
+                   window.lockRelativeMouse(ctx.activationToken()));
+             }});
       } catch (const std::exception &error) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
       }
@@ -390,6 +640,7 @@ EventResult Demo3DApp::handleEvent(AppContext &ctx, const SDL_Event &event) {
 }
 
 void Demo3DApp::update(AppContext &ctx, float dt) {
+  applyControls(ctx);
   if (_pending.valid() &&
       _pending.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
     try {
@@ -413,18 +664,22 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
   }
   if (_view && _kind == DemoKind::Benchmark)
     updateBenchmark(ctx);
-  if (_view && _kind != DemoKind::Material && _kind != DemoKind::Benchmark) {
+  if (_view && !_followMode && _kind != DemoKind::Material &&
+      _kind != DemoKind::Benchmark) {
     auto held = [&](const char *key) { return float(_navigation[key].held); };
     _freeCamera.advance(
-        {.movement = {held("strafe-right") - held("strafe-left"),
+        {.movement = {held("strafe-right") - held("strafe-left") +
+                          _gamepadMove.x,
                       held("rise") - held("fall"),
-                      held("forward") - held("backward")},
-         .radians = {(held("right") - held("left")) * dt,
-                     (held("up") - held("down")) * dt}},
+                      held("forward") - held("backward") + _gamepadMove.y},
+         .radians = {(_keyboardLook.x + _gamepadLook.x) * dt,
+                     (_keyboardLook.y + _gamepadLook.y) * dt}},
         dt);
     updateView();
   }
   if (_view && _kind == DemoKind::Material) {
+    _camera.update({.radians = {-(_keyboardLook.x + _gamepadLook.x) * dt,
+                                -(_keyboardLook.y + _gamepadLook.y) * dt}});
     _playback.advance(dt);
     auto props = _scene->props(_smoke);
     const auto size = _resources.smoke->levels().front().size;
@@ -435,15 +690,88 @@ void Demo3DApp::update(AppContext &ctx, float dt) {
          .inset = {.5f / size.x, .5f / size.y},
          .pixels = scene::FlipbookProps::PixelGrid{size, {256, 256}}},
         _playback);
-    props.transform =
-        scene::billboard({1, -1, 0}, _camera.camera(), {1.5f, 1.5f, 1.5f});
+    props.transform = scene::billboard(
+        {1, -1, 0}, _camera.camera().localCamera({{_space, {}}, 1}, {}),
+        {1.5f, 1.5f, 1.5f});
     const auto &previous = _scene->props(_smoke);
     if (previous.transform != props.transform ||
         previous.material.colorTexture.transform !=
             props.material.colorTexture.transform)
       _scene->setProps(_smoke, std::move(props));
+    updateView();
+  }
+  if (_followMode && _poses) {
+    _look.advance({.radiansPerSecond = _keyboardLook + _gamepadLook}, dt);
+    _follow.advance(
+        scene::cameraTarget(_poses->sample(ctx.simulationState()->alpha)),
+        _look.state(), {}, dt);
+    updateView();
   }
   _ui.update(dt);
+}
+
+void Demo3DApp::applyControls(AppContext &ctx) {
+  const auto preferences = ctx.controlsState().requested;
+  if (preferences != _preferences) {
+    _controls.suspend(input::ControlReason::Explicit);
+    _navigation = {};
+    _keyboardLook = _gamepadLook = _gamepadMove = {};
+    _facing.reset();
+    _preferences = preferences;
+  }
+  _controls.setThresholds(
+      float(preferences.stickInnerDeadZone),
+      float(preferences.stickInnerDeadZone +
+            std::min(.1, (1 - preferences.stickInnerDeadZone) * .5)));
+  auto locomotion = preferences.steering == input::SteeringRecipe::Responsive
+                        ? world::LocomotionProps::responsive()
+                        : world::LocomotionProps::outOfNowhere();
+  locomotion.profile =
+      static_cast<world::LocomotionProfile>(preferences.locomotion);
+  _facing.setProps(locomotion);
+  auto follow = _follow.props();
+  follow.distance = _follow.state().requestedDistance;
+  follow.perspective =
+      static_cast<scene::PerspectivePolicy>(preferences.perspective);
+  follow.reducedMotion = _ui.root().motion().effectivePreference() !=
+                         runtime::MotionPreference::Full;
+  if (follow.perspective != _follow.props().perspective ||
+      follow.reducedMotion != _follow.props().reducedMotion)
+    _follow.setProps(follow);
+}
+
+void Demo3DApp::fixedUpdate(AppContext &, runtime::SimulationStep step,
+                            const input::InputSnapshot &actions) {
+  if (!_followMode || !_poses)
+    return;
+  const auto actual = _world.snapshot().sample(_world.handle(_subject));
+  const double right = double(_navigation["strafe-right"].held) -
+                       double(_navigation["strafe-left"].held) + _gamepadMove.x;
+  const double forward = double(_navigation["forward"].held) -
+                         double(_navigation["backward"].held) + _gamepadMove.y;
+  auto request = _facing.advance(actual,
+                                 {.right = std::clamp(right, -1., 1.),
+                                  .forward = std::clamp(forward, -1., 1.),
+                                  .turn = std::clamp(right, -1., 1.),
+                                  .viewHeading = _look.state().yaw,
+                                  .aim = actions["aim"].held,
+                                  .freeLook = actions["free-look"].held,
+                                  .recenter = actions["recenter"].pressed},
+                                 step.seconds);
+  const auto moved = world::realizeMovement(actual, request, step.seconds);
+  if (moved.actual.pose == actual.pose &&
+      moved.actual.velocity == actual.velocity) {
+    // Finish interpolation without publishing an unchanged world generation.
+    _poses->teleport(actual);
+    return;
+  }
+  auto props = _world.snapshot().resolve(actual.entity).props;
+  props.pose = moved.actual.pose;
+  props.velocity = moved.actual.velocity;
+  const std::array<world::WorldMutation, 1> change{
+      world::SetEntity{_subject, std::move(props)}};
+  _world.apply(change, _world.snapshot().version(), step.tick);
+  _poses->publish(_world.snapshot().sample(_world.handle(_subject)));
 }
 
 void Demo3DApp::configureLaunch(const AppLaunchProps &props) {
@@ -454,24 +782,25 @@ void Demo3DApp::configureLaunch(const AppLaunchProps &props) {
   _benchmark = runtime::BenchmarkRun{props.benchmarkSeconds.value_or(15)};
 }
 
-const scene::CameraPath &Demo3DApp::benchmarkPath() {
-  static const scene::CameraPath path{
+scene::CameraPath Demo3DApp::benchmarkPath() const {
+  auto shot = [&](scene::CameraProps props) {
+    return scene::WorldCamera::fromLocal(props, {{_space, {}}, 1},
+                                         _world.snapshot().epoch());
+  };
+  const scene::CameraPath path{
       15,
-      {{0,
-        {.eye = {24.82285f, 3.16055f, 61.64814f},
-         .target = {24.50443f, 3.10232f, 60.70198f},
-         .nearPlane = .02f,
-         .farPlane = 5000}},
-       {5,
-        {.eye = {22, 3.3f, 53},
-         .target = {20, 3.1f, 48},
-         .nearPlane = .02f,
-         .farPlane = 5000}},
-       {10,
-        {.eye = {20, 3.4f, 45},
-         .target = {24, 3.1f, 57},
-         .nearPlane = .02f,
-         .farPlane = 5000}}}};
+      {{0, shot({.eye = {24.82285f, 3.16055f, 61.64814f},
+                 .target = {24.50443f, 3.10232f, 60.70198f},
+                 .nearPlane = .02f,
+                 .farPlane = 5000})},
+       {5, shot({.eye = {22, 3.3f, 53},
+                 .target = {20, 3.1f, 48},
+                 .nearPlane = .02f,
+                 .farPlane = 5000})},
+       {10, shot({.eye = {20, 3.4f, 45},
+                  .target = {24, 3.1f, 57},
+                  .nearPlane = .02f,
+                  .farPlane = 5000})}}};
   return path;
 }
 
@@ -490,10 +819,9 @@ void Demo3DApp::prepareBenchmark(AppContext &ctx) {
   _finalSubmitted = 0;
   _benchmarkTargetPixels = {};
   _benchmarkWork = ctx.renderRuntimeState().sceneWork;
-  _director.update(_pathCamera,
-                   {.camera = benchmarkPath().sample(0), .priority = 10});
+  _director.update(_pathCamera, {.camera = _tour->sample(0), .priority = 10});
   auto props = _view->props();
-  props.camera = _director.camera();
+  project(props);
   _view->setProps(std::move(props));
   _caption->applyPatch(
       {.value = Patch<std::string>::set("Bistro benchmark: preparing resources "
@@ -570,11 +898,11 @@ void Demo3DApp::updateBenchmark(AppContext &ctx) {
       _benchmark.phase() == BenchmarkPhase::Draining)
     _finalSubmitted = state.submitted;
   if (_benchmark.traversing()) {
-    _director.update(_pathCamera,
-                     {.camera = benchmarkPath().sample(_benchmark.elapsed(now)),
-                      .priority = 10});
+    _director.update(
+        _pathCamera,
+        {.camera = _tour->sample(_benchmark.elapsed(now)), .priority = 10});
     auto props = _view->props();
-    props.camera = _director.camera();
+    project(props);
     _view->setProps(std::move(props));
   }
   if (before != _benchmark.phase()) {
@@ -683,7 +1011,7 @@ void Demo3DApp::onExit(AppContext &ctx) {
     _benchmark.invalidate();
     reportBenchmark(ctx, true);
   }
-  _mouseLock.disconnect();
+  _controls.release();
   if (_pathCamera)
     _director.remove(std::exchange(_pathCamera, 0));
   if (_interactiveCamera)
@@ -696,6 +1024,7 @@ void Demo3DApp::onExit(AppContext &ctx) {
   _ui.clear();
   _view = nullptr;
   _caption = nullptr;
+  _projection.reset();
   _scene.reset();
   _resources = {};
 }

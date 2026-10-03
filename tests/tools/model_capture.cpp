@@ -74,8 +74,9 @@ int main(int argc, char **argv) {
     const auto draws = scene.snapshot();
     const auto camera =
         viewName == "bistro"
-            ? scene::FreeCameraController{demo3d::bistroView}.camera(
-                  {.nearPlane = .02f, .farPlane = 5000})
+            ? scene::FreeCameraController{demo3d::bistroView({{1}, 1}, 1)}
+                  .camera({.nearPlane = .02f, .farPlane = 5000})
+                  .localCamera({{{{1}, 1}, {}}, 1}, {})
             : scene::boundsCamera(scene::drawBounds(draws),
                                   {.nearPlane = .01f, .farPlane = 5000});
     scene::SceneRenderProps view{.camera = camera.view(1),

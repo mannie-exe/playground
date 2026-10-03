@@ -325,5 +325,15 @@ int main() {
     require(service.poll(pending).status == NavigationStatus::Cancelled &&
                 !service.demand().pending && !service.demand().wakeAt,
             "scope shutdown prevents late navigation publication");
+    LocalAvoidance avoidance;
+    const AvoidanceRequest noSolver{
+        world.snapshot().sample(world.handle(actor)),
+        {space, {1, 0, 0}},
+        .016,
+        3};
+    const auto unsupported = avoidance.evaluate(noSolver);
+    require(unsupported.status == AvoidanceStatus::Unsupported &&
+                unsupported.velocity == noSolver.preferred,
+            "missing avoidance backend does not claim collision safety");
   });
 }

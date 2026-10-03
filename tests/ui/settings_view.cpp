@@ -23,15 +23,25 @@ int main() {
     root.setThemeDefinition(definition);
     unsigned applied{}, saved{}, closed{}, menu{};
     rendering::GraphicsSettings result;
-    auto view = ui::makeSettingsView(assets, font, {},
-                                     {.apply =
-                                          [&](auto value, bool persist) {
-                                            result = value;
-                                            ++applied;
-                                            saved += persist;
-                                          },
-                                      .close = [&] { ++closed; },
-                                      .returnToMenu = [&] { ++menu; }});
+    input::ControlsSettings controlsResult;
+    auto view = ui::makeSettingsView(
+        assets, font, {},
+        {.apply =
+             [&](auto value, bool persist) {
+               result = value;
+               ++applied;
+               saved += persist;
+             },
+         .close = [&] { ++closed; },
+         .returnToMenu = [&] { ++menu; },
+         .controls = {.capabilities = {true, true, true, true}},
+         .applyShared =
+             [&](auto graphics, auto controls, bool persist) {
+               result = graphics;
+               controlsResult = controls;
+               ++applied;
+               saved += persist;
+             }});
     auto *settings = view.get();
     root.setContent(std::move(view));
     root.flushLayout({900, 720});
@@ -131,5 +141,29 @@ int main() {
       test::require(tab->bounds().h() >= required,
                     "enlarged settings text cannot collapse tab labels");
     }
+    activate("Revert draft");
+    activate("Controls");
+    const auto beforeControls = applied;
+    test::require(root.performAction(
+                      find("Mouse capture"), ui::SelectItem{"hold"},
+                      ui::ActionSource::Assistive) == ui::ActionResult::Applied,
+                  "mouse capture choice editable in shared Controls tab");
+    test::require(applied == beforeControls,
+                  "controls draft does not acquire input or publish");
+    activate("Save");
+    test::require(applied == beforeControls + 1 &&
+                      controlsResult.mouseCapture == input::MouseCapture::Hold,
+                  "shared save includes control preferences");
+    settings->setControls({controlsResult, {true, true, true, true}, {}});
+    settings->setResult(result, "Saved");
+    test::require(!settings->dirty(), "shared apply acknowledges both drafts");
+    settings->setControls({controlsResult,
+                           {false, false, false, false},
+                           "Playback owns this viewport"});
+    test::require(root.performAction(
+                      find("Mouse capture"), ui::SelectItem{"toggle"},
+                      ui::ActionSource::Assistive) != ui::ActionResult::Applied,
+                  "app-inapplicable control fields are disabled without "
+                  "deleting preferences");
   });
 }

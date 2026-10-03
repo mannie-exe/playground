@@ -28,6 +28,7 @@ public:
   ui::Connection lockRelativeMouse(runtime::ActivationToken owner);
   void releaseRelativeMouse() noexcept;
   bool relativeMouseActive() const noexcept;
+  bool focused() const noexcept;
   void setMode(ui::AccessibilityMode);
   void setWakeCallback(std::function<void()> callback);
 };

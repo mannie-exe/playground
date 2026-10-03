@@ -15,12 +15,14 @@ SettingsView::SettingsView(AssetRegistry &assets, FontHandle font,
                            SettingsViewActions actions)
     : SettingsPanel{layout::BoxProps{.maxWidth = 960}}, _assets{assets},
       _font{std::move(font)}, _actions{std::move(actions)}, _draft{settings},
-      _applied{settings} {
+      _applied{settings}, _controlsDraft{_actions.controls.requested},
+      _controlsApplied{_controlsDraft} {
   setControlLayout(ControlLayout::Settings);
   setPaintStyle({.themeBackground = true});
   setSemanticProps(
       {.role = SemanticRole::Group, .name = "Playground settings"});
   build();
+  setControls(_actions.controls);
 }
 
 std::unique_ptr<Text> SettingsView::text(std::string value, TextRole role) {
@@ -71,6 +73,7 @@ void SettingsView::submit(bool persist) {
       return;
     }
     _draft.validate();
+    _controlsDraft.validate();
     // Avoid saving a lower ceiling that already cannot cover this live UI.
     // Low-level runtime policy still permits intentional over-budget operation.
     if (_usage) {
@@ -91,7 +94,10 @@ void SettingsView::submit(bool persist) {
             _usage->kinds[static_cast<unsigned>(ResourceKind::Preparation)]
                 .bytes);
     }
-    _actions.apply(_draft, persist);
+    if (_actions.applyShared)
+      _actions.applyShared(_draft, _controlsDraft, persist);
+    else
+      _actions.apply(_draft, persist);
   } catch (const std::exception &error) {
     _status->applyPatch({.value = Patch<std::string>::set(error.what())});
   }
@@ -106,8 +112,9 @@ void SettingsView::build() {
                     "run or Save for future launches.",
                     TextRole::Body));
   std::vector<TabItem> tabs;
-  const std::string names[]{"General", "2D", "3D", "Automatic", "Resources"};
-  for (unsigned group = 0; group < 5; ++group) {
+  const std::string names[]{"General",   "2D",        "3D",
+                            "Automatic", "Resources", "Controls"};
+  for (unsigned group = 0; group < 6; ++group) {
     auto column = std::make_unique<VStack>(layout::StackProps{
         .childrenAlignment = layout::CrossAlignment::Stretch});
     column->setControlLayout(ControlLayout::Group);
@@ -131,28 +138,31 @@ void SettingsView::build() {
           "Automatic mode overrides only permitted scene resolution. It never "
           "changes saved preferences, UI scale or simulation speed.",
           TextRole::Body));
-    for (const auto &field : graphicsSettingsSchema()) {
-      if (static_cast<unsigned>(field.group) != group)
-        continue;
+    const auto addField = [&](const auto &field, auto &draft) {
+      const auto restrict = [&](Node *node) {
+        if (group == 5)
+          _controlFields.emplace_back(node, unsigned(field.group));
+      };
       const auto label = std::string{field.label} +
                          (field.inactive ? " (future; inactive)" : "");
       if (field.kind == SettingKind::Boolean) {
         auto toggle = std::make_unique<Checkbox>(
             text(label),
-            ToggleProps{.checked = field.get(_draft) ? CheckState::On
-                                                     : CheckState::Off,
+            ToggleProps{.checked =
+                            field.get(draft) ? CheckState::On : CheckState::Off,
                         .name = label});
         auto *control = toggle.get();
         _connections.push_back(
-            toggle->onValueChanged([this, &field](CheckState v) {
-              field.set(_draft, v == CheckState::On);
+            toggle->onValueChanged([this, &draft, &field](CheckState v) {
+              field.set(draft, v == CheckState::On);
               edited();
             }));
-        _refresh.push_back([this, control, &field] {
+        _refresh.push_back([this, &draft, control, &field] {
           control->applyPatch(
               {.checked = Patch<CheckState>::set(
-                   field.get(_draft) ? CheckState::On : CheckState::Off)});
+                   field.get(draft) ? CheckState::On : CheckState::Off)});
         });
+        restrict(toggle.get());
         column->append(std::move(toggle));
       } else {
         std::unique_ptr<Node> control;
@@ -165,31 +175,30 @@ void SettingsView::build() {
             choices.push_back({std::string{key}, std::string{key},
                                text(std::string{key}, TextRole::Value)});
           auto display =
-              text(std::string{field.choices[std::size_t(field.get(_draft))]},
+              text(std::string{field.choices[std::size_t(field.get(draft))]},
                    TextRole::Value);
           auto *readout = display.get();
           auto select = std::make_unique<Select>(
               std::move(display), std::move(choices),
               SelectionProps{
                   .selected =
-                      std::string{
-                          field.choices[std::size_t(field.get(_draft))]},
+                      std::string{field.choices[std::size_t(field.get(draft))]},
                   .required = true,
                   .name = label},
               ButtonProps{}, layout::BoxProps{});
           auto *raw = select.get();
           _connections.push_back(select->onSelectionChanged(
-              [this, &field, readout](std::string key) {
+              [this, &draft, &field, readout](std::string key) {
                 const auto index =
                     std::find(field.choices.begin(), field.choices.end(), key) -
                     field.choices.begin();
-                field.set(_draft, double(index));
+                field.set(draft, double(index));
                 readout->applyPatch({.value = Patch<std::string>::set(key)});
                 edited();
               }));
-          _refresh.push_back([this, raw, readout, &field] {
+          _refresh.push_back([this, &draft, raw, readout, &field] {
             const auto key =
-                std::string{field.choices[std::size_t(field.get(_draft))]};
+                std::string{field.choices[std::size_t(field.get(draft))]};
             raw->applySelectionPatch(
                 {.selected = Patch<std::optional<std::string>>::set(key)});
             readout->applyPatch({.value = Patch<std::string>::set(key)});
@@ -201,7 +210,7 @@ void SettingsView::build() {
                              .required = true,
                              .name = label,
                              .textRole = TextRole::Value},
-              NumberFieldProps{.range = {field.get(_draft), field.minimum,
+              NumberFieldProps{.range = {field.get(draft), field.minimum,
                                          field.maximum, field.step},
                                .integer = field.kind == SettingKind::Integer},
               layout::BoxProps{});
@@ -211,7 +220,7 @@ void SettingsView::build() {
               std::move(editor),
               std::make_unique<ControlIcon>(ControlGlyph::Minus),
               std::make_unique<ControlIcon>(ControlGlyph::Plus),
-              NumberStepperProps{.value = field.get(_draft),
+              NumberStepperProps{.value = field.get(draft),
                                  .minimum = field.minimum,
                                  .maximum = field.maximum,
                                  .step = field.step,
@@ -219,8 +228,8 @@ void SettingsView::build() {
               ButtonProps{}, layout::BoxProps{});
           auto *raw = stepper.get();
           _connections.push_back(
-              stepper->onValueChanged([this, &field](double value) {
-                field.set(_draft, value);
+              stepper->onValueChanged([this, &draft, &field](double value) {
+                field.set(draft, value);
                 edited();
               }));
           _connections.push_back(
@@ -230,20 +239,38 @@ void SettingsView::build() {
                 errorText->applyPatch({.value = Patch<std::string>::set(
                                            issue ? issue->message : "")});
               }));
-          _refresh.push_back([this, raw, input, &field] {
-            raw->applyPatch({.value = Patch<double>::set(field.get(_draft))});
+          _refresh.push_back([this, &draft, raw, input, &field] {
+            raw->applyPatch({.value = Patch<double>::set(field.get(draft))});
             input->revertDraft();
           });
           control = std::move(stepper);
         }
         control->setControlLayout(ControlLayout::InputGroup);
-        column->append(std::make_unique<Field>(
+        auto fieldNode = std::make_unique<Field>(
             std::move(control),
             text(label + (field.unit.empty()
                               ? ""
                               : " (" + std::string{field.unit} + ")")),
             std::move(error), FieldProps{.label = label}, layout::BoxProps{},
-            true));
+            true);
+        restrict(fieldNode.get());
+        column->append(std::move(fieldNode));
+      }
+    };
+    for (const auto &field : graphicsSettingsSchema())
+      if (static_cast<unsigned>(field.group) == group)
+        addField(field, _draft);
+    if (group == 5) {
+      auto restrictions =
+          text(std::string{_actions.controls.restriction}, TextRole::Body);
+      _controlRestrictions = restrictions.get();
+      column->append(std::move(restrictions));
+      const std::string headings[]{"Mouse", "Gamepad", "Locomotion / Camera"};
+      for (unsigned subgroup = 0; subgroup < 3; ++subgroup) {
+        column->append(text(headings[subgroup], TextRole::Title));
+        for (const auto &field : input::controlsSettingsSchema())
+          if (field.group == subgroup)
+            addField(field, _controlsDraft);
       }
     }
     if (group == 4) {
@@ -287,6 +314,7 @@ void SettingsView::build() {
   button("Save", [this] { submit(true); });
   button("Revert draft", [this] {
     _draft = _applied;
+    _controlsDraft = _controlsApplied;
     for (auto &refresh : _refresh)
       refresh();
     _status->applyPatch({.value = Patch<std::string>::set(
@@ -300,6 +328,30 @@ void SettingsView::build() {
                     TextRole::Caption));
   setChild(std::make_unique<ScrollView>(
       std::move(root), ScrollProps{.sizing = ScrollSizing::Content}));
+}
+
+void SettingsView::setControls(input::ControlsState state) {
+  state.requested.validate();
+  const bool preserve = _controlsDraft != _controlsApplied;
+  _controlsApplied = state.requested;
+  if (!preserve) {
+    _controlsDraft = _controlsApplied;
+    for (auto &refresh : _refresh)
+      refresh();
+  }
+  _actions.controls = state;
+  for (auto [node, group] : _controlFields) {
+    const bool enabled = group == 0   ? state.capabilities.mouse
+                         : group == 1 ? state.capabilities.gamepad
+                                      : state.capabilities.locomotion ||
+                                            state.capabilities.follow;
+    auto semantics = node->semanticProps();
+    semantics.enabled = enabled;
+    node->setSemanticProps(semantics);
+  }
+  if (_controlRestrictions)
+    _controlRestrictions->applyPatch(
+        {.value = Patch<std::string>::set(std::string{state.restriction})});
 }
 
 void SettingsView::setResult(GraphicsSettings applied, std::string message) {
@@ -345,6 +397,13 @@ void SettingsView::setRuntime(const ResolvedGraphicsState &graphics,
       graphics.reason +
           (graphics.pending ? " (awaiting scene observation)" : ""),
       runtime.pressure);
+  value += std::format(
+      "\nWorld: {:.2f} MiB | streaming: {:.2f} MiB | navigation: {:.2f} MiB | "
+      "owners: {}",
+      mib(runtime.resources.kinds[unsigned(ResourceKind::World)].bytes),
+      mib(runtime.resources.kinds[unsigned(ResourceKind::Streaming)].bytes),
+      mib(runtime.resources.kinds[unsigned(ResourceKind::Navigation)].bytes),
+      runtime.resources.owners.size());
   if (runtime.cpu)
     value += std::format(
         "\nLatest CPU iteration: {:.2f} ms",

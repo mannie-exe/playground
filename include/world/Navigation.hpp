@@ -202,6 +202,12 @@ NavigationResult planNavigation(const NavigationSnapshot &,
                                 std::shared_ptr<runtime::ResourceLedger>,
                                 std::stop_token = {});
 
+struct NavigationStats {
+  std::size_t queued{}, planning{}, completed{}, cancelled{}, failed{};
+  double oldestQueueSeconds{}, planningSeconds{};
+  std::size_t expansions{}, edgeVisits{}, peakFrontier{};
+};
+
 class NavigationService {
   struct Impl;
   std::shared_ptr<Impl> _impl;
@@ -221,11 +227,36 @@ public:
   void cancel(std::uint64_t);
   void forget(std::uint64_t);
   NavigationResult poll(std::uint64_t) const;
+  NavigationStats stats() const;
   runtime::ServiceWork advance(runtime::ActivityClock::time_point,
                                runtime::ServiceWorkBudget = {});
   runtime::ServiceDemand demand() const;
   runtime::ServiceHandle attach(runtime::ServiceScope &);
   void close() noexcept;
+};
+
+enum class AvoidanceStatus { Unsupported, Applied, Unresolved };
+
+struct AvoidanceRequest {
+  EntitySample actual;
+  WorldVelocity preferred;
+  double seconds{}, maximumSpeed{3};
+};
+
+struct AvoidanceResult {
+  AvoidanceStatus status{AvoidanceStatus::Unsupported};
+  WorldVelocity velocity;
+};
+
+// Optional future adapter. Unsupported leaves preferred intent unchanged; the
+// domain chooses whether unconstrained movement is allowed.
+class LocalAvoidance {
+public:
+  virtual ~LocalAvoidance() = default;
+
+  virtual AvoidanceResult evaluate(const AvoidanceRequest &request) const {
+    return {AvoidanceStatus::Unsupported, request.preferred};
+  }
 };
 
 enum class NavigationState {

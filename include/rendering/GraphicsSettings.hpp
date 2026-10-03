@@ -11,6 +11,7 @@
 #include <rendering/RendererTypes.hpp>
 #include <runtime/AppearancePreference.hpp>
 #include <runtime/MotionPreference.hpp>
+#include <runtime/Setting.hpp>
 
 namespace playground::rendering {
 
@@ -62,7 +63,7 @@ struct GraphicsSettings {
 };
 
 enum class GraphicsGroup { Presentation, TwoD, ThreeD, Automatic, Resources };
-enum class SettingKind { Number, Integer, Boolean };
+using SettingKind = runtime::SettingKind;
 
 struct GraphicsSetting {
   std::string_view key, label, unit;

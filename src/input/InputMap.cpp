@@ -12,6 +12,8 @@ bool InputClaims::owns(const Control &control) const noexcept {
   switch (control.kind) {
   case ControlKind::Key:
     return keyboard;
+  case ControlKind::PointerMotion:
+  case ControlKind::Wheel:
   case ControlKind::MouseButton:
     return pointer || std::ranges::find(capturedPointers, control.device) !=
                           capturedPointers.end();
@@ -62,11 +64,12 @@ struct InputMap::Impl {
 
   std::vector<Bound> prepare(std::vector<Binding> bindings,
                              ContextId replacing = 0) {
-    std::map<std::string, ActionKind> kinds;
+    std::map<std::string, std::pair<ActionKind, DeltaCadence>> kinds;
     for (const auto &context : contexts)
       if (context.id != replacing)
         for (const auto &b : context.bindings)
-          kinds.emplace(b.props.action, b.props.kind);
+          kinds.emplace(b.props.action,
+                        std::pair{b.props.kind, b.props.cadence});
     std::vector<Bound> result;
     for (auto &b : bindings) {
       if (b.action.empty() || b.code < 0 || !std::isfinite(b.deadZone) ||
@@ -74,14 +77,23 @@ struct InputMap::Impl {
           !std::isfinite(b.contribution.x) ||
           !std::isfinite(b.contribution.y) ||
           (b.kind != ActionKind::Button && b.kind != ActionKind::Axis &&
-           b.kind != ActionKind::Vector) ||
+           b.kind != ActionKind::Vector && b.kind != ActionKind::Delta) ||
           (b.control != ControlKind::Key &&
            b.control != ControlKind::MouseButton &&
            b.control != ControlKind::GamepadButton &&
-           b.control != ControlKind::GamepadAxis))
+           b.control != ControlKind::GamepadAxis &&
+           b.control != ControlKind::PointerMotion &&
+           b.control != ControlKind::Wheel) ||
+          (b.cadence != DeltaCadence::Frame &&
+           b.cadence != DeltaCadence::Tick) ||
+          ((b.kind == ActionKind::Delta) !=
+           (b.control == ControlKind::PointerMotion ||
+            b.control == ControlKind::Wheel)) ||
+          (b.kind == ActionKind::Delta && b.deadZone != 0))
         throw std::invalid_argument("Invalid action binding");
-      if (auto [it, added] = kinds.emplace(b.action, b.kind);
-          !added && it->second != b.kind)
+      if (auto [it, added] =
+              kinds.emplace(b.action, std::pair{b.kind, b.cadence});
+          !added && it->second != std::pair{b.kind, b.cadence})
         throw std::invalid_argument("Action name has incompatible kinds");
       Bound bound{std::move(b), {}, {}};
       for (const auto &[control, value] : physical)
@@ -127,6 +139,8 @@ struct InputMap::Impl {
         snapshot->actions.try_emplace(name, ActionState{.kind = a.kind});
       for (auto &[name, old] : snapshot->actions) {
         const auto &now = current[name];
+        if (current.actions.contains(name) && now.kind == ActionKind::Delta)
+          continue;
         if (current.actions.contains(name))
           old.kind = now.kind;
         if (cancel && (old.held != now.held || old.value != now.value)) {
@@ -158,8 +172,11 @@ struct InputMap::Impl {
 
   static InputSnapshot take(InputSnapshot &source) {
     auto result = source;
-    for (auto &[name, state] : source.actions)
+    for (auto &[name, state] : source.actions) {
       state.pressed = state.released = state.canceled = false;
+      if (state.kind == ActionKind::Delta)
+        state.value = {};
+    }
     return result;
   }
 };
@@ -236,15 +253,17 @@ void InputMap::rebind(ContextId id, std::vector<Binding> bindings) {
 }
 
 bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
-  if (!std::isfinite(event.value) || std::abs(event.value) > 1 ||
-      event.control.code < 0 ||
+  const bool delta = event.control.kind == ControlKind::PointerMotion ||
+                     event.control.kind == ControlKind::Wheel;
+  if (!math::isFinite(event.displacement) || !std::isfinite(event.value) ||
+      std::abs(event.value) > 1 || event.control.code < 0 ||
       (event.control.kind != ControlKind::Key &&
        event.control.kind != ControlKind::MouseButton &&
        event.control.kind != ControlKind::GamepadButton &&
-       event.control.kind != ControlKind::GamepadAxis) ||
+       event.control.kind != ControlKind::GamepadAxis && !delta) ||
       (stage != InputStage::BeforeUI && stage != InputStage::AfterUI))
     throw std::invalid_argument("Input values must be normalized");
-  if (stage == InputStage::BeforeUI) {
+  if (stage == InputStage::BeforeUI && !delta) {
     if (event.value == 0)
       _impl->physical.erase(event.control);
     else
@@ -260,6 +279,23 @@ bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
     for (auto &b : c.bindings) {
       if (!Impl::matches(b.props, event.control))
         continue;
+      if (delta) {
+        if (!blocked && c.props.enabled && !event.repeat) {
+          auto &snapshot = b.props.cadence == DeltaCadence::Frame ? _impl->frame
+                                                                  : _impl->tick;
+          auto &state = snapshot.actions[b.props.action];
+          state.kind = ActionKind::Delta;
+          const auto sum =
+              state.value +
+              math::Vec2f{event.displacement.x * b.props.contribution.x,
+                          event.displacement.y * b.props.contribution.y};
+          if (!math::isFinite(sum))
+            throw std::overflow_error("Accumulated input delta exceeds range");
+          state.value = sum;
+        }
+        matched |= c.props.enabled;
+        continue;
+      }
       const bool neutral = std::abs(event.value) <= b.props.deadZone;
       if (neutral) {
         const bool wasActive = b.values.erase(event.control) != 0;
@@ -279,6 +315,20 @@ bool InputMap::route(const InputEvent &event, InputStage stage, bool blocked) {
   }
   _impl->publish(canceled);
   return blocked;
+}
+
+float InputMap::physicalValue(Control control) const noexcept {
+  const auto it = _impl->physical.find(control);
+  return it == _impl->physical.end() ? 0 : it->second;
+}
+
+float InputMap::physicalValue(ControlKind kind, int code) const noexcept {
+  float result{};
+  for (const auto &[control, value] : _impl->physical)
+    if (control.kind == kind && control.code == code &&
+        std::abs(value) > std::abs(result))
+      result = value;
+  return result;
 }
 
 const InputClaims &InputMap::uiClaims() const noexcept {
@@ -306,7 +356,9 @@ bool InputMap::setUIClaims(InputClaims claims) {
                                    bound.props.device.value_or(0)};
       if (claims.owns(representative) && !_impl->uiClaims.owns(representative))
         affected.insert(bound.props.action);
-      if (bound.props.control == ControlKind::MouseButton &&
+      if ((bound.props.control == ControlKind::MouseButton ||
+           bound.props.control == ControlKind::PointerMotion ||
+           bound.props.control == ControlKind::Wheel) &&
           !bound.props.device)
         for (auto pointer : claims.capturedPointers)
           if (pointer <= std::numeric_limits<std::uint32_t>::max() &&
@@ -323,7 +375,11 @@ bool InputMap::setUIClaims(InputClaims claims) {
       if (auto it = snapshot->actions.find(name);
           it != snapshot->actions.end()) {
         auto &state = it->second;
-        state.canceled |= state.pressed || state.released;
+        state.canceled |=
+            state.pressed || state.released ||
+            (state.kind == ActionKind::Delta && state.value != math::Vec2f{});
+        if (state.kind == ActionKind::Delta)
+          state.value = {};
         state.pressed = state.released = false;
       }
   return true;
@@ -335,7 +391,11 @@ void InputMap::cancelAll() {
   _impl->publish(true);
   for (auto *snapshot : {&_impl->frame, &_impl->tick})
     for (auto &[name, state] : snapshot->actions) {
-      state.canceled |= state.pressed || state.released;
+      state.canceled |=
+          state.pressed || state.released ||
+          (state.kind == ActionKind::Delta && state.value != math::Vec2f{});
+      if (state.kind == ActionKind::Delta)
+        state.value = {};
       state.pressed = state.released = false;
     }
 }
@@ -358,9 +418,61 @@ void InputMap::cancelDevice(ControlKind kind, std::uint32_t device) {
           (!b.props.device || *b.props.device == device))
         for (auto *snapshot : {&_impl->frame, &_impl->tick}) {
           auto &state = snapshot->actions[b.props.action];
-          state.canceled |= state.pressed || state.released;
+          state.canceled |=
+              state.pressed || state.released ||
+              (state.kind == ActionKind::Delta && state.value != math::Vec2f{});
+          if (state.kind == ActionKind::Delta)
+            state.value = {};
           state.pressed = state.released = false;
         }
+}
+
+void InputMap::cancelActions(std::span<const std::string_view> names) {
+  for (auto &c : _impl->contexts)
+    for (auto &b : c.bindings)
+      if (std::ranges::find(names, b.props.action) != names.end()) {
+        b.values.clear();
+        for (const auto &[control, value] : _impl->physical)
+          if (value != 0 && Impl::matches(b.props, control))
+            b.suppressed.insert(control);
+      }
+  _impl->publish(true);
+  for (auto *snapshot : {&_impl->frame, &_impl->tick})
+    for (auto name : names)
+      if (auto it = snapshot->actions.find(name);
+          it != snapshot->actions.end()) {
+        auto &state = it->second;
+        state.canceled |=
+            state.pressed || state.released || state.value != math::Vec2f{};
+        state.pressed = state.released = false;
+        if (state.kind == ActionKind::Delta)
+          state.value = {};
+      }
+}
+
+void InputMap::cancelDeviceActions(std::span<const std::string_view> names,
+                                   ControlKind kind,
+                                   std::optional<std::uint32_t> device) {
+  for (auto &c : _impl->contexts)
+    for (auto &b : c.bindings)
+      if (std::ranges::find(names, b.props.action) != names.end()) {
+        std::erase_if(b.values, [&](const auto &v) {
+          return v.first.kind == kind && (!device || v.first.device == *device);
+        });
+        for (const auto &[control, value] : _impl->physical)
+          if (control.kind == kind && (!device || control.device == *device) &&
+              value != 0 && Impl::matches(b.props, control))
+            b.suppressed.insert(control);
+      }
+  _impl->publish(true);
+  for (auto *snapshot : {&_impl->frame, &_impl->tick})
+    for (auto name : names)
+      if (auto it = snapshot->actions.find(name);
+          it != snapshot->actions.end() &&
+          it->second.kind == ActionKind::Delta) {
+        it->second.canceled |= it->second.value != math::Vec2f{};
+        it->second.value = {};
+      }
 }
 
 void InputMap::inheritHeld(const InputMap &other) {

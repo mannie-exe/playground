@@ -25,6 +25,14 @@ public:
 
   virtual AppInfo info() const = 0;
 
+  virtual playground::input::ControlCapabilities controlCapabilities() const {
+    return {};
+  }
+
+  virtual std::string_view controlRestriction() const {
+    return "This app does not use viewport controls; preferences are retained.";
+  }
+
   virtual void configureLaunch(const AppLaunchProps &props) {
     if (props.benchmarkSeconds)
       throw std::invalid_argument("App does not accept benchmark options");

@@ -17,7 +17,7 @@ playground_add_module(playground_runtime
     src/runtime/Executor.cpp
     src/runtime/SimulationClock.cpp
     src/runtime/Services.cpp
-    src/input/InputMap.cpp)
+    src/input/InputMap.cpp src/input/ViewControlSession.cpp src/input/ControlsSettings.cpp)
 playground_add_module(playground_world
     src/world/Spatial.cpp src/world/World.cpp src/world/Queries.cpp
     src/world/Frames.cpp src/world/Streaming.cpp src/world/Lifecycle.cpp
@@ -42,6 +42,7 @@ playground_add_module(playground_scene
     src/scene/SceneViewport.cpp
     src/scene/WorldScene.cpp
     src/scene/Controllers.cpp
+    src/scene/FollowCamera.cpp
     src/scene/ModelImport.cpp
     src/scene/MeshPreparation.cpp
     src/scene/Animation.cpp

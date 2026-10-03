@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include <input/ControlsSettings.hpp>
 #include <platform/FileStore.hpp>
 #include <platform/Presentation.hpp>
 #include <rendering/GraphicsSettings.hpp>
@@ -42,6 +43,7 @@ struct SettingsPatch {
 
 struct SettingsDocument {
   std::optional<rendering::GraphicsSettings> graphics;
+  std::optional<input::ControlsSettings> controls;
   SettingsPatch defaults;
   std::map<std::string, SettingsPatch, std::less<>> apps;
   void apply(std::string_view app, PresentationProps &, AppViewPolicy &) const;
@@ -77,6 +79,7 @@ public:
   SettingsStore(FileStore &project, FileStore &user)
       : _projectFiles{project}, _userFiles{user} {}
 
+  input::ControlsSettings controls() const;
   rendering::GraphicsSettings graphics() const;
   rendering::GraphicsSettings graphics(const SettingsDocument &user) const;
   void reload();

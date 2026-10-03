@@ -31,7 +31,7 @@ when promising optimal cost. Stable tie-breaking and neighbor order support repl
 fixtures; optimality is limited to the supplied representation and cost model.
 Mesh providers own corridor generation and agent-clearance validation. Library
 handles stay private. Recast/Detour is a candidate adapter, not a mandated new
-dependency in this documentation pass.
+dependency by this interface.
 
 `world/Navigation.hpp` supplies immutable `NavigationSnapshot` generations built
 from revisioned `NavigationTile` values. Graph links carry positive authored costs,
@@ -126,6 +126,11 @@ tiles/paths by revision. A temporary local obstacle does not automatically alter
 the global route graph: the app declares whether to stop, avoid or rebuild topology.
 Tile preparation publishes at a simulation boundary, with bounded dirty regions
 and coalesced rebuild demand. Never rebuild every tile because the camera moved.
+
+`NavigationService::stats()` reports retained request states, oldest queued age,
+planning time, expansions, edge visits and peak frontier. `LocalAvoidance` returns
+Unsupported with the preferred velocity until a backend is supplied; callers
+choose whether unconstrained motion is permitted.
 
 Measure planning latency/expansions, queue age, retained tile bytes, invalidations,
 replans and stalled agents. Verify graph/grid/mesh routes, narrow clearances,

@@ -160,6 +160,11 @@ public:
 
   const auto &graphicsState() const noexcept { return _quality.state(); }
 
+  playground::input::ControlsState controlsState() const {
+    return {_settings.controls(), _activeApp->controlCapabilities(),
+            _activeApp->controlRestriction()};
+  }
+
   bool settingsVisible() const noexcept { return _settingsView != nullptr; }
 
   void requestSettings(bool visible = true) {
