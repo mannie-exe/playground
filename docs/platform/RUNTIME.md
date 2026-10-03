@@ -53,6 +53,50 @@ continue. An online model advances through its AuthorityRunner, not the paused
 local SimulationClock. Headless hosting uses the same service/domain contracts
 without the desktop IApp/SDL window adapter.
 
+## Spatial work and clocks
+
+[DatasetService](SPATIAL_DATA.md#sources-and-preparation),
+[ProductService](SPATIAL_PRODUCTS.md) and edit/save services share Executor,
+ServiceScope, wake endpoints and ResourceLedger. Policy queues bound and coalesce
+work before executor admission; they do not create private competing pools.
+Latest, Ordered, Deadline, Background and Durable work have explicit overload and
+retention behavior. Completion precedes its wake, and publication validates epochs,
+input stamps and request policy at the owner boundary.
+
+ServiceWorkBudget bounds owner-side staging/publication. Prepare large metadata or
+scene candidates incrementally, then exchange validated roots/handles; do not hide
+unbounded work behind one counted operation. PreRender never waits for preparation.
+Input, settings and window transitions remain serviced while work is queued.
+
+[Simulation kernels](SIMULATION.md) choose local interactive time or an independent
+ordered authority clock. Only domains explicitly permitting dropped steps use the
+interactive catch-up policy. Services can prepare while paused; authoritative edits
+and physics activation await their declared model boundary. Standalone/headless
+dataset tools pump these services without AppHost or SDL. Real-time audio producers
+use bounded preallocated handoff, not these allocation/publication calls directly.
+
+## Physics execution domain
+
+PhysicsService participates in ServiceScope admission, wakes and publication but
+owns a budgeted solver execution domain. Generic data/collision cooking uses the
+shared Executor; Jolt stepping uses supported job dependencies/barriers off the UI
+thread. CPU policy accounts for content workers, solver concurrency and native I/O
+together. Do not spawn a hardware-sized pool per region or recursively wait on
+jobs queued behind a saturated independent-job executor.
+
+One admitted native step owns its command batch, coverage/shape leases, scratch and
+result/event buffers until retirement. While it runs, input, windows, settings,
+network receipt and background preparation continue. The world owner does not run
+a later authoritative tick, mutate active collision or publish predicted poses as
+actual results. Complete results advance the committed tick; RefusedBeforeStep
+permits corrected admission, while Compromised faults require explicit recovery.
+
+Read scopes and collision activation execute between native steps. Closing an app
+invalidates publication first; shared execution ownership retains native state
+until completion. Process shutdown joins solver work before destroying Jolt's
+coordinated runtime. The normal host render/update path never blocks on that join.
+See [physics state and recovery](PHYSICS.md#step-validity-and-recovery).
+
 ## Input
 
 ### Ownership policy
@@ -224,7 +268,11 @@ that requested them. Physics-generated events become bounded domain work at the
 next declared mutation boundary, not recursive scene edits from solver callbacks.
 An app's explicit dependency order can refine these stages without making service
 registration order authoritative. See [worlds](WORLDS.md), [navigation](NAVIGATION.md)
-and the [physics boundary](PHYSICS.md).
+and the [physics boundary](PHYSICS.md). Native realization can span multiple service
+pumps: retain the staged model inputs, launch the admitted step, then finish the
+tick only when its valid result arrives. This ordering does not require a blocking
+solver call inside IApp::fixedUpdate. Authorities use their ordered runner rather
+than letting the desktop catch-up loop dispatch overlapping physics ticks.
 
 Streaming/generation and save I/O progress through scoped services while local
 simulation is paused. Prepared data can stage during pause; simulation activation,

@@ -41,6 +41,20 @@ Render parenting does not imply physics ownership. Kinematic controllers,
 collision/physics, navigation and character pose production remain separate
 interfaces; a universal ECS or behavior tree is not required by this boundary.
 
+## Spatial-data applications
+
+Apps may own DatasetStore, source/product/edit services and optional simulation
+without creating a World. A world app attaches datasets through explicit bindings;
+neither storage chunks nor samples automatically become entities. Generators,
+material interpretations, update rules and multimedia meaning belong to app/domain
+providers. Core services own bounds, lifetime, admission and publication.
+
+UI input, automation and network adapters submit the same validated SpatialEdit
+commands. Views select current versus displayed-generation queries explicitly.
+Apps choose live ReadOnly/Captured/Overlay editing, undo retention, durability and
+required-product barriers. There is no implicit universal game material or ECS.
+See [datasets](SPATIAL_DATA.md), [edits](VOXELS.md) and [simulation](SIMULATION.md).
+
 ## Minesweeper screen contract
 
 Minesweeper owns its difficulty draft, active board, and pending screen intent.
@@ -95,8 +109,8 @@ creates local render representations without transferring authority to Scene3D.
 [Streaming](STREAMING.md) and activation preserve durable entities when views/cells
 retire. [Procedural data](PROCEDURAL.md) shares that lifecycle. [Navigation](NAVIGATION.md)
 supplies autonomous movement requests; the app arbitrates player, path-following
-and scripted control explicitly. Physics is a [future adapter](PHYSICS.md), not a
-prerequisite for an owned world or kinematic navigation. Headless apps can use all
+and scripted control explicitly. The [Jolt adapter](PHYSICS.md) realizes physical
+movement; an owned world or explicitly kinematic navigation can still omit it. Headless apps can use all
 model/service boundaries without constructing rendering or UI services.
 
 Procedural character work should separate desired motion, motor/controller output,

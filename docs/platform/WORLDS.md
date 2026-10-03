@@ -6,10 +6,10 @@ presentation are separate contracts. A small app can use one space, an always
 resident cell and kinematic movement without creating unused services.
 
 These contracts include moving frames, transfers, persistence and spatial queries.
-[Streaming](STREAMING.md), [procedural/voxel content](PROCEDURAL.md),
-[navigation](NAVIGATION.md) and spatial [networking](NETWORKING.md#spatial-authority-and-interest)
-are implementation requirements. [Physics integration](PHYSICS.md#future-implementation)
-remains future; its adapter boundary is specified here and in PHYSICS.md.
+[Streaming](STREAMING.md), [spatial datasets](SPATIAL_DATA.md), [voxel content](VOXELS.md),
+[navigation](NAVIGATION.md), spatial [networking](NETWORKING.md#spatial-authority-and-interest)
+and bounded [Jolt physics](PHYSICS.md) are implementation requirements. Advanced
+physics features retain their explicitly marked scope in PHYSICS.md.
 
 ## Identity and ownership
 
@@ -317,6 +317,35 @@ Native synchronization references: [POSIX/Linux fsync](https://www.man7.org/linu
 [Windows FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)
 and [MoveFileEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
 
+## Dataset bindings
+
+Worlds reference [spatial datasets](SPATIAL_DATA.md) without owning their codecs,
+source algorithms or per-sample entities. A dataset can also exist without a world.
+
+| Value/API | Contract |
+|---|---|
+| `DatasetBinding` | Binding ID, DatasetId/epoch, captured root revision, SpaceId/frame placement, placement revision and authority owner |
+| `WorldDatasetView` | WorldVersion/tick, consistent FrameSnapshot, bindings and retained DatasetSnapshots |
+| `WorldDatasetBindings::stage / publish` | Validate bounded candidate bindings and product barriers; publish one coherent view at the world model boundary |
+| `WorldDatasetBindings::snapshot` | Retain the complete view; no independent lookup of each dataset's latest root |
+| `DatasetCheckpointRef` | Dataset identity/schema, exact immutable checkpoint/root digest and captured revision |
+
+The app's world owner coordinates mutations and binding publication. World, frame
+and dataset candidates validate before activation; readers consume the published
+WorldDatasetView, not intermediate mutable owner state. Bound datasets have one
+mutation authority or an explicit handoff; standalone editors cannot concurrently
+bypass the world coordinator. Dataset-only apps publish at their owner boundary.
+Placement changes do not change sample revisions. Unsupported mapping/units fail
+before physics/navigation bindings activate.
+
+WorldStore metadata references bounded immutable dataset checkpoint roots and
+exact content locks. Save flushes selected roots/blobs before publishing one world
+checkpoint; restore opens those exact roots, not whichever dataset head is newest.
+Large voxel payloads are not copied into entity bytes or opaque metadata records.
+Dataset admission/migration failure preserves the old active world bundle.
+Unknown domain records/references remain preserved without claiming readiness.
+See [dataset persistence](VOXELS.md#persistence-api-and-encoding).
+
 ## Scene instance bindings
 
 `scene::SceneInstanceProjection` connects entity-local Scene3D instances to world
@@ -331,8 +360,9 @@ The adapter and its output use the injected world/host resource ledger.
 Planetary/astronomical coordinate hierarchies, non-Euclidean or seamlessly rendered
 portals, distributed authority migration, and cross-world atomic transfers are
 future. Ordinary separate spaces, rigid moving frames and prepared local transfers
-do not require them. Physics integration, camera obstruction and root motion retain
-their explicit future status. No universal ECS or serialized executable behavior
+do not require them. Advanced physics, camera obstruction and root motion retain
+their explicit future status; baseline Jolt bodies/queries and character movement
+are implementation requirements. No universal ECS or serialized executable behavior
 is required; app authoring/loading and UI editing remain future capabilities.
 
 See [world verification](WORLD_TESTING.md). Design references:

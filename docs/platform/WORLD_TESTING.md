@@ -3,7 +3,9 @@
 Tests separate world/model contracts, adapters and native presentation. A fake
 physics or network provider establishes ownership/error behavior only. Baseline
 world, streaming, procedural/voxel and navigation acceptance does not require a
-physics backend, editor, executable app loader or new rendering features.
+physics backend, editor, executable app loader or new rendering features for pure
+contract tests. Full integration acceptance additionally requires the real Jolt
+and native local-transport workloads in [spatial verification](SPATIAL_TESTING.md).
 
 ## Contract workloads
 
@@ -31,6 +33,19 @@ mutation. Recovery tests reopen persisted data, not merely inspect a successful
 write callback. Coordinate fixtures compare world-space quantities before float
 projection as well as local output; increasing tolerance to hide lost precision
 is not an acceptable far-origin test.
+
+## Dataset integration
+
+[Spatial verification](SPATIAL_TESTING.md) defines dataset/source schemas,
+transactional multi-chunk edits, product freshness, simulation ordering and bounded
+live streams. World workflows bind exact dataset/frame snapshots, save checkpoint
+references and restore fresh epochs. Verify that editing a standalone dataset does
+not require a world, while world-bound edits cannot bypass its model coordinator.
+
+RequireProducts failure preserves old bindings. Source generation and surface,
+selection, collision and navigation preparation have independent capability and
+revision assertions. Shared fixtures exercise unloaded boundaries, stale workers,
+failed saves and accounting retirement instead of counting nominal API calls.
 
 ## Focused commands
 
@@ -79,6 +94,6 @@ cost or imply one platform's native results establish portability.
 
 Acceptance requires bounded memory/work under pressure, preserved state on failure,
 correct far-origin behavior and no unbounded boundary retry loop. Numerical and
-latency thresholds belong to explicit fixture configuration. Deferred physics,
+latency thresholds belong to explicit fixture configuration. Advanced physics,
 planetary frames, seamless portals, prediction/rollback and crowd avoidance have
 no implied implementation coverage from these tests.

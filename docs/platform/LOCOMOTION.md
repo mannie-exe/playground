@@ -119,9 +119,10 @@ realization belongs to the app/model, never the renderer or camera director.
 
 `realizeMovement` validates subject/tick/discontinuity, step size and rate limits
 before returning actual state and an optional updated frame attachment. It does
-not publish World mutations. `MovementRealization::Physics` and `RootMotion` return
-Unsupported with unchanged state until their adapters exist. A zero-duration
-kinematic step preserves actual pose and velocity.
+not publish World mutations. `MovementRealization::Physics` delegates to the
+configured CharacterMotor; absent capabilities return Unsupported with unchanged
+published state. `RootMotion` remains Unsupported until its adapter exists. A
+zero-duration kinematic step preserves actual pose and velocity.
 
 Movement axes and up direction use the explicitly sampled frame, or space axes
 without a frame. The default frame policy includes sampled point/angular velocity
@@ -138,10 +139,28 @@ samples `PoseHistory`; desired heading, actual heading and actual velocity are
 available to visual turning and animation selection. Teleports reset history and
 turn/follow damping. Smoothed visual transforms never feed back into movement.
 
-## Future physics and root motion
+## Physics movement realization
 
-Physics-backed character motors, vehicle dynamics and root-motion realization are
-future integrations behind the [physics boundary](PHYSICS.md). They consume
+`CharacterMotorProfile` defines capsule dimensions, up direction, speed/acceleration,
+gravity, maximum slope/step, support-motion inheritance, overlap recovery limits and
+collision filters. `CharacterMotorRequest` carries subject/region generation, tick,
+LocomotionRequest, declared jump intent and required collision coverage. The Jolt
+adapter realizes bounded movement against its completed/current step boundary and
+returns `CharacterMotorResult`: achieved pose/velocity, grounding/support identity,
+blocked/coverage status and tick validity. Actual state feeds the next controller,
+navigation follower and camera sample; desired movement never replaces it.
+
+Player, script and PathFollower requests share this interface. The owner defines
+motor-versus-rigid-body step order and consumes each request once. Moving support
+velocity is inherited once, not also re-applied by frame attachment code. Missing
+coverage stops/waits explicitly; failure cannot silently select collision-free
+kinematic movement. Teleports/recovery reset motor and interpolation history.
+Headless fixtures cover walls, slopes/steps, support removal, frame motion and
+Tank/Steered/Strafe requests through the same [physics boundary](PHYSICS.md).
+
+## Future advanced movement
+
+Vehicle dynamics and root-motion realization are **future**. They consume
 locomotion requests and publish actual results; they may reject or constrain
 requested motion. A vehicle can translate steering
 targets into steering angle/curvature rather than rotate its chassis in place.

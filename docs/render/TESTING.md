@@ -4,6 +4,12 @@
 streaming, generation, persistence, navigation and spatial replication workloads.
 Scene rendering tests do not establish those contracts merely by loading a model.
 
+[Spatial verification](../platform/SPATIAL_TESTING.md) adds editable-volume and
+live-scalar workflows. Check data revision/coverage, exact selected samples,
+selective product invalidation and upload reuse in addition to images. Surface
+fixtures verify topology/face coverage; slice fixtures verify sampling/color
+mapping. Fake collision or transport adapters establish integration only.
+
 ## Deterministic contracts
 
 Camera path sampling depends only on explicit time; wrap seams, finite values,
@@ -42,7 +48,8 @@ profile switches and view-local visibility must not cause unchanged mesh/texture
 uploads or layout remeasurement.
 
 Physics contact, swept-volume correctness and collision-index performance checks
-belong to the deferred obstruction/physics implementation, not these acceptance
+belong to [physics/spatial verification](../platform/SPATIAL_TESTING.md) and the
+separately deferred camera obstruction work, not these camera acceptance
 criteria. No new native command is implied by this matrix.
 
 ## Native workflows

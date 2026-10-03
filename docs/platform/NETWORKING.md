@@ -42,6 +42,35 @@ Accepted means locally queued, not delivered or applied. Application command
 results acknowledge validation/application separately. Message payload ownership
 is explicit; callbacks cannot retain borrowed I/O memory past delivery.
 
+## Authority and replica state
+
+| Value/API | Shape and contract |
+|---|---|
+| `AuthoritySession` | Session/epoch, participants, permissions, ordered clock, domain owner and bounded command/replication queues |
+| `AuthoritySession::enqueue / advance / close` | Validate queued commands at model boundaries; no direct privileged client mutation |
+| `CommandEnvelope` | Protocol/session epoch, authenticated issuer, command sequence/ID, expected domain revisions/tick and typed bounded payload |
+| `CommandReceipt` | Command identity, validation outcome, applied commit/tick, result payload and separate durability acknowledgement |
+| `ReplicationBaseline` | Baseline/interest identity, captured world/dataset revisions, filtered entities, coverage and exact content/schema compatibility |
+| `ReplicationDelta` | Baseline/interest identity, sequence, source/target revisions, tick and bounded updates |
+| `ClientReplica` | Session epoch, applied baseline/revisions, retained interpolation state, missing dependencies and resync status |
+| `ClientReplica::accept / snapshot / reset` | Validate/decode/stage owned messages, publish coherent state and reject obsolete epochs |
+| `ReplicaState` | Disconnected, Joining, ReceivingBaseline, Live, NeedsResync or Closed, with independent content/visual readiness |
+| `AuthorityLimits` | Participants, commands/bytes per issuer and total, dedup history, baseline/delta storage, decode work and tick backlog |
+
+The authority clock and mutation boundary are shared by local and remote commands.
+An embedded client uses queued loopback messages and the same validation/receipts;
+it cannot directly call a privileged model mutation method. Authority-side domain
+code can emit internal commands with explicitly distinct authority provenance.
+Session, connection, world, dataset and body generations remain separate guards.
+
+Validation distinguishes invalid/denied/conflicting commands from transient queue
+pressure. Transport acceptance is not authority admission, commit or durability.
+Command sequence gaps/expired dedup history trigger explicit refusal/resync rather
+than reapplying an old mutation. Domain receipts retain the exact terminal outcome.
+Baseline capture and subsequent deltas share a revision barrier; bounded staging
+publishes one replica root only when required parts/dependencies validate. Content
+waiting is visible independently from connected session/heartbeat progress.
+
 ## Delivery and protocol contracts
 
 | Category | Ordering/loss | Overflow |
@@ -145,6 +174,52 @@ Interpolation buffers are bounded; stale observations freeze/report age rather t
 silently extrapolate without limit. A local client waiting for visual assets does
 not stop authority ticks or make missing collision coverage safe.
 
+## Dataset authority adapters
+
+`DatasetBaseline` carries dataset/schema/source identities, epoch, root revision,
+admitted coverage and exact required profile/content references. `DatasetDelta`
+identifies its baseline, command/commit sequence and bounded typed RegionPatches or
+verified payload references. Encode validated values, never raw C++ storage.
+Authority validates permissions, sizes, address bounds and expected revisions before
+using the same EditService as local tools. Dedup watermarks/receipts survive retries;
+received, committed and durable acknowledgements are distinct.
+
+Missing baselines, sequence gaps or incompatible interpretation trigger explicit
+resynchronization/refusal. Interest exit releases demand but does not delete saved
+samples/overrides. Compatible reproducible sources can regenerate baselines;
+otherwise transmit bounded authoritative data through authorized content acquisition.
+Clients do not submit trusted collision meshes or navigation readiness claims.
+Live visualization streams may negotiate Latest samples; authoritative edits and
+simulation retain ordered semantics. Clock domains and sample age remain visible.
+
+In-memory fault transport adapters verify these domain contracts before native
+transport integration. They do not establish authenticated internet support.
+See [spatial tests](SPATIAL_TESTING.md) and [simulation](SIMULATION.md).
+
+## Physics authority and presentation
+
+The authority runs [Jolt physics](PHYSICS.md) and publishes completed valid body
+states with tick, entity identity, discontinuity and active collision/dataset
+revisions. Clients send permitted intent/commands, not authoritative poses, contacts
+or native shape objects. A Compromised physics region does not advance its published
+authoritative tick; fault/recovery state is observable to replicas.
+
+Client presentation interpolates bounded snapshots without requiring a client solver.
+Do not extrapolate indefinitely when snapshots stop. Teleport/recovery clears the
+relevant interpolation history. Missing local visual products can retain explicit
+placeholders; they do not pause authority or turn incomplete collision coverage into
+safe local movement. An edit commit and a physics snapshot identify the required
+geometry revision even when separate delivery channels arrive out of order.
+Clients retain/reject bounded pending dependencies or request a baseline; they do
+not reinterpret a pose against whatever geometry happened to arrive first.
+
+Replicate Playground identities, domain values and versions. Jolt BodyID, pointers,
+internal contact caches and opaque SaveState bytes are not the network protocol or
+portable save format. Solver save/restore does not restore application-side body
+lifecycle and all domain changes automatically. Prediction, rewind and deterministic
+lockstep require their own history/state contracts and remain outside baseline
+server-authoritative interpolation.
+
 ## Future session capabilities
 
 Client prediction/reconciliation, rollback, deterministic lockstep, distributed
@@ -152,7 +227,9 @@ authority migration, peer authority, host migration and offline CRDT merging are
 future. Baseline spatial replication, interest, interpolation, procedural content
 compatibility and authoritative movement/edit commands are implementation contracts.
 Physics snapshot/replay and cross-platform determinism are not promised by fixed
-ticks or by the future physics adapter.
+ticks or by selecting the Jolt adapter. User-facing multiplayer demos/applications
+are **future** and have no approved scene, menu entry or gameplay design. This does
+not defer protocol, authority, transport or multi-process verification workloads.
 
 ## Transport choice
 
@@ -169,6 +246,28 @@ real-time channel. Protocol schemas own bounded codec validation; UI JSON is not
 the network wire format. Codecs must support deterministic round-trip fixtures
 and reject malformed or oversized input before domain publication.
 
+## Bounded native integration
+
+The current integration includes the queued embedded authority path, deterministic
+in-memory fault transport and a separate-process local client/server path backed by
+GameNetworkingSockets. Shared protocol/domain code runs in all three; test transport
+behavior cannot replace native socket verification. Native I/O has bounded buffers,
+explicit shutdown and owner-safe delivery. The physics execution domain, content
+workers and network service do not independently allocate unbounded worker pools.
+
+CMake pins the native dependency and required build options through existing reusable
+modules. Keep library handles behind the transport adapter. Test process endpoints,
+ports, timeouts, credentials and storage roots are injected; readiness handshakes
+replace sleeps. Tests restrict listeners to loopback and terminate/reap owned child
+processes. A local test identity provider is explicitly test-only; it does not satisfy
+production peer authentication or authorize broader listening interfaces.
+
+Authentication, discovery, signaling, relays and managed deployment are separate
+capabilities. A missing identity/service provider reports unavailable and cannot
+silently enable unauthenticated public hosting. Concrete internet use must meet
+all security contracts above. Native loopback tests establish transport/domain
+integration, not NAT traversal, service operations or production identity coverage.
+
 ## Verification
 
 [World workloads](WORLD_TESTING.md) cover two observers, world replacement,
@@ -183,9 +282,11 @@ every internet-capable session, independent of the future executable-app sandbox
 Use fake time and an in-memory fault transport for delay, loss, duplication,
 reordering, disconnect, queue pressure and reconnect tests. Verify command
 idempotency, revision conflicts, stale-session rejection and per-player filtering.
-Run two clients against both a shared-board model and a moving-space model.
-Exercise embedded, separate local server and deployable server configurations;
-managed identity/lobby/relay integration has separate service tests.
+Use headless synthetic domain fixtures for multiple clients, revisioned edits and
+moving-body snapshots. These are integration workloads, not approved multiplayer
+demos. Exercise embedded and separate-process local server configurations with the
+same protocol and application-free domain adapter. Deployment/provider validation
+is separate; a local socket pass cannot claim managed identity/lobby/relay coverage.
 
 Measure RTT/jitter, useful bytes by category, backlog age, snapshot age, decode
 cost and authority tick tails. Test settings/focus/minimize without losing session
