@@ -8,6 +8,7 @@
 #include <math/Color.hpp>
 #include <math/Geometry2D.hpp>
 #include <runtime/AppearancePreference.hpp>
+#include <runtime/ResourceLedger.hpp>
 #include <support/FontHandle.hpp>
 #include <ui/FontFamily.hpp>
 #include <ui/Motion.hpp>
@@ -179,9 +180,10 @@ ResolvedTheme resolveTheme(const ThemeDefinition &, ColorSchemePreference,
 const ResolvedTheme &defaultResolvedTheme();
 ControlStyle resolveControlStyle(ControlLayout, const ThemeMetrics &,
                                  const ControlStyle &);
-FontHandle resolveThemeFont(const ThemeTypography &, std::optional<TextRole>,
-                            FontHandle fallback,
-                            AssetRegistry *assets = nullptr,
-                            std::optional<FontFamily> family = {},
-                            std::optional<FontSelection> selection = {});
+FontHandle
+resolveThemeFont(const ThemeTypography &, std::optional<TextRole>,
+                 FontHandle fallback, AssetRegistry *assets = nullptr,
+                 std::optional<FontFamily> family = {},
+                 std::optional<FontSelection> selection = {},
+                 std::shared_ptr<runtime::ResourceLedger> resources = {});
 } // namespace playground::ui

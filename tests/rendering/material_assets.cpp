@@ -2,8 +2,8 @@
 #include <fstream>
 
 #include <demo3d/Demo3DApp.hpp>
+#include <platform/sdl/AssetPreparation.hpp>
 #include <platform/sdl/ModelImport.hpp>
-#include <platform/sdl/ModelPreparation.hpp>
 #include <platform/sdl/TextureDecode.hpp>
 #include <support/Test.hpp>
 
@@ -22,6 +22,18 @@ std::vector<std::byte> read(const char *name) {
 
 int main() {
   return test::run([] {
+    for (auto kind : {demo3d::DemoKind::Material, demo3d::DemoKind::Chess,
+                      demo3d::DemoKind::Benchmark}) {
+      demo3d::Demo3DApp app{kind};
+      test::require(!app.simulationTiming() &&
+                        !app.activityProps().continuousUpdate,
+                    "inspection/playback loading does not request fixed "
+                    "simulation or polling");
+    }
+    demo3d::Demo3DApp bistro{demo3d::DemoKind::Bistro};
+    test::require(bool(bistro.simulationTiming()),
+                  "Bistro retains fixed locomotion capability");
+
     scene::ModelImportProps props;
     props.maxTotalResourceBytes = 512 * 1024 * 1024;
     auto model = sdl::loadGLTF(std::filesystem::path{PLAYGROUND_SOURCE_DIR} /

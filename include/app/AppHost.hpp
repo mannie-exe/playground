@@ -90,6 +90,8 @@ class AppHost {
 public:
   std::function<void()> wakeCallback() const { return _wake.callback(); }
 
+  void reclaimResources(bool pressure = true);
+
   void requestUpdate() { _updateRequested = true; }
 
   void requestRepaint() { _paintRequest.request(); }

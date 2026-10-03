@@ -91,6 +91,35 @@ int main() {
     test::require(rejected,
                   "native cache acquisition rejects worker-thread mutation");
 
+    {
+      auto isolated = std::make_shared<rendering::ResourceLedger>();
+      AssetRegistry retained{isolated};
+      sdl::AssetResources provider{catalog, retained};
+      auto surface = provider.image(imageId);
+      const auto bytes = isolated->snapshot().memory[0].bytes;
+      auto limits = isolated->snapshot().budgets;
+      limits.cpuBytes = bytes;
+      isolated->setBudgets(limits);
+      test::rejects<rendering::ResourcePressure>(
+          [&] {
+            isolated->reserve(rendering::MemoryClass::CPU,
+                              rendering::ResourceKind::Asset, bytes,
+                              "pressure probe");
+          },
+          "retained cache fills the injected CPU cap");
+      provider.reclaim(true, 0, 0, 0, 0);
+      test::require(provider.image(imageId) == surface,
+                    "live pixels survive pressure reclamation");
+      surface.reset();
+      provider.reclaim(true, 0, 0, 0, 0);
+      auto recovered = isolated->reserve(rendering::MemoryClass::CPU,
+                                         rendering::ResourceKind::Asset, bytes,
+                                         "pressure probe");
+      test::require(
+          bool(recovered),
+          "CPU cache reclamation restores admission without an app switch");
+    }
+
     // Reconstruct a generic resource-backed UI from app-owned state, not old
     // nodes.
     struct Model {

@@ -343,6 +343,12 @@ Release checks should use `cmake --preset release`, build the desired target wit
 use throwing runtime checks or compile-time static_assert; use the focused helper
 for new tests.
 
+The scene host workload also accepts `idle`: run
+`./build/debug/bin/playground_scene_host_workload idle 5` to load Chess, settle,
+and verify no recurring scene draws/uploads or simulation-rate host polling.
+Its 20 Hz observation callbacks are included in the reported host iteration count.
+This check needs a working native renderer but does not require pointer capture.
+
 ### What belongs in a test
 
 | Kind / label | Scope | Example |

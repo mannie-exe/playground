@@ -141,3 +141,14 @@ look/zoom deltas and rebases presentation time; resuming never integrates the pa
 gap. Scripted camera demand is independent of manual ownership, while benchmark
 interruptions retain their explicit invalidation rules. See
 [CAMERAS.md](../render/CAMERAS.md#coordinates-and-clocks).
+
+## 3D application demand
+
+Material Test and Chess inspection declare no fixed simulation. Camera input and
+UI activity request updates; Material Test requests continuous work only while
+its flipbook plays. Paused inspection is idle. Bistro enables fixed simulation
+only during follow locomotion; free-camera held movement/look requests frame
+updates and pauses simulation. Focus/settings interruption still gates input.
+Benchmark playback and completion draining request updates until reporting finishes.
+Asset preparation signals completion through the activation sink and uses an
+explicit deadline for temporary admission refusal, not per-frame future polling.

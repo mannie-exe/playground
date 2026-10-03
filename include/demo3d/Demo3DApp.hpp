@@ -1,6 +1,5 @@
 #pragma once
 
-#include <future>
 #include <memory>
 #include <optional>
 #include <set>
@@ -53,8 +52,7 @@ class Demo3DApp final : public IApp {
   std::optional<input::ContextId> _gamepadContext;
   input::ControlsSettings _preferences;
   void applyControls(AppContext &);
-  std::unique_ptr<scene::SceneProjection> _projection;
-  std::uint64_t _projectedRevision{};
+  std::unique_ptr<scene::SceneInstanceProjection> _projection;
   scene::OrbitController _camera;
   scene::FreeCameraController _freeCamera;
   scene::FreeCameraProps _initialCamera;
@@ -97,9 +95,12 @@ class Demo3DApp final : public IApp {
     return _kind == DemoKind::Material || _kind == DemoKind::Chess;
   }
 
-  std::future<Resources> _pending;
-  std::optional<runtime::TaskTicket> _task;
+  sdl::AssetPreparation _preparation;
+  sdl::AssetPreparationProps _preparationProps;
+  bool _loadRequested{}, _reclaimedPreparation{};
+  std::optional<runtime::ActivityClock::time_point> _loadRetryAt;
 
+  void preparationError(AppContext &, std::string_view);
   void createView(AppContext &ctx, Resources resources);
   void synchronize(AppContext &ctx);
 
@@ -130,15 +131,8 @@ public:
                                 : runtime::BenchmarkInterruption::Settings);
   }
 
-  runtime::ActivityProps activityProps() const override {
-    return {true,
-            (_kind == DemoKind::Material && !_playback.isPaused()) ||
-                (_kind == DemoKind::Benchmark && _benchmark.traversing())};
-  }
-
-  runtime::ActivityDemand activityDemand() override {
-    return _ui.activityDemand();
-  }
+  runtime::ActivityProps activityProps() const override;
+  runtime::ActivityDemand activityDemand() override;
 
   input::InputClaims inputClaims() override { return _ui.inputClaims(); }
 
@@ -165,7 +159,9 @@ public:
 
   std::optional<runtime::SimulationTimingProps>
   simulationTiming() const override {
-    return runtime::SimulationTimingProps{};
+    if (_kind == DemoKind::Bistro)
+      return runtime::SimulationTimingProps{};
+    return {};
   }
 
   void fixedUpdate(AppContext &, runtime::SimulationStep,

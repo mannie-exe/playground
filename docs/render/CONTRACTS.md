@@ -111,7 +111,7 @@ device realizations do not. Shared ownership is not permission to overwrite an
 in-flight buffer. Use SDL cycling for transient reuse and fences where completion
 must be observed. Keep decode jobs CPU-only and publish results at an owner-thread
 boundary, through a completion mailbox or an explicitly polled result slot such
-as [ModelPreparation](../platform/ASSETS.md#asynchronous-requests). Workers never
+as [AssetPreparation](../platform/ASSETS.md#asynchronous-requests). Workers never
 mutate nodes or registries.
 
 Frame destruction abandons application recording, not arbitrary GPU work. SDL

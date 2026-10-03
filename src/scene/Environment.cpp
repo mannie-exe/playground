@@ -74,6 +74,16 @@ PreparedEnvironment prepareEnvironment(const rendering::Texture &source,
     if (stop.stop_requested())
       throw std::runtime_error("Environment preparation canceled");
   };
+  std::size_t scratchTexels =
+      std::size_t(props.diffuseWidth) * (props.diffuseWidth / 2) +
+      std::size_t(props.brdfSize) * props.brdfSize;
+  for (unsigned width = props.specularWidth;; width /= 2) {
+    scratchTexels += std::size_t(width) * std::max(1u, width / 2);
+    if (width == 1)
+      break;
+  }
+  const auto scratch = PreparationBudget{source.resources()}.acquire(
+      scratchTexels * sizeof(math::Vec4f));
   const auto &src = source.levels().front();
   std::vector<rendering::TextureLevel> specular;
   const unsigned count = unsigned(std::log2(props.specularWidth)) + 1;

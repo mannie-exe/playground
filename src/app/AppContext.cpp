@@ -182,3 +182,5 @@ void AppContext::requestControls(playground::input::ControlsSettings controls,
   document.controls = controls;
   requestUserSettings(std::move(document), persist);
 }
+
+void AppContext::reclaimResources() { _host.reclaimResources(); }

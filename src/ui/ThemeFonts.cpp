@@ -3,11 +3,12 @@
 #include <ui/Theme.hpp>
 
 namespace playground::ui {
-FontHandle resolveThemeFont(const ThemeTypography &typography,
-                            std::optional<TextRole> role, FontHandle fallback,
-                            AssetRegistry *assets,
-                            std::optional<FontFamily> family,
-                            std::optional<FontSelection> selection) {
+FontHandle
+resolveThemeFont(const ThemeTypography &typography,
+                 std::optional<TextRole> role, FontHandle fallback,
+                 AssetRegistry *assets, std::optional<FontFamily> family,
+                 std::optional<FontSelection> selection,
+                 std::shared_ptr<runtime::ResourceLedger> resources) {
   if (family &&
       (*family < FontFamily::Interface || *family >= FontFamily::Count))
     throw std::invalid_argument("Invalid font family");
@@ -72,6 +73,10 @@ FontHandle resolveThemeFont(const ThemeTypography &typography,
         static_cast<double>(*props.layout.lineSpace) * typography.textScale));
   if (assets)
     return assets->getFont(std::move(props));
-  return std::make_shared<Font>(std::move(props));
+  if (fallback)
+    resources = fallback->resources();
+  if (!resources)
+    resources = runtime::defaultResourceLedger();
+  return std::make_shared<Font>(std::move(props), std::move(resources));
 }
 } // namespace playground::ui

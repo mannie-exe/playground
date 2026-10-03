@@ -1,4 +1,5 @@
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <future>
 
@@ -15,6 +16,15 @@ int main() {
     auto catalog = std::make_shared<assets::AssetCatalog>(".");
     catalog->add(id, assets::ModelAsset{.source = test::modelFixture()});
     catalog->add(bad, assets::ModelAsset{.source = assets::ByteSource{}});
+    const assets::AssetId<assets::BinaryAsset> environmentId{"environment"};
+    const std::string header{
+        "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n"};
+    const auto headerBytes =
+        std::as_bytes(std::span{header.data(), header.size()});
+    assets::ByteSource hdr{{headerBytes.begin(), headerBytes.end()}};
+    hdr.bytes.insert(hdr.bytes.end(), {std::byte{128}, std::byte{128},
+                                       std::byte{128}, std::byte{129}});
+    catalog->add(environmentId, assets::BinaryAsset{std::move(hdr)});
     catalog->freeze();
     auto ledger = std::make_shared<runtime::ResourceLedger>();
     const auto globalBefore =
@@ -50,13 +60,18 @@ int main() {
         },
         0);
     enteredFuture.get();
-    sdl::ModelPreparation request;
-    test::require(request.start(executor, catalog, bad),
+    AssetRegistry workerCache{ledger};
+    sdl::AssetResources workerResources{catalog, workerCache};
+    sdl::AssetPreparation request;
+    test::require(request.start(executor, workerResources, {.models = {bad}}) ==
+                      runtime::TaskAdmission::Accepted,
                   "initial request queued");
-    test::require(request.start(executor, catalog, id),
+    test::require(request.start(executor, workerResources, {.models = {id}}) ==
+                      runtime::TaskAdmission::Accepted,
                   "new request supersedes old");
     runtime::Executor full{{.maxReservedBytes = 1}};
-    test::require(!request.start(full, catalog, bad),
+    test::require(request.start(full, workerResources, {.models = {bad}}) ==
+                      runtime::TaskAdmission::TooLarge,
                   "rejected admission preserves current request");
     test::require(request.isPending() && !request.poll(),
                   "poll is nonblocking while worker occupied");
@@ -67,21 +82,24 @@ int main() {
     gate->open();
     done.get();
     auto result = request.poll();
-    test::require(result && result->model && !result->error &&
-                      result->generation == 2,
+    test::require(result && result->assets.models.front().model &&
+                      !result->error && result->generation == 2,
                   "only latest successful generation published");
     test::require(!request.poll() && !request.isPending(),
                   "completion consumed once");
-    test::require(resources.publishModel(*result) == original,
+    test::require(resources.publishModel(result->assets.models.front()) ==
+                      original,
                   "owner publication reuses cached identity");
     auto other = std::make_shared<assets::AssetCatalog>(".");
     other->add(id, assets::ModelAsset{.source = test::modelFixture()});
     other->freeze();
     sdl::AssetResources otherResources{other, cache};
-    test::rejects([&] { otherResources.publishModel(*result); },
-                  "foreign catalog result rejected");
+    test::rejects(
+        [&] { otherResources.publishModel(result->assets.models.front()); },
+        "foreign catalog result rejected");
 
-    test::require(request.start(executor, catalog, bad),
+    test::require(request.start(executor, workerResources, {.models = {bad}}) ==
+                      runtime::TaskAdmission::Accepted,
                   "failure request admitted");
     std::promise<void> barrier2;
     auto done2 = barrier2.get_future();
@@ -89,14 +107,85 @@ int main() {
         [&barrier2](std::stop_token) noexcept { barrier2.set_value(); }, 0);
     done2.get();
     auto failed = request.poll();
-    test::require(failed && failed->error && !failed->model,
+    test::require(failed && failed->error && failed->assets.models.empty(),
                   "worker exception transported to owner");
     test::require(resources.model(id) == original,
                   "failure retains working resource");
-    request.start(executor, catalog, id);
+    request.start(executor, workerResources, {.models = {id}});
     request.cancel();
     test::require(!request.isPending() && !request.poll(),
                   "cancellation suppresses even ready results");
+    sdl::AssetPreparationProps batch{.models = {id, id}};
+    request.start(executor, workerResources, batch);
+    std::promise<void> prepared;
+    auto preparedDone = prepared.get_future();
+    executor.submit([&](std::stop_token) noexcept { prepared.set_value(); }, 0);
+    preparedDone.get();
+    auto batchResult = request.poll();
+    test::require(batchResult && !batchResult->error &&
+                      batchResult->assets.models[0].model ==
+                          batchResult->assets.models[1].model,
+                  "duplicate entries share one worker preparation");
+    auto published =
+        workerResources.publish(std::move(batchResult->assets), batch);
+    std::weak_ptr<const scene::ModelAsset> retained =
+        published.models.front().model;
+    published = {};
+    workerResources.trimRetained();
+    test::require(!retained.expired(),
+                  "normal reclamation retains bounded prepared assets");
+    runtime::Executor closed;
+    closed.close();
+    test::require(request.start(closed, workerResources, batch) ==
+                          runtime::TaskAdmission::Accepted &&
+                      request.isReady(),
+                  "warm assets need no executor admission or worker poll");
+    auto warm = request.poll();
+    test::require(warm->assets.models.front().model == retained.lock(),
+                  "revisit preserves prepared immutable identity");
+    workerResources.reclaim(true, 0, 0, 0, 0);
+    test::require(!retained.expired(),
+                  "pressure cannot evict active references");
+    warm.reset();
+    workerResources.reclaim(true, 0, 0, 0, 0);
+    test::require(retained.expired(),
+                  "pressure releases unreferenced prepared assets");
+    sdl::AssetPreparationProps environment{
+        .environment = sdl::EnvironmentRequest{environmentId,
+                                               {.diffuseWidth = 2,
+                                                .specularWidth = 2,
+                                                .brdfSize = 2,
+                                                .samples = 4}}};
+    std::atomic<unsigned> wakes{};
+    request.start(executor, workerResources, environment, [&] { ++wakes; });
+    std::promise<void> environmentBarrier;
+    auto environmentDone = environmentBarrier.get_future();
+    executor.submit(
+        [&](std::stop_token) noexcept { environmentBarrier.set_value(); }, 0);
+    environmentDone.get();
+    auto environmentResult = request.poll();
+    test::require(environmentResult && !environmentResult->error && wakes == 1,
+                  "environment preparation completes before owner wake");
+    auto changedRecipe = environment;
+    changedRecipe.environment->props.samples = 8;
+    test::rejects(
+        [&] {
+          workerResources.publish(environmentResult->assets, changedRecipe);
+        },
+        "publication rejects mismatched environment recipe");
+    auto environmentAssets = workerResources.publish(
+        std::move(environmentResult->assets), environment);
+    test::require(
+        environmentAssets.environment->source->resources() == ledger &&
+            environmentAssets.environment->lighting.diffuse->resources() ==
+                ledger &&
+            environmentAssets.environment->lighting.brdf->resources() == ledger,
+        "source and derived lighting share the resource provider ledger");
+    test::require(
+        workerResources.cached(environment).environment ==
+                environmentAssets.environment &&
+            !workerResources.cached(changedRecipe).environment,
+        "environment reuse includes preparation options in cache identity");
     std::stop_source stop;
     stop.request_stop();
     test::rejects<std::runtime_error>(

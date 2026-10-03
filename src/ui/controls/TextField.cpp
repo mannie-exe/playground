@@ -109,10 +109,15 @@ void TextField::applyPatch(const TextFieldPatch &p) {
 
 FontHandle TextField::resolvedFont() const {
   const auto &typography = resolvedTheme().typography;
-  if (!_themeFont || !_fontTypography || *_fontTypography != typography) {
+  const auto resources = _props.font ? _props.font->resources()
+                         : services() && services()->resources
+                             ? services()->resources
+                             : runtime::defaultResourceLedger();
+  if (!_themeFont || !_fontTypography || *_fontTypography != typography ||
+      _themeFont->resources() != resources) {
     _themeFont =
         resolveThemeFont(typography, _props.textRole, _props.font, nullptr,
-                         _props.fontFamily, _props.fontSelection);
+                         _props.fontFamily, _props.fontSelection, resources);
     _fontTypography = typography;
     _directionFonts = {};
   }

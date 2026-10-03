@@ -128,12 +128,7 @@ void AppHost::switchTo(AppId appId, AppLaunchProps launch) {
   _updateRequested = true;
   _updateClock.rebase();
 
-  _assets.trim(playground::config::maxCachedFonts,
-               playground::config::maxCachedImages,
-               playground::config::maxCachedVectors);
-  _assets.trimSurfaceBytes(playground::config::maxCachedSurfaceBytes);
-  _resources->trimUnused();
-  _session.renderer()->trimUnused();
+  reclaimResources(false);
 }
 
 void AppHost::cleanupApp(IApp &app) noexcept {
@@ -244,7 +239,7 @@ int AppHost::run() {
         _pendingRuntimePatch.reset();
         _paintRequest.request();
         if (trim)
-          _session.renderer()->trimUnused();
+          reclaimResources();
       }
       collectRendererTelemetry();
     } catch (const playground::rendering::RenderFailure &error) {
@@ -501,7 +496,7 @@ int AppHost::run() {
       if (firstReclaim)
         _renderRuntime.block(reason, paintRevision);
       try {
-        _session.renderer()->trimUnused();
+        reclaimResources();
       } catch (const playground::rendering::RenderFailure &failure) {
         recoverRenderer(failure.what());
         return;
@@ -880,7 +875,7 @@ void AppHost::collectRendererTelemetry() {
   const auto completed = backend.completedWork();
   if (completed != _lastCompletedWork) {
     if (!_reportedResourcePressure.empty())
-      backend.trimUnused();
+      reclaimResources();
     _lastCompletedWork = completed;
   }
 }
@@ -907,9 +902,15 @@ void AppHost::applyGraphics(playground::rendering::GraphicsSettings value,
         _settings.setUser(std::move(document), persist);
       },
       [&] { restore(previous); });
+  const auto previousBudgets = _renderRuntime.resources()->snapshot().budgets;
+  const bool reducedBudget =
+      value.budgets.cpuBytes < previousBudgets.cpuBytes ||
+      value.budgets.gpuBytes < previousBudgets.gpuBytes ||
+      value.budgets.targetBytes < previousBudgets.targetBytes ||
+      value.budgets.preparationBytes < previousBudgets.preparationBytes;
   _quality.configure(value);
   _renderRuntime.applyPatch({.budgets = value.budgets, .pacing = value.pacing});
-  _session.renderer()->trimUnused();
+  reclaimResources(reducedBudget);
   requestRepaint();
   if (_settingsView)
     _settingsView->setResult(
@@ -1015,4 +1016,12 @@ void AppHost::processSettings() {
     _settingsView->setRuntime(_quality.state(), _renderRuntime.snapshot());
     _settingsMetersAt = now + std::chrono::milliseconds{500};
   }
+}
+
+void AppHost::reclaimResources(bool pressure) {
+  _resources->reclaim(pressure, playground::config::maxCachedFonts,
+                      playground::config::maxCachedImages,
+                      playground::config::maxCachedVectors,
+                      playground::config::maxCachedSurfaceBytes);
+  _session.renderer()->trimUnused();
 }
