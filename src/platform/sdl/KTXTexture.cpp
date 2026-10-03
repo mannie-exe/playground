@@ -140,8 +140,9 @@ rendering::TextureHandle decodeKTX2(std::span<const std::byte> bytes,
     if (role == TextureRole::Emission && format == TextureFormat::RGBA8)
       for (std::size_t p = 3; p < pixels.size(); p += 4)
         pixels[p] = std::byte{255};
-    levels.push_back(
-        {{int(w), int(h)}, PackedTexels{format, encoding, std::move(pixels)}});
+    levels.push_back({{int(w), int(h)},
+                      PackedTexels{format, encoding, std::move(pixels),
+                                   budget.resources()}});
     w = std::max(1u, w / 2);
     h = std::max(1u, h / 2);
   }

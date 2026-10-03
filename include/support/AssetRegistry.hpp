@@ -32,9 +32,10 @@ class AssetRegistry {
   std::unordered_map<std::string, Entry<playground::SVGDocumentHandle>>
       _svgDocuments;
   std::uint64_t _clock{};
+  std::shared_ptr<playground::rendering::ResourceLedger> _ledger;
 
-  static SurfaceHandle ownSurface(SDL_Surface *surface) {
-    return adoptManagedSurface(surface);
+  SurfaceHandle ownSurface(SDL_Surface *surface) {
+    return adoptManagedSurface(surface, _ledger);
   }
 
   static std::string vectorKey(const std::string &path,
@@ -42,10 +43,20 @@ class AssetRegistry {
     return path + "\n" + std::to_string(size.x) + "," + std::to_string(size.y);
   }
 
-  static SurfaceHandle loadVector(const std::string &path,
-                                  playground::math::Vec2i size);
+  SurfaceHandle loadVector(const std::string &path,
+                           playground::math::Vec2i size);
 
 public:
+  explicit AssetRegistry(
+      std::shared_ptr<playground::rendering::ResourceLedger> ledger =
+          playground::rendering::defaultResourceLedger())
+      : _ledger{std::move(ledger)} {
+    if (!_ledger)
+      throw std::invalid_argument("Asset cache requires a ledger");
+  }
+
+  const auto &resources() const noexcept { return _ledger; }
+
   playground::SVGDocumentHandle getSVGDocument(const std::string &path);
 
   SurfaceHandle getVector(const playground::VectorSource &source,

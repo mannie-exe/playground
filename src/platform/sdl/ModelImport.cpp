@@ -59,9 +59,10 @@ std::filesystem::path relativeURI(std::string_view uri) {
 }
 } // namespace
 
-rendering::PaintImageHandle decodeModelImage(std::span<const std::byte> encoded,
-                                             std::string_view mime,
-                                             std::size_t maximumBytes) {
+rendering::PaintImageHandle
+decodeModelImage(std::span<const std::byte> encoded, std::string_view mime,
+                 std::size_t maximumBytes,
+                 std::shared_ptr<rendering::ResourceLedger> ledger) {
   if (!mime.empty() && mime != "image/png" && mime != "image/jpeg")
     throw std::invalid_argument("glTF images must be PNG or JPEG");
   const auto byte = [&](std::size_t i) {
@@ -77,7 +78,7 @@ rendering::PaintImageHandle decodeModelImage(std::span<const std::byte> encoded,
   auto *stream = SDL_IOFromConstMem(encoded.data(), encoded.size());
   if (!stream)
     throwSDLError("Cannot open model image bytes");
-  auto surface = adoptManagedSurface(IMG_Load_IO(stream, true));
+  auto surface = adoptManagedSurface(IMG_Load_IO(stream, true), ledger);
   if (!surface)
     throwSDLError("Cannot decode model image");
   if (surface->pitch < 0 || surface->h < 0 ||
@@ -87,12 +88,15 @@ rendering::PaintImageHandle decodeModelImage(std::span<const std::byte> encoded,
 }
 
 scene::ModelHandle loadGLTF(const std::filesystem::path &path,
-                            const scene::ModelImportProps &props) {
+                            const scene::ModelImportProps &props,
+                            std::shared_ptr<rendering::ResourceLedger> ledger) {
+  PreparationBudget budget{ledger};
   const auto documentPath = std::filesystem::absolute(path);
   const auto root =
       std::filesystem::weakly_canonical(documentPath.parent_path());
   const auto document = readBytes(documentPath, props.maxDocumentBytes);
   const scene::ModelImportServices services{
+      .resources = ledger,
       .readResource =
           [&](std::string_view uri) {
             const auto target =
@@ -112,7 +116,7 @@ scene::ModelHandle loadGLTF(const std::filesystem::path &path,
               rendering::TextureRole role) {
             return decodeTexture(encoded, mime, role,
                                  rendering::MipPolicy::Generate,
-                                 props.maxResourceBytes);
+                                 props.maxResourceBytes, budget);
           }};
   return scene::importGLTF(document, services, props);
 }

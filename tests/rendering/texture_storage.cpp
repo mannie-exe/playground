@@ -14,6 +14,33 @@ using namespace playground::rendering;
 
 int main() {
   return test::run([] {
+    const auto globalBefore =
+        defaultResourceLedger()->snapshot().memory[0].bytes;
+    auto ledger = std::make_shared<ResourceLedger>();
+    auto otherLedger = std::make_shared<ResourceLedger>();
+    {
+      auto texture = makeTexture(
+          TextureLevel{{2, 2}, std::vector<math::Vec4f>(4, {1, .5f, 0, .5f})},
+          TextureRole::Color, MipPolicy::Generate, 1024, ledger);
+      auto copy = std::make_shared<Texture>(*texture);
+      const auto &associated = copy->upload(false);
+      const auto &opaque = copy->upload(true);
+      test::require(
+          associated.resources() == ledger && opaque.resources() == ledger &&
+              ledger->snapshot().memory[0].bytes > texture->bytes() &&
+              otherLedger->snapshot().memory[0].bytes == 0 &&
+              defaultResourceLedger()->snapshot().memory[0].bytes ==
+                  globalBefore,
+          "copies, mips and upload variants retain injected accounting");
+      auto budgets = ledger->snapshot().budgets;
+      budgets.cpuBytes = 1;
+      ledger->setBudgets(budgets);
+      test::rejects<ResourcePressure>(
+          [&] { Texture rejected{*texture}; },
+          "copies obey the owning ledger's live cap");
+    }
+    test::require(ledger->snapshot().memory[0].bytes == 0,
+                  "retained representations release their original ledger");
     for (unsigned bits = 0; bits <= 0xffff; ++bits) {
       if ((bits & 0x7c00) == 0x7c00)
         continue;

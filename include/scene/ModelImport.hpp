@@ -82,6 +82,8 @@ struct ModelImportProps {
 };
 
 struct ModelImportServices {
+  std::shared_ptr<rendering::ResourceLedger> resources{
+      rendering::defaultResourceLedger()};
   // The host owns URI resolution/access policy. No network or file reads are
   // implicit.
   std::function<std::vector<std::byte>(std::string_view)> readResource;

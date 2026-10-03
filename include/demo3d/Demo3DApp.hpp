@@ -34,6 +34,7 @@ class Demo3DApp final : public IApp {
     rendering::TextureHandle smoke, environmentReference;
   };
 
+  std::shared_ptr<runtime::ResourceLedger> _ledger;
   DemoKind _kind;
   Resources _resources;
   std::shared_ptr<scene::Scene3D> _scene;
@@ -103,7 +104,9 @@ class Demo3DApp final : public IApp {
   void synchronize(AppContext &ctx);
 
 public:
-  explicit Demo3DApp(DemoKind kind = DemoKind::Material);
+  explicit Demo3DApp(DemoKind kind = DemoKind::Material,
+                     std::shared_ptr<runtime::ResourceLedger> ledger =
+                         runtime::defaultResourceLedger());
   ~Demo3DApp() override;
   static AppInfo staticInfo(DemoKind kind = DemoKind::Material);
 

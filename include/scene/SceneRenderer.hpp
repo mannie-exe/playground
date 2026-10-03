@@ -36,14 +36,17 @@ struct Bounds3 {
 
 // Mutable authoring data becomes a validated, immutable published resource.
 class Mesh final {
+  std::shared_ptr<rendering::ResourceLedger> _ledger;
   rendering::ResourceLedger::Token _allocation;
   MeshData _data;
   Bounds3 _bounds;
 
 public:
-  explicit Mesh(MeshData data);
+  explicit Mesh(MeshData data,
+                std::shared_ptr<rendering::ResourceLedger> ledger =
+                    rendering::defaultResourceLedger());
 
-  Mesh(const Mesh &other) : Mesh{other._data} {}
+  Mesh(const Mesh &other) : Mesh{other._data, other._ledger} {}
 
   Mesh &operator=(const Mesh &) = delete;
   Mesh &operator=(Mesh &&) = delete;
@@ -54,7 +57,9 @@ public:
 };
 
 using MeshHandle = std::shared_ptr<const Mesh>;
-MeshHandle makeMesh(MeshData data);
+MeshHandle makeMesh(MeshData data,
+                    std::shared_ptr<rendering::ResourceLedger> ledger =
+                        rendering::defaultResourceLedger());
 
 // Unlit artwork can share UI images. PBR uses interpretation-aware texture
 // data.

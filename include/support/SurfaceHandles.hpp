@@ -36,12 +36,15 @@ inline SurfaceHandle createManagedSurface(
 
 // Decoders own their private allocation phase. Charge adopted pixels by pitch,
 // preserving the charge with the shared surface rather than each image wrapper.
-inline SurfaceHandle adoptManagedSurface(SDL_Surface *surface) {
+inline SurfaceHandle adoptManagedSurface(
+    SDL_Surface *surface,
+    const std::shared_ptr<playground::rendering::ResourceLedger> &ledger =
+        playground::rendering::defaultResourceLedger()) {
   SurfaceHandle owner{surface, SurfaceHandleDeleter{}};
   if (!surface)
     throw std::runtime_error(SDL_GetError());
   using namespace playground::rendering;
-  auto allocation = defaultResourceLedger()->reserve(
+  auto allocation = ledger->reserve(
       MemoryClass::CPU, ResourceKind::Asset,
       AllocationLimits::textureBytes({surface->pitch, surface->h}, 1),
       "Decoded surface");

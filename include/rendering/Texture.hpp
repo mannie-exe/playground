@@ -25,21 +25,27 @@ std::size_t texelBytes(TextureFormat format);
 // Compact storage; reads decode linear working values without changing alpha
 // association. The owning Texture declares that association.
 class PackedTexels {
+  std::shared_ptr<ResourceLedger> _ledger;
   TextureFormat _format;
   ColorEncoding _encoding;
   ResourceLedger::Token _allocation;
   std::vector<std::byte> _data;
 
 public:
-  PackedTexels(TextureFormat format, ColorEncoding encoding,
-               std::vector<std::byte> data);
-  PackedTexels(TextureFormat format, ColorEncoding encoding,
-               std::span<const math::Vec4f> linear);
+  PackedTexels(
+      TextureFormat format, ColorEncoding encoding, std::vector<std::byte> data,
+      std::shared_ptr<ResourceLedger> ledger = defaultResourceLedger());
+  PackedTexels(
+      TextureFormat format, ColorEncoding encoding,
+      std::span<const math::Vec4f> linear,
+      std::shared_ptr<ResourceLedger> ledger = defaultResourceLedger());
 
   PackedTexels(const PackedTexels &other);
   PackedTexels(PackedTexels &&) noexcept = default;
   PackedTexels &operator=(const PackedTexels &other);
   PackedTexels &operator=(PackedTexels &&other) noexcept;
+
+  const auto &resources() const noexcept { return _ledger; }
 
   TextureFormat format() const noexcept { return _format; }
 
@@ -112,7 +118,8 @@ class Texture final {
   mutable std::shared_ptr<const Texture> _opaqueUpload, _associatedUpload;
 
 public:
-  Texture(TextureRole role, std::vector<TextureLevel> levels);
+  Texture(TextureRole role, std::vector<TextureLevel> levels,
+          std::shared_ptr<ResourceLedger> ledger = defaultResourceLedger());
   Texture(TextureRole role, std::vector<PackedTextureLevel> levels,
           AlphaMode alpha = AlphaMode::Straight);
 
@@ -122,6 +129,10 @@ public:
 
   Texture &operator=(const Texture &) = delete;
   Texture &operator=(Texture &&) = delete;
+
+  const auto &resources() const noexcept {
+    return _levels.front().texels.resources();
+  }
 
   bool opaque() const noexcept { return _opaque; }
 
@@ -140,15 +151,19 @@ public:
 
 using TextureHandle = std::shared_ptr<const Texture>;
 
-TextureHandle makeTexture(TextureLevel level, TextureRole role,
-                          MipPolicy policy = MipPolicy::Generate,
-                          std::size_t maximumBytes = 256 * 1024 * 1024);
+TextureHandle
+makeTexture(TextureLevel level, TextureRole role,
+            MipPolicy policy = MipPolicy::Generate,
+            std::size_t maximumBytes = 256 * 1024 * 1024,
+            std::shared_ptr<ResourceLedger> ledger = defaultResourceLedger());
 TextureHandle makeTexture(PackedTextureLevel level, TextureRole role,
                           MipPolicy policy = MipPolicy::Generate,
                           std::size_t maximumBytes = 256 * 1024 * 1024);
-TextureHandle makeTexture(const RGBA8Image &image, TextureRole role,
-                          MipPolicy policy = MipPolicy::Generate,
-                          std::size_t maximumBytes = 256 * 1024 * 1024);
+TextureHandle
+makeTexture(const RGBA8Image &image, TextureRole role,
+            MipPolicy policy = MipPolicy::Generate,
+            std::size_t maximumBytes = 256 * 1024 * 1024,
+            std::shared_ptr<ResourceLedger> ledger = defaultResourceLedger());
 // Preserve base-level coverage approximately in discrete lower mip levels.
 TextureHandle preserveAlphaCoverage(TextureHandle source, float cutoff);
 // Ignore coverage before filtering. Rebuild alpha-weighted mips from level

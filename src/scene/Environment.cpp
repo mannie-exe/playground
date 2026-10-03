@@ -149,10 +149,13 @@ PreparedEnvironment prepareEnvironment(const rendering::Texture &source,
   }
   return {rendering::makeTexture(std::move(diffuse),
                                  rendering::TextureRole::Environment,
-                                 rendering::MipPolicy::None),
+                                 rendering::MipPolicy::None, 256 * 1024 * 1024,
+                                 source.resources()),
           std::make_shared<const rendering::Texture>(
-              rendering::TextureRole::Environment, std::move(specular)),
+              rendering::TextureRole::Environment, std::move(specular),
+              source.resources()),
           rendering::makeTexture(std::move(brdf), rendering::TextureRole::Data,
-                                 rendering::MipPolicy::None)};
+                                 rendering::MipPolicy::None, 256 * 1024 * 1024,
+                                 source.resources())};
 }
 } // namespace playground::scene

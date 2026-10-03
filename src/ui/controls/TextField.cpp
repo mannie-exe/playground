@@ -418,7 +418,8 @@ void TextField::prepareContent(PrepareContext &context) {
     } else {
       auto surface = adoptManagedSurface(
           TTF_RenderText_Blended(font->get(), run.text.data(), run.text.size(),
-                                 sdl::toSDL(foreground())));
+                                 sdl::toSDL(foreground())),
+          font->resources());
       if (!surface)
         throwSDLError("Render editor run");
       run.image = sdl::makeSurfaceImage(std::move(surface));

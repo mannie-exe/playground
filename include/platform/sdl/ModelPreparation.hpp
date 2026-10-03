@@ -18,7 +18,9 @@ namespace playground::sdl {
 // work.
 scene::ModelHandle prepareModel(const assets::AssetCatalog &,
                                 const assets::AssetId<assets::ModelAsset> &,
-                                std::stop_token stop = {});
+                                std::stop_token stop = {},
+                                std::shared_ptr<runtime::ResourceLedger>
+                                    ledger = runtime::defaultResourceLedger());
 
 struct ModelPreparationResult {
   std::uint64_t generation;
@@ -47,7 +49,9 @@ public:
   ModelPreparation(const ModelPreparation &) = delete;
   ModelPreparation &operator=(const ModelPreparation &) = delete;
   bool start(runtime::Executor &, std::shared_ptr<const assets::AssetCatalog>,
-             assets::AssetId<assets::ModelAsset>);
+             assets::AssetId<assets::ModelAsset>,
+             std::shared_ptr<runtime::ResourceLedger> ledger =
+                 runtime::defaultResourceLedger());
   void cancel() noexcept;
   bool isPending() const;
   std::optional<ModelPreparationResult> poll();

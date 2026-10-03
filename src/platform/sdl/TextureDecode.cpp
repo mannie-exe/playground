@@ -56,11 +56,12 @@ decodeTexture(std::span<const std::byte> bytes, std::string_view mime,
     throw std::invalid_argument("Invalid or excessive texture dimensions");
   const auto estimate = std::size_t(width) * height * 16 + bytes.size();
   const auto lease = budget.acquire(estimate);
-  auto decoded = decodeModelImage(bytes, mime, maximumBytes);
+  auto decoded =
+      decodeModelImage(bytes, mime, maximumBytes, budget.resources());
   const auto surface =
       std::dynamic_pointer_cast<const SurfacePaintImage>(decoded);
   return rendering::makeTexture(packSurfaceRGBA8(*surface), role, mip,
-                                maximumBytes);
+                                maximumBytes, budget.resources());
 }
 
 rendering::TextureHandle decodeHDR(std::span<const std::byte> bytes,
@@ -96,14 +97,15 @@ rendering::TextureHandle decodeHDR(std::span<const std::byte> bytes,
       block[j] = {p[0], p[1], p[2], p[3]};
     }
     rendering::PackedTexels part{storage, rendering::ColorEncoding::Linear,
-                                 std::span{block.data(), count}};
+                                 std::span{block.data(), count},
+                                 budget.resources()};
     std::memcpy(packed.data() + i * stride, part.data().data(), count * stride);
   }
   std::vector<rendering::PackedTextureLevel> levels;
   levels.push_back(
       {{w, h},
        rendering::PackedTexels{storage, rendering::ColorEncoding::Linear,
-                               std::move(packed)}});
+                               std::move(packed), budget.resources()}});
   return std::make_shared<const rendering::Texture>(
       rendering::TextureRole::Environment, std::move(levels));
 }

@@ -48,7 +48,8 @@ importProps(const assets::AssetId<assets::ModelAsset> &id) {
   return props;
 }
 
-scene::MeshHandle referenceSphere() {
+scene::MeshHandle
+referenceSphere(const std::shared_ptr<runtime::ResourceLedger> &ledger) {
   scene::MeshData data;
   constexpr int rings = 16, segments = 32;
   for (int y = 0; y <= rings; ++y) {
@@ -67,7 +68,7 @@ scene::MeshHandle referenceSphere() {
                  b = a + segments + 1;
       data.indices.insert(data.indices.end(), {a, b, a + 1, a + 1, b, b + 1});
     }
-  return scene::makeMesh(std::move(data));
+  return scene::makeMesh(std::move(data), ledger);
 }
 } // namespace
 
@@ -87,9 +88,10 @@ void registerAssets(assets::AssetCatalog &catalog) {
                                  "demo3d/studio_small_09_1k.hdr"}});
 }
 
-Demo3DApp::Demo3DApp(DemoKind kind)
-    : _kind{kind},
-      _world{{std::uint64_t(kind) + 1}, runtime::defaultResourceLedger()},
+Demo3DApp::Demo3DApp(DemoKind kind,
+                     std::shared_ptr<runtime::ResourceLedger> ledger)
+    : _ledger{std::move(ledger)}, _kind{kind},
+      _world{{std::uint64_t(kind) + 1}, _ledger},
       _space{_world.snapshot().id(), 1}, _scenery{_world.snapshot().id(), 1},
       _subject{_world.snapshot().id(), 2},
       _camera{{.target = {_space, {}}, .epoch = _world.snapshot().epoch()}},
@@ -182,8 +184,10 @@ void Demo3DApp::onEnter(AppContext &ctx) {
   _task =
       ctx.workers()
           .submit(
-              [catalog, promise, kind = _kind](std::stop_token stop) noexcept {
+              [catalog, promise, kind = _kind,
+               ledger = _ledger](std::stop_token stop) noexcept {
                 try {
+                  PreparationBudget budget{ledger};
                   Resources result;
                   const auto ids = kind == DemoKind::Material
                                        ? std::vector{propId, flightId, helmetId}
@@ -194,7 +198,7 @@ void Demo3DApp::onEnter(AppContext &ctx) {
                   for (const auto &id : ids) {
                     try {
                       result.models.push_back(
-                          sdl::prepareModel(*catalog, id, stop));
+                          sdl::prepareModel(*catalog, id, stop, ledger));
                     } catch (const std::exception &error) {
                       throw std::runtime_error(id.value + ": " + error.what());
                     }
@@ -202,7 +206,7 @@ void Demo3DApp::onEnter(AppContext &ctx) {
                   auto bytes =
                       catalog->read(catalog->definition(environmentId).source,
                                     16 * 1024 * 1024);
-                  auto hdr = sdl::decodeHDR(bytes);
+                  auto hdr = sdl::decodeHDR(bytes, 256 * 1024 * 1024, budget);
                   result.environment =
                       scene::prepareEnvironment(*hdr, {}, stop);
                   if (kind == DemoKind::Material) {
@@ -215,7 +219,7 @@ void Demo3DApp::onEnter(AppContext &ctx) {
                     // adjacent frames.
                     result.smoke = sdl::decodeTexture(
                         bytes, "image/png", rendering::TextureRole::Color,
-                        rendering::MipPolicy::None);
+                        rendering::MipPolicy::None, 256 * 1024 * 1024, budget);
                   }
                   if (stop.stop_requested())
                     throw std::runtime_error("Demo 3D preparation canceled");
@@ -254,7 +258,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     reference.colorTexture.texture = _resources.environmentReference;
     _scene->create(
         {.transform = {.position = {-1, -1, 0}, .scale = {.6f, .6f, .6f}},
-         .mesh = referenceSphere(),
+         .mesh = referenceSphere(_ledger),
          .material = reference});
     scene::MeshData quad{{{{-.5f, -.5f, 0}, {0, 0, -1}, {0, 1}},
                           {{.5f, -.5f, 0}, {0, 0, -1}, {1, 1}},
@@ -268,7 +272,7 @@ void Demo3DApp::createView(AppContext &ctx, Resources resources) {
     smoke.colorTexture.sampler.addressU = smoke.colorTexture.sampler.addressV =
         rendering::TextureAddress::Clamp;
     _smoke = _scene->create({.transform = {.position = {1, -1, 0}},
-                             .mesh = scene::makeMesh(std::move(quad)),
+                             .mesh = scene::makeMesh(std::move(quad), _ledger),
                              .material = smoke});
     _camera.setProps({.target = {_space, {0, .5, 0}},
                       .epoch = _world.snapshot().epoch(),
@@ -375,8 +379,8 @@ void Demo3DApp::project(ui::SceneViewProps &props) {
     std::vector<scene::EntityVisual> visuals;
     for (const auto &draw : _scene->snapshot())
       visuals.push_back({_scenery, draw});
-    _projection = std::make_unique<scene::SceneProjection>(
-        std::move(visuals), runtime::defaultResourceLedger());
+    _projection =
+        std::make_unique<scene::SceneProjection>(std::move(visuals), _ledger);
     _projectedRevision = _scene->revision();
   }
   props.scene.reset();

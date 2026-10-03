@@ -130,7 +130,11 @@ variant keys include catalog and source identity; clones preserve both unless
 explicitly replacing their source.
 
 AssetRegistry retains its existing name and low-level Text/Vector cache APIs.
-AppContext::resources is typed acquisition; assets is the low-level cache. App
+AppContext::resources is typed acquisition; assets is the low-level cache.
+`AssetRegistry::resources()` exposes its injected ledger. Import services accept
+that ledger explicitly; decoders take a `PreparationBudget` whose ledger also
+owns their retained output. Independently supplied meshes remain charged to their
+original owner; registering an asset does not silently transfer its accounting. App
 Assets.hpp files register definitions centrally; manifest export uses those
 definitions rather than maintaining a second inventory.
 
