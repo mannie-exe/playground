@@ -196,6 +196,33 @@ pose; renderer state is never the simulation authority. Spawn/teleport sets both
 poses to the same value. Controllers have explicit call order, not an implicit
 registration-order scheduler. Fixed steps alone do not guarantee determinism.
 
+## World simulation boundary
+
+One world owner applies model changes. On each simulation tick: accept validated
+domain commands and prepared generations, resolve frame samples, evaluate autonomous
+or player movement intent, realize motion through the selected kinematic/physics
+adapter, evaluate post-movement queries/zone events, then publish WorldSnapshot.
+Navigation plans against an identified snapshot; late plans cannot mutate the tick
+that requested them. Physics-generated events become bounded domain work at the
+next declared mutation boundary, not recursive scene edits from solver callbacks.
+An app's explicit dependency order can refine these stages without making service
+registration order authoritative. See [worlds](WORLDS.md), [navigation](NAVIGATION.md)
+and the [physics boundary](PHYSICS.md).
+
+Streaming/generation and save I/O progress through scoped services while local
+simulation is paused. Prepared data can stage during pause; simulation activation,
+transfers and authoritative edits commit only at an explicit model boundary.
+Render-only readiness can publish without advancing simulation. Headless/online
+authority uses its own clock and coverage requirements. Missing mandatory world
+data produces explicit waiting/admission failure, never simulation through a gap.
+
+After simulation publication, presentation samples a consistent epoch/space and
+discontinuity sequence, then evaluates cameras, render extraction and audio control
+snapshots. Origin rebasing changes representation, not world time or pose history.
+Save/load and world replacement invalidate stale epoch-scoped work before releasing
+the old owner. Transfer commits and restoration cannot interleave half-published
+entity sets with queries or replication.
+
 ## Lifetime and background publication
 
 `ActivationLifetime` owns an activation; weak `ActivationToken`s do not extend it.
@@ -235,21 +262,25 @@ than replaced by a second world-wide queue.
 ## Controllers
 
 Concrete movement and orbit-camera controllers consume intent and write model
-values or CameraProps, without SDL, GPU objects or renderer submission. Movement
-is kinematic, not collision/physics. Orbit angles are radians; world units and +Y
-up match scene math. A pose history supports interpolation and teleport reset.
+values or WorldCamera, without SDL, GPU objects or renderer submission. World
+placement preserves double precision; local CameraProps is a render conversion.
+Movement is kinematic, not collision/physics. Orbit angles are radians; meters and
++Y up follow the world contract. A pose history supports interpolation and
+teleport reset.
 Player input, AI and replay may all supply the same intent types.
 [Locomotion profiles](LOCOMOTION.md) define Steered, Strafe and Tank requests,
 turn responses and movement realization. [Camera rigs](../render/CAMERAS.md)
 consume subject samples independently of those profiles.
 `MovementController` limits direction magnitude to one, preserving analog input,
-and advances at units/second. It provides no gravity/contact solver.
+and advances at meters/second. It provides no gravity/contact solver.
 `OrbitController` clamps pitch away from the poles and distance to positive
 bounds. Intent contains angular deltas in radians and additive zoom distance;
 callers convert device values or rates to deltas. `camera(lens)` preserves lens
-settings while replacing eye/target/up. `PoseHistory` linearly interpolates
-position/scale and shortest-sign normalized quaternion orientation (nlerp, not
-constant-angular-speed slerp). Published and teleported poses are validated first.
+settings while replacing world placement/orientation. `PoseHistory` linearly
+interpolates same-space position and shortest-sign normalized quaternion orientation
+(nlerp, not constant-angular-speed slerp); visual scale interpolates separately.
+Published and teleported poses are validated first. Epoch, space or discontinuity
+changes reset history; an origin-only change does not.
 
 ## API and composition
 

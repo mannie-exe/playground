@@ -30,6 +30,28 @@ Dependencies are validated, cycle-checked and traversed once per identity when
 collecting a closure. They describe preparation, not permanent residency. A failed
 load publishes no resource. Existing handles survive cache eviction.
 
+## World content and products
+
+World definitions, cell records, generator recipes, voxel/block definitions and
+navigation sources are typed immutable catalog content under the same explicit
+definition registry. [WorldManifest and cell identity](STREAMING.md) describe
+residency, not package identity. Human-inspectable world/cell records use versioned
+JSON with finite numeric and size limits; pack metadata remains TOML. Large block,
+mesh and navigation products use bounded indexed binary payloads with explicit
+schema, encoding and cooker identity. Never serialize native memory layouts.
+
+[Procedural providers](PROCEDURAL.md) consume validated data recipes and publish
+owned products through bounded worker preparation. A recipe selects an allowed
+compiled provider; it cannot deserialize callbacks or execute pack-supplied code.
+Generated products retain source/generator/neighbor revisions in cache keys.
+Runtime edits belong to WorldStore, not mutation of a frozen asset catalog.
+
+Render meshes, spatial-query indexes and navigation tiles are separate products.
+Each declares source dependencies, preparation limits, readiness and invalidation.
+Missing/obsolete navigation or query data cannot inherit readiness from a rendered
+mesh. [Streaming](STREAMING.md) retains sources and publishes coherent generations;
+origin changes and cell references do not duplicate shared immutable asset charges.
+
 ## Application reconstruction
 
 App-owned models outlive their view trees. C++ view construction receives explicit

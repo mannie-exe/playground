@@ -96,6 +96,16 @@ that same source ownership. Use existing owner-thread font access rules.
 Procedural mesh definitions remain compiled code unless a bounded data recipe is
 explicitly supported; packs cannot name arbitrary C++ constructors.
 
+## World payloads
+
+[World/cell records](STREAMING.md) and [generator recipes](PROCEDURAL.md) are typed
+data entries. Registered compiled providers validate recipe schemas and limits;
+packs grant no code execution. World indices reference independently readable cell
+payloads and shared asset dependencies. A package, scene, zone and cell are different
+units; mounting a pack does not instantiate its world or make every cell resident.
+Navigation tiles and generated meshes are versioned derived products, not saves.
+Mutable entities, voxel edits and deletion records live in separate app storage.
+
 ## Bounds and preparation
 
 Bound manifest bytes, files, path lengths, dependency depth/edges, encoded bytes,

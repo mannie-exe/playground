@@ -14,7 +14,7 @@ physics engine. See [input ownership](RUNTIME.md#viewport-control-sessions) and
 | `LocomotionIntent` | Normalized movement vector, turn input and contextual aim/free-look actions; no physical key codes |
 | `LocomotionProps` | Profile, movement basis, facing target, speed limits, turn response and movement-during-turn policy |
 | `LocomotionState` | Actual subject pose, body heading and velocity supplied by the app's movement realization |
-| `LocomotionRequest` | Requested world-space velocity and facing target; does not assert that either was achieved |
+| `LocomotionRequest` | Space/frame-identified requested velocity and facing target; does not assert that either was achieved |
 | `CharacterFacingController` | Evaluates a heading target and response from explicit state, intent and elapsed seconds |
 
 Desired view heading, desired travel direction, actual body heading and actual
@@ -23,11 +23,20 @@ it is not the authority for movement. Controllers hold copied values and validat
 identities, not borrowed mesh/body pointers. The app publishes actual results
 after applying requests and feeds those results into the next evaluation.
 
-Directions use scene world units and +Y up. Ground movement projects onto the
+Positions and rates follow [world coordinates and frames](WORLDS.md): meters,
+seconds, radians and +Y up. Ground movement projects onto the
 configured up plane and uses look yaw, not pitched camera forward; looking near
 vertical must not collapse the movement basis. Preserve analog magnitude and
-limit combined movement to length one. Rates use units/second or radians/second;
+limit combined movement to length one. Rates use meters/second or radians/second;
 no device sensitivity or frame-count-based increment belongs in locomotion.
+
+Requests identify their simulation tick and movement reference frame. Conversion
+to space-relative motion uses the matching FrameSample, including declared frame
+velocity inheritance. The motor publishes actual space-relative pose/velocity;
+camera smoothing never supplies either. [Navigation](NAVIGATION.md) can supply
+desired travel and facing through the same profile evaluation. The app explicitly
+arbitrates autonomous, scripted and player control and clears obsolete requests
+on takeover, target removal or transfer.
 
 ## Profiles
 
@@ -106,8 +115,9 @@ turn/follow damping. Smoothed visual transforms never feed back into movement.
 ## Future physics and root motion
 
 Physics-backed character motors, vehicle dynamics and root-motion realization are
-future integrations. They consume locomotion requests and publish actual results;
-they may reject or constrain requested motion. A vehicle can translate steering
+future integrations behind the [physics boundary](PHYSICS.md). They consume
+locomotion requests and publish actual results; they may reject or constrain
+requested motion. A vehicle can translate steering
 targets into steering angle/curvature rather than rotate its chassis in place.
 Root motion may supply displacement, but camera evaluation does not become its
 authority. Network authority/replay chooses its own simulation input boundary.

@@ -58,6 +58,21 @@ submitted uses. A failed wait leaves them charged until device teardown; uncerta
 unsubmitted recordings remain quarantined. Ordinary frame admission never takes
 this blocking teardown path.
 
+## World service accounting
+
+[World streaming](../platform/STREAMING.md), generation, navigation and persistence
+reserve through this ledger rather than maintaining independent RAM/VRAM budgets.
+Attribute retained source data, decoded/generated outputs, query/navigation indexes,
+save candidates, scratch and old/new publication overlap to world/epoch and service.
+Shared assets charge their owned allocations once even when many cells retain them.
+Canceled jobs, dirty uncommitted state and delayed retirement remain accounted.
+
+Per-service limits cover work, jobs and bytes as well as retained storage. Distinguish
+mandatory leases from speculative cache retention; an impossible pinned working set
+reports admission failure instead of evicting live state. Origin changes, camera
+movement and cell membership alone do not recreate immutable resources. Managed
+estimates remain distinct from measured process/device residency.
+
 ## Admission and pacing
 
 Activity determines whether rendering is needed. Scheduling determines when a

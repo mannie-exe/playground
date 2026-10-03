@@ -15,7 +15,7 @@ same authority protocol; deployment changes endpoints and service provision.
 
 An authoritative session model serves all four. Revisioned operations
 are not a CRDT. Offline concurrent edits, peer authority, deterministic lockstep,
-rollback and host migration are separate features with their own semantics.
+rollback and host migration remain [future capabilities](#future-session-capabilities).
 Camera, UI and local renderer state are presentation unless the app explicitly
 models a shared camera or document. Do not replicate Node trees or pointers.
 
@@ -99,6 +99,61 @@ LAN/direct addressing, discovery, internet signaling, NAT traversal and relays a
 independent capabilities. LAN is not automatically trusted; public internet use
 requires authenticated peer/server identity, not merely encrypted packets.
 
+## Spatial authority and interest
+
+Spatial sessions use [WorldId, WorldEpoch, EntityId and SpaceId](WORLDS.md), not
+scene handles, render origins or client cell residency. SessionEpoch and WorldEpoch
+are independent. The authority validates tick/revision, controlled-entity identity,
+movement/edit permissions, bounds and rate limits before accepting commands.
+Clients send intent and explicit domain commands, not trusted poses or generated
+geometry. Authority-side simulation/data readiness is independent of client views.
+
+| API | Contract |
+|---|---|
+| `InterestSource` | Authorized observer/region and bounded requested extent; server owns effective scope |
+| `ReplicationView` | Per-participant filtered entities/fields, baseline revision and interest generation |
+| `SpatialBaseline` | Complete admitted interest state with content/generator compatibility and world epoch |
+| `SpatialDelta` | Sequenced updates against an identified baseline and interest generation |
+| `EntityPresence` | Enter, LeaveInterest or Destroyed; leaving interest is not domain deletion |
+
+Interest combines authority policy, space, domain relevance and spatial proximity.
+Permission filtering precedes encoding; proximity is not authorization. Reuse
+spatial-query services without requiring identical physics, rendering and network
+partitions. Bound observer counts, radii, entity counts, queued baselines and update
+work. Apply hysteresis and explicit priority to avoid boundary churn. Reject or
+negotiate impossible interest rather than silently omitting required baseline data.
+
+Interest changes establish a new revision/generation barrier. Receivers reject
+old-generation updates that would resurrect an entity after LeaveInterest/Destroyed.
+Missing baselines request resynchronization; no dependence on cross-channel arrival
+order. Reentry supplies sufficient current state, not stale client cache assumptions.
+Readiness and acknowledgements distinguish received, applied and durable effects.
+
+Wire poses identify their space and tick/discontinuity. Encode validated float64
+world coordinates or a negotiated bounded cell/local quantization with explicit
+error, range and overflow rules. Never serialize raw C++ layouts or assume peer
+render origins agree. Moving-frame deltas declare parent identity/revision; missing
+parents trigger resync or an explicit absolute-pose fallback. Transfers publish
+one authoritative source-to-destination change and reset interpolation history.
+
+The authority determines voxel edits and generated entity state. Peers negotiate
+exact generator/configuration/content compatibility; procedural generation is not
+permission to invent authoritative results. Compatible clients can regenerate base
+data and receive edits; incompatible clients need supported authoritative products
+or fail admission. Bounded content transfer remains separate from movement traffic.
+Interpolation buffers are bounded; stale observations freeze/report age rather than
+silently extrapolate without limit. A local client waiting for visual assets does
+not stop authority ticks or make missing collision coverage safe.
+
+## Future session capabilities
+
+Client prediction/reconciliation, rollback, deterministic lockstep, distributed
+authority migration, peer authority, host migration and offline CRDT merging are
+future. Baseline spatial replication, interest, interpolation, procedural content
+compatibility and authoritative movement/edit commands are implementation contracts.
+Physics snapshot/replay and cross-platform determinism are not promised by fixed
+ticks or by the future physics adapter.
+
 ## Transport choice
 
 The transport interface has a deterministic in-memory fault adapter and a native
@@ -115,6 +170,11 @@ the network wire format. Codecs must support deterministic round-trip fixtures
 and reject malformed or oversized input before domain publication.
 
 ## Verification
+
+[World workloads](WORLD_TESTING.md) cover two observers, world replacement,
+interest churn, delayed baselines, transfers, generated content and persistent edits.
+Use the fault transport to reorder/delay/drop snapshots independently of command
+delivery, including local rendering pause and missing client assets.
 
 Network peers are untrusted even before creator-app isolation exists. Protocol
 validation, authentication, rate limits and bounded native decode work belong to

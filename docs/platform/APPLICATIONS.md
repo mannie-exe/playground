@@ -11,6 +11,7 @@ Games and collaborative applications share the same host/service boundaries.
 | AppHost | Platform services, one foreground compiled IApp, settings and presentation |
 | IApp | App model, action map, activation lifetime and local simulation policy |
 | Domain model | Stable entities, validated commands, rules, revisions and durable state |
+| World | Spaces, entity identity, frame relationships, snapshots and durable changes; see [world contracts](WORLDS.md) |
 | Session authority | Participants, command validation, shared state and private views |
 | UIRoot / scene | UI behavior or render descriptions; neither owns gameplay authority |
 | Asset catalog/mount | Immutable definitions, dependency closure and retained source lifetimes |
@@ -75,19 +76,28 @@ not an arbitrary grid-size breakpoint. Footer width is independent of board widt
 
 ## Scene/game runtime boundaries
 
-Scene3D already owns render-object hierarchy, transforms, visibility and immutable
+Scene3D owns render-object hierarchy, transforms, visibility and immutable
 resource references. It is not a general gameplay SceneTree. The retained UI tree
 has different layout, event-routing and lifecycle responsibilities. Do not merge
 them merely because both have parents and children.
 
 AppHost owns activation, presentation and frame boundaries. An application should
-own its gameplay world and choose its simulation policy. The host now routes input,
+own its gameplay world and choose its simulation policy. The host routes input,
 accepts guarded CPU completions, runs optional bounded fixed steps, then performs
 frame update and presentation. See [runtime contracts](RUNTIME.md) for APIs,
 input snapshots, pause policy and controller usage. Hierarchy changes and destruction occur at safe
 boundaries; render parents need not imply ownership of physics or gameplay actors.
 Add controllers/components when an actual app exercises that contract, rather
 than giving every render object update hooks and all possible services.
+
+Worlds use [space-aware positions and stable identities](WORLDS.md); SceneProjection
+creates local render representations without transferring authority to Scene3D.
+[Streaming](STREAMING.md) and activation preserve durable entities when views/cells
+retire. [Procedural data](PROCEDURAL.md) shares that lifecycle. [Navigation](NAVIGATION.md)
+supplies autonomous movement requests; the app arbitrates player, path-following
+and scripted control explicitly. Physics is a [future adapter](PHYSICS.md), not a
+prerequisite for an owned world or kinematic navigation. Headless apps can use all
+model/service boundaries without constructing rendering or UI services.
 
 Procedural character work should separate desired motion, motor/controller output,
 physical constraints/contact resolution, and rendered pose. Muscle/neuron models
