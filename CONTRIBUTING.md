@@ -319,6 +319,14 @@ Individual test executables use `playground_<test-name>_tests`.
 The aggregate includes stress and hardware tests; `-LE stress` or `-LE hardware`
 filters execution without changing the build.
 
+Arbitrary input/capture tools stay separate from regression executables: required
+test fixtures do not change based on command-line paths. `playground_model_capture`
+is an explicit GPU developer tool, not a CTest case or installed program. Native
+host workloads and capture tools are built by the normal build but excluded from
+`playground_tests`; the offscreen UI layout workload is included because CTest
+uses it for correctness checks. See [UI workloads](docs/ui/TESTING.md#rendering-workloads)
+and [scene/capture workflows](docs/render/TESTING.md#commands).
+
 Release checks should use `cmake --preset release`, build the desired target with
 `--preset release`, and run `ctest --test-dir build/release ...`. Do not use plain
 `assert` for required test outcomes: it disappears under NDEBUG. Current tests
@@ -429,16 +437,18 @@ playground_add_test(example_contract
 ```
 
 The helper sets C++23, include paths, a 60-second default timeout, CTest registration,
-and module/all-test build aggregation. UI tests link playground_ui_core and layout
-tests link playground_layout automatically. Add `LIBRARIES playground_sdl` for
+and inclusion in the `playground_tests` build aggregate. UI tests link
+playground_ui_core and layout tests link playground_layout automatically.
+Add `LIBRARIES playground_sdl` for
 compiled SDL adapters/content, or `SDL3::SDL3` for direct SDL-only use; add
 `TIMEOUT` for genuinely longer tests. Ensure ordinary
 test DLLs can be found through the project's build output arrangement, not a new
 global PATH workaround.
 
 A passing offscreen module test does not validate a complete program or every
-platform's windowing/accessibility behavior. Program-level testing is outside
-the current scope; building the application still verifies that its consumers compile.
+platform's windowing/accessibility behavior. Native host smoke tests and explicit
+workloads cover selected program-level paths; building alone only verifies that
+application consumers compile.
 
 ## Style and change checklist
 
