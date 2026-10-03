@@ -175,7 +175,7 @@ private `src` headers. Keep default arguments on declarations, not definitions.
 Register implementation files in `cmake/Modules.cmake` (or the application target
 for app-specific code). Link the module providing an API, not just its external
 dependencies: `playground_math`, `playground_runtime`, `playground_text`,
-`playground_assets`,
+`playground_assets`, `playground_world`,
 `playground_rendering`, `playground_scene`, `playground_layout`, `playground_ui_core`, `playground_constraints`,
 `playground_ui_resources`, or `playground_sdl`. Use PUBLIC requirements for public
 headers, PRIVATE for implementation-only dependencies. Template and constexpr
@@ -193,6 +193,7 @@ old header command after rebuilding, use **clangd: Restart language server**.
 | Area | Responsibility |
 |---|---|
 | `include/math`, `include/layout` | Own values, geometry, layout rules; no SDL dependencies |
+| `include/world` | Precise spatial state, identity and world services; no SDL or UI dependencies |
 | Core `include/ui` | Retained ownership, props, layout, routing, runtime services |
 | `include/platform/sdl` | SDL conversion/input/painting/session boundary |
 | `include/platform` | Window presentation/viewport values and typed settings/document-storage contracts; native implementation stays out of UI nodes |
