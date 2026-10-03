@@ -37,7 +37,7 @@ AppHost::AppHost(WindowConfig initialWindow,
                                   : playground::platform::preferenceDirectory(
                                         "Playground", "Playground"),
                  true},
-      _settings{_projectFiles, _userFiles},
+      _settings{_projectFiles, _userFiles}, _assets{backendProps.resources},
       _renderRuntime{backendProps.resources},
       _session{initialWindow, backendProps},
       _settingsViewFactory{std::move(settingsView)} {
@@ -605,15 +605,19 @@ void AppHost::registerDefaultApps() {
   _registry.add(playground::demo2d::Demo2DApp::staticInfo(), [] {
     return std::make_unique<playground::demo2d::Demo2DApp>();
   });
-  _registry.add(playground::demo3d::Demo3DApp::staticInfo(), [] {
-    return std::make_unique<playground::demo3d::Demo3DApp>();
-  });
+  _registry.add(playground::demo3d::Demo3DApp::staticInfo(),
+                [ledger = _assets.resources()] {
+                  return std::make_unique<playground::demo3d::Demo3DApp>(
+                      playground::demo3d::DemoKind::Material, ledger);
+                });
   for (auto kind : {playground::demo3d::DemoKind::Bistro,
                     playground::demo3d::DemoKind::Chess,
                     playground::demo3d::DemoKind::Benchmark})
-    _registry.add(playground::demo3d::Demo3DApp::staticInfo(kind), [kind] {
-      return std::make_unique<playground::demo3d::Demo3DApp>(kind);
-    });
+    _registry.add(playground::demo3d::Demo3DApp::staticInfo(kind),
+                  [kind, ledger = _assets.resources()] {
+                    return std::make_unique<playground::demo3d::Demo3DApp>(
+                        kind, ledger);
+                  });
   _registry.add(MinesweeperApp::staticInfo(),
                 [] { return std::make_unique<MinesweeperApp>(); });
   _registry.add(RockPaperScissorsApp::staticInfo(),

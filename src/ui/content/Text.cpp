@@ -285,7 +285,7 @@ SurfaceHandle Text::rasterize(const Measurement &m) const {
   if (!surface)
     throw std::runtime_error(std::string{"Text rasterization: "} +
                              SDL_GetError());
-  return adoptManagedSurface(surface);
+  return adoptManagedSurface(surface, _assets.resources());
 }
 
 layout::MeasureResult

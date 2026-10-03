@@ -48,7 +48,8 @@ AssetResources::image(const assets::AssetId<assets::ImageAsset> &id) {
     Stream stream{requireSDL(SDL_IOFromConstMem(bytes.data(), bytes.size()),
                              "Open image asset")};
     auto image = adoptManagedSurface(
-        requireSDL(IMG_Load_IO(stream.get(), false), "Decode image asset"));
+        requireSDL(IMG_Load_IO(stream.get(), false), "Decode image asset"),
+        _cache.resources());
     if (image->pitch < 0 || image->h < 0 ||
         static_cast<std::uint64_t>(image->pitch) * image->h >
             _props.maxDecodedImageBytes)
@@ -100,7 +101,7 @@ AssetResources::model(const assets::AssetId<assets::ModelAsset> &id) {
   const auto key = _catalog->cacheKey(assets::key(id));
   if (const auto it = _models.find(key); it != _models.end())
     return it->second;
-  auto model = prepareModel(*_catalog, id);
+  auto model = prepareModel(*_catalog, id, {}, _cache.resources());
   _models.emplace(key, model);
   return model;
 }

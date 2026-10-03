@@ -63,12 +63,15 @@ std::size_t texelBytes(TextureFormat format) {
 }
 
 PackedTexels::PackedTexels(TextureFormat format, ColorEncoding encoding,
-                           std::vector<std::byte> data)
-    : _format{format}, _encoding{encoding}, _data{std::move(data)} {
+                           std::vector<std::byte> data,
+                           std::shared_ptr<ResourceLedger> ledger)
+    : _ledger{std::move(ledger)}, _format{format}, _encoding{encoding},
+      _data{std::move(data)} {
+  if (!_ledger)
+    throw std::invalid_argument("Texture storage requires a ledger");
   if (!_data.empty()) {
-    _allocation = defaultResourceLedger()->reserve(
-        MemoryClass::CPU, ResourceKind::Asset, _data.capacity(),
-        "Packed texture adoption");
+    _allocation = _ledger->reserve(MemoryClass::CPU, ResourceKind::Asset,
+                                   _data.capacity(), "Packed texture adoption");
     _allocation->setState(AllocationState::Owned);
   }
   if (!isValid(encoding) || _data.size() % texelBytes(format) ||
@@ -77,15 +80,17 @@ PackedTexels::PackedTexels(TextureFormat format, ColorEncoding encoding,
 }
 
 PackedTexels::PackedTexels(TextureFormat format, ColorEncoding encoding,
-                           std::span<const math::Vec4f> linear)
-    : PackedTexels{format, encoding, std::vector<std::byte>{}} {
+                           std::span<const math::Vec4f> linear,
+                           std::shared_ptr<ResourceLedger> ledger)
+    : PackedTexels{format, encoding, std::vector<std::byte>{},
+                   std::move(ledger)} {
   const auto stride = texelBytes(format);
   if (linear.size() > std::numeric_limits<std::size_t>::max() / stride)
     throw std::length_error("Texture byte count overflow");
   if (!linear.empty())
-    _allocation = defaultResourceLedger()->reserve(
-        MemoryClass::CPU, ResourceKind::Asset, linear.size() * stride,
-        "Packed texture storage");
+    _allocation =
+        _ledger->reserve(MemoryClass::CPU, ResourceKind::Asset,
+                         linear.size() * stride, "Packed texture storage");
   _data.resize(linear.size() * stride);
   if (_allocation)
     _allocation->setState(AllocationState::Owned);
@@ -147,12 +152,13 @@ bool PackedTexels::operator==(const PackedTexels &other) const {
 }
 
 PackedTexels::PackedTexels(const PackedTexels &other)
-    : _format{other._format}, _encoding{other._encoding},
+    : _ledger{other._ledger}, _format{other._format},
+      _encoding{other._encoding},
       _allocation{other._data.empty()
                       ? ResourceLedger::Token{}
-                      : defaultResourceLedger()->reserve(
-                            MemoryClass::CPU, ResourceKind::Asset,
-                            other._data.size(), "Packed texture copy")},
+                      : _ledger->reserve(MemoryClass::CPU, ResourceKind::Asset,
+                                         other._data.size(),
+                                         "Packed texture copy")},
       _data{other._data} {
   if (_allocation)
     _allocation->setState(AllocationState::Owned);
@@ -167,6 +173,7 @@ PackedTexels &PackedTexels::operator=(const PackedTexels &other) {
 PackedTexels &PackedTexels::operator=(PackedTexels &&other) noexcept {
   if (this != &other) {
     PackedTexels previous{std::move(*this)};
+    _ledger = std::move(other._ledger);
     _format = other._format;
     _encoding = other._encoding;
     _allocation = std::move(other._allocation);

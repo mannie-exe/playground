@@ -107,7 +107,7 @@ Font Font::cloneWith(FontPatch patch) const {
               .kern = patch.kern ? *patch.kern : _props.render.kern,
           },
       .fallbacks = _props.fallbacks};
-  return Font{cloneProps};
+  return Font{cloneProps, _ledger};
 }
 
 void Font::configureFont(const FontProps &props) {
@@ -128,14 +128,19 @@ void Font::configureFont(const FontProps &props) {
   setLineSpace(props.layout.lineSpace);
 }
 
-Font::Font(FontProps props) : Font{std::move(props), {}} {}
+Font::Font(FontProps props,
+           std::shared_ptr<playground::rendering::ResourceLedger> ledger)
+    : Font{std::move(props), {}, std::move(ledger)} {}
 
-Font::Font(FontProps props, std::vector<FontHandle> fallbacks)
+Font::Font(FontProps props, std::vector<FontHandle> fallbacks,
+           std::shared_ptr<playground::rendering::ResourceLedger> ledger)
     : _fallbacks{std::move(fallbacks)},
       _font{requireSDL(
           TTF_OpenFont(props.path.c_str(), props.style.size),
           std::format("Font@{} Failed to load {}", (void *)this, props.path))},
-      _props{std::move(props)} {
+      _props{std::move(props)}, _ledger{std::move(ledger)} {
+  if (!_ledger)
+    throw std::invalid_argument("Font requires a ledger");
   configureFont(_props);
   if (_fallbacks.empty())
     for (const auto &source : _props.fallbacks) {
@@ -145,7 +150,8 @@ Font::Font(FontProps props, std::vector<FontHandle> fallbacks)
       props.path = source.path;
       props.cacheIdentity = source.cacheIdentity;
       props.fallbacks.clear();
-      _fallbacks.push_back(std::make_shared<const Font>(std::move(props)));
+      _fallbacks.push_back(
+          std::make_shared<const Font>(std::move(props), _ledger));
     }
   for (const auto &font : _fallbacks)
     if (!TTF_AddFallbackFont(_font.get(), font->get()))

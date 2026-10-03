@@ -7,9 +7,12 @@
 #include <platform/sdl/TextureDecode.hpp>
 
 namespace playground::sdl {
-scene::ModelHandle prepareModel(const assets::AssetCatalog &catalog,
-                                const assets::AssetId<assets::ModelAsset> &id,
-                                std::stop_token stop) {
+scene::ModelHandle
+prepareModel(const assets::AssetCatalog &catalog,
+             const assets::AssetId<assets::ModelAsset> &id,
+             std::stop_token stop,
+             std::shared_ptr<runtime::ResourceLedger> ledger) {
+  PreparationBudget budget{ledger};
   (void)catalog.cacheKey(assets::key(id));
   const auto &definition = catalog.definition(id);
   const auto check = [&] {
@@ -20,6 +23,7 @@ scene::ModelHandle prepareModel(const assets::AssetCatalog &catalog,
   auto document =
       catalog.read(definition.source, definition.props.maxDocumentBytes);
   scene::ModelImportServices services{
+      .resources = ledger,
       .readResource =
           [&](std::string_view uri) {
             check();
@@ -36,7 +40,7 @@ scene::ModelHandle prepareModel(const assets::AssetCatalog &catalog,
             check();
             return decodeTexture(bytes, mime, role,
                                  rendering::MipPolicy::Generate,
-                                 definition.props.maxResourceBytes);
+                                 definition.props.maxResourceBytes, budget);
           }};
   auto model = scene::importGLTF(document, services, definition.props);
   // Prepare color upload variants once on the model worker, not each frame.
@@ -62,7 +66,8 @@ void ModelPreparation::checkOwner() const {
 bool ModelPreparation::start(
     runtime::Executor &executor,
     std::shared_ptr<const assets::AssetCatalog> catalog,
-    assets::AssetId<assets::ModelAsset> id) {
+    assets::AssetId<assets::ModelAsset> id,
+    std::shared_ptr<runtime::ResourceLedger> ledger) {
   checkOwner();
   if (!catalog || !catalog->isFrozen())
     throw std::invalid_argument("Model request requires frozen catalog");
@@ -81,10 +86,10 @@ bool ModelPreparation::start(
   auto promise = std::make_shared<std::promise<scene::ModelHandle>>();
   auto future = promise->get_future();
   auto ticket = executor.submit(
-      [catalog = std::move(catalog), id = std::move(id),
-       promise](std::stop_token stop) noexcept {
+      [catalog = std::move(catalog), id = std::move(id), promise,
+       ledger = std::move(ledger)](std::stop_token stop) noexcept {
         try {
-          promise->set_value(prepareModel(*catalog, id, stop));
+          promise->set_value(prepareModel(*catalog, id, stop, ledger));
         } catch (...) {
           promise->set_exception(std::current_exception());
         }

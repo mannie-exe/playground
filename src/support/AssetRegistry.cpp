@@ -116,7 +116,7 @@ FontHandle AssetRegistry::getFont(FontProps props) {
     fallback.fallbacks.clear();
     fallbacks.push_back(getFont(std::move(fallback)));
   }
-  FontHandle font{new Font(std::move(props), std::move(fallbacks))};
+  FontHandle font{new Font(std::move(props), std::move(fallbacks), _ledger)};
   FontHandle result{font};
   _fonts.emplace(key, Entry<FontHandle>{result, ++_clock});
   return result;

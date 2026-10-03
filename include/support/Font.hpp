@@ -8,6 +8,7 @@
 
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include <rendering/ResourceLedger.hpp>
 #include <support/FontHandle.hpp>
 #include <support/SDLResource.hpp>
 
@@ -76,14 +77,20 @@ class Font {
   std::vector<FontHandle> _fallbacks;
   FontResource _font;
   FontProps _props;
+  std::shared_ptr<playground::rendering::ResourceLedger> _ledger;
   int _naturalLineSkip{};
 
   static FontInfo getInfo(const FontResource &font);
   friend class AssetRegistry;
-  Font(FontProps props, std::vector<FontHandle> fallbacks);
+  Font(FontProps props, std::vector<FontHandle> fallbacks,
+       std::shared_ptr<playground::rendering::ResourceLedger> ledger);
 
 public:
-  explicit Font(FontProps props);
+  explicit Font(FontProps props,
+                std::shared_ptr<playground::rendering::ResourceLedger> ledger =
+                    playground::rendering::defaultResourceLedger());
+
+  const auto &resources() const noexcept { return _ledger; }
 
   TTF_Font *get() const { return _font.get(); }
 
@@ -153,6 +160,7 @@ public:
     swap(_fallbacks, other._fallbacks);
     swap(_font, other._font);
     swap(_props, other._props);
+    swap(_ledger, other._ledger);
     swap(_naturalLineSkip, other._naturalLineSkip);
     return *this;
   }

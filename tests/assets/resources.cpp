@@ -37,7 +37,10 @@ int main() {
     catalog->add(ownedId, assets::VectorAsset{assets::ByteSource{
                               {bytes.begin(), bytes.end()}}});
     catalog->freeze();
-    AssetRegistry cache;
+    auto ledger = std::make_shared<rendering::ResourceLedger>();
+    const auto globalBefore =
+        rendering::defaultResourceLedger()->snapshot().memory[0].bytes;
+    AssetRegistry cache{ledger};
     sdl::AssetResources resources{catalog, cache};
     auto font = resources.font(fontId, {.style = {.size = 18}});
     test::require(font == resources.font(fontId, {.style = {.size = 18}}),
@@ -50,6 +53,13 @@ int main() {
     auto image = resources.image(imageId);
     test::require(image == resources.image(imageId),
                   "image identity shares surface");
+    test::require(
+        ledger->snapshot().memory[0].bytes > 0 &&
+            rendering::defaultResourceLedger()->snapshot().memory[0].bytes ==
+                globalBefore &&
+            font->cloneWith({.size = 20}).resources() == ledger,
+        "decoded surfaces and font variants belong to the injected cache "
+        "domain");
     auto vector = resources.vector(vectorId);
     test::require(vector == resources.vector(vectorId),
                   "vector identity shares document");

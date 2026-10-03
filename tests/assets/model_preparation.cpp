@@ -16,11 +16,19 @@ int main() {
     catalog->add(id, assets::ModelAsset{.source = test::modelFixture()});
     catalog->add(bad, assets::ModelAsset{.source = assets::ByteSource{}});
     catalog->freeze();
-    AssetRegistry cache;
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
+    const auto globalBefore =
+        runtime::defaultResourceLedger()->snapshot().memory[0].bytes;
+    AssetRegistry cache{ledger};
     sdl::AssetResources resources{catalog, cache};
     auto original = resources.model(id);
     test::require(original == resources.model(id),
                   "synchronous model requests share immutable result");
+    test::require(
+        ledger->snapshot().memory[0].bytes > 0 &&
+            runtime::defaultResourceLedger()->snapshot().memory[0].bytes ==
+                globalBefore,
+        "model storage is charged to resource provider ledger");
     scene::Scene3D scene;
     original->instantiate(scene);
     const auto before = scene.snapshot();

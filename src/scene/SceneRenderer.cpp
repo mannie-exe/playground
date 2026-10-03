@@ -30,13 +30,16 @@ void MeshData::validate() const {
       throw std::invalid_argument("Mesh index exceeds vertex count");
 }
 
-Mesh::Mesh(MeshData data) : _data{std::move(data)} {
+Mesh::Mesh(MeshData data, std::shared_ptr<rendering::ResourceLedger> ledger)
+    : _ledger{std::move(ledger)}, _data{std::move(data)} {
+  if (!_ledger)
+    throw std::invalid_argument("Mesh requires a ledger");
   _data.validate();
   const auto vertexBytes = _data.vertices.capacity() * sizeof(Vertex3D);
   const auto indexBytes = _data.indices.capacity() * sizeof(std::uint32_t);
   if (vertexBytes > std::numeric_limits<std::size_t>::max() - indexBytes)
     throw std::overflow_error("Mesh storage size overflow");
-  _allocation = rendering::defaultResourceLedger()->reserve(
+  _allocation = _ledger->reserve(
       rendering::MemoryClass::CPU, rendering::ResourceKind::Asset,
       vertexBytes + indexBytes, "Mesh storage adoption");
   _allocation->setState(rendering::AllocationState::Owned);
@@ -51,8 +54,9 @@ Mesh::Mesh(MeshData data) : _data{std::move(data)} {
   }
 }
 
-MeshHandle makeMesh(MeshData data) {
-  return std::make_shared<const Mesh>(std::move(data));
+MeshHandle makeMesh(MeshData data,
+                    std::shared_ptr<rendering::ResourceLedger> ledger) {
+  return std::make_shared<const Mesh>(std::move(data), std::move(ledger));
 }
 
 void validate(const MaterialProps &material) {

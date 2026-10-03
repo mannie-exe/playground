@@ -294,6 +294,7 @@ ModelHandle importGLTF(std::span<const std::byte> document,
                        const ModelImportServices &services,
                        const ModelImportProps &props) {
   props.validate();
+  PreparationBudget admission{services.resources};
   check(!document.empty() && document.size() <= props.maxDocumentBytes,
         "Invalid model input/import limits");
   ParserBudget parserBudget{0, props.maxParserBytes};
@@ -688,13 +689,15 @@ ModelHandle importGLTF(std::span<const std::byte> document,
                      .generateTangents = !tangent && mat.pbr &&
                                          bool(mat.pbr->normalTexture.texture),
                      .tangentUVSet = mat.pbr ? mat.pbr->normalTexture.uvSet : 0,
-                     .maxScratchBytes = props.maxPreparationBytes});
+                     .maxScratchBytes = props.maxPreparationBytes,
+                     .admission = &admission});
       account(prepared.finalBytes);
       totalVertices -= position->count;
       check(geometry.vertices.size() <= props.maxVertices - totalVertices,
             "Generated mesh exceeds vertex budget");
       totalVertices += geometry.vertices.size();
-      result.push_back({makeMesh(std::move(geometry)), std::move(mat)});
+      result.push_back(
+          {makeMesh(std::move(geometry), services.resources), std::move(mat)});
     }
     meshes.emplace(source, result);
     return result;

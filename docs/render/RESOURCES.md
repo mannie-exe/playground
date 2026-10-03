@@ -11,8 +11,12 @@ settings or silently select a different renderer or image quality.
 `runtime::ResourceLedger` is the shared managed-storage account consumed by
 rendering, content, audio and networking. Native resources, CPU preparation
 workers and service buffers retain accounting tokens, never the host. Separate
-ledgers support isolated tests and embedded backends; asset adapters use the
-default process ledger. Compatibility domains are not accounting identities.
+ledgers support isolated hosts and tests. AppHost injects its backend ledger into
+its asset cache and app factories. Meshes, decoded surfaces, packed textures,
+font raster variants, world snapshots and projections retain that owner; copies,
+mips and upload representations inherit it. Preparation uses the same ledger.
+Default construction is a convenience for standalone callers, not a host-wide
+service locator. Compatibility domains are not accounting identities.
 Service snapshots expose queue/voice/connection counts separately from byte
 charges. Shared storage is charged once globally even when several apps or mounts
 retain it; per-consumer logical demand is a separate view. Audio render callbacks

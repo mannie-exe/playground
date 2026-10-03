@@ -82,7 +82,7 @@ GPUTextureData::GPUTextureData(GPUDeviceHandle device,
   }
   limits.validateUpload(transferBytes, "GPU material texture upload");
   const auto preparationLease =
-      resourcePreparationBudget().acquire(transferBytes);
+      PreparationBudget{_device->resources()}.acquire(transferBytes);
   const auto &upload = source.upload(ignoreAlpha);
   auto texture = createTexture(_device, info, rendering::ResourceKind::Texture);
   SDL_GPUTransferBufferCreateInfo transferInfo{

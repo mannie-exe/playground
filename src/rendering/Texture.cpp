@@ -20,12 +20,14 @@ bool valid(TextureRole r) {
          r == TextureRole::Environment;
 }
 
-std::vector<PackedTextureLevel> packLevels(std::vector<TextureLevel> input) {
+std::vector<PackedTextureLevel>
+packLevels(std::vector<TextureLevel> input,
+           const std::shared_ptr<ResourceLedger> &ledger) {
   std::vector<PackedTextureLevel> result;
   for (auto &level : input)
     result.push_back(
         {level.size, PackedTexels{TextureFormat::RGBA32F, ColorEncoding::Linear,
-                                  std::span{level.texels}}});
+                                  std::span{level.texels}, ledger}});
   return result;
 }
 
@@ -41,11 +43,12 @@ PackedTexels transformTexels(const PackedTexels &source, TextureFormat format,
     const auto count = std::min(block.size(), source.size() - i);
     for (std::size_t j = 0; j < count; ++j)
       block[j] = transform(source[i + j]);
-    const PackedTexels packed{format, encoding, std::span{block.data(), count}};
+    const PackedTexels packed{format, encoding, std::span{block.data(), count},
+                              source.resources()};
     std::memcpy(result.data() + i * stride, packed.data().data(),
                 count * stride);
   }
-  return {format, encoding, std::move(result)};
+  return {format, encoding, std::move(result), source.resources()};
 }
 } // namespace
 
@@ -65,8 +68,9 @@ void SamplerProps::validate() const {
     throw std::invalid_argument("Invalid texture sampler");
 }
 
-Texture::Texture(TextureRole role, std::vector<TextureLevel> levels)
-    : Texture{role, packLevels(std::move(levels))} {}
+Texture::Texture(TextureRole role, std::vector<TextureLevel> levels,
+                 std::shared_ptr<ResourceLedger> ledger)
+    : Texture{role, packLevels(std::move(levels), ledger)} {}
 
 Texture::Texture(TextureRole role, std::vector<PackedTextureLevel> levels,
                  AlphaMode alpha)
@@ -179,19 +183,21 @@ TextureHandle buildTexture(PackedTextureLevel level, TextureRole role,
         dst.texels[std::size_t(y) * dst.size.x + x] = p;
       }
     levels.push_back(
-        {dst.size, PackedTexels{format, encoding, std::span{dst.texels}}});
+        {dst.size, PackedTexels{format, encoding, std::span{dst.texels},
+                                levels.front().texels.resources()}});
   }
   return std::make_shared<const Texture>(role, std::move(levels));
 }
 } // namespace
 
 TextureHandle makeTexture(TextureLevel level, TextureRole role,
-                          MipPolicy policy, std::size_t maximumBytes) {
+                          MipPolicy policy, std::size_t maximumBytes,
+                          std::shared_ptr<ResourceLedger> ledger) {
   if (level.texels.size() > maximumBytes / sizeof(math::Vec4f))
     throw std::length_error("Texture exceeds preparation budget");
-  PackedTextureLevel packed{level.size, PackedTexels{TextureFormat::RGBA32F,
-                                                     ColorEncoding::Linear,
-                                                     std::span{level.texels}}};
+  PackedTextureLevel packed{
+      level.size, PackedTexels{TextureFormat::RGBA32F, ColorEncoding::Linear,
+                               std::span{level.texels}, ledger}};
   return buildTexture(std::move(packed), role, policy, maximumBytes,
                       std::numeric_limits<std::size_t>::max());
 }
@@ -220,7 +226,8 @@ TextureHandle makeTexture(PackedTextureLevel level, TextureRole role,
 }
 
 TextureHandle makeTexture(const RGBA8Image &image, TextureRole role,
-                          MipPolicy policy, std::size_t maximumBytes) {
+                          MipPolicy policy, std::size_t maximumBytes,
+                          std::shared_ptr<ResourceLedger> ledger) {
   image.validate();
   if (image.alpha != AlphaMode::Straight)
     throw std::invalid_argument("Texture decode requires straight channels");
@@ -237,7 +244,7 @@ TextureHandle makeTexture(const RGBA8Image &image, TextureRole role,
           ? image.encoding
           : ColorEncoding::Linear;
   return buildTexture({image.size, PackedTexels{TextureFormat::RGBA8, encoding,
-                                                std::move(data)}},
+                                                std::move(data), ledger}},
                       role, policy, maximumBytes,
                       std::numeric_limits<std::size_t>::max());
 }
@@ -353,7 +360,7 @@ const Texture &Texture::upload(bool ignoreAlpha) const {
     // Admission precedes the unadopted byte buffer and float mip scratch.
     // Published PackedTexels retain their separate persistent ledger charges.
     const auto scratch =
-        resourcePreparationBudget().acquire(temporaryBytes + blockBytes);
+        PreparationBudget{resources()}.acquire(temporaryBytes + blockBytes);
     const auto &first = base.texels;
     cached = ignoreAlpha ? makeOpaqueTexture(*this)
                          : packTexture(*this, first.format(), first.encoding(),

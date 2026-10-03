@@ -26,6 +26,8 @@ public:
       throw std::invalid_argument("Preparation budget requires a ledger");
   }
 
+  const auto &resources() const noexcept { return _ledger; }
+
   Lease acquire(std::size_t bytes) const {
     if (!bytes)
       return {};
