@@ -89,6 +89,43 @@ int main() {
               "copying mesh");
       require(projection.extract(world.snapshot(), camera, origin) == extracted,
               "unchanged world view reuses retained immutable extraction");
+      {
+        auto authored = std::make_shared<scene::Scene3D>();
+        authored->create({.mesh = mesh});
+        auto animated = authored->create({.mesh = mesh});
+        scene::SceneInstanceProjection bindings{{{id, authored}}, ledger};
+        auto first = bindings.extract(world.snapshot(), camera, origin);
+        require(bindings.extract(world.snapshot(), camera, origin) == first &&
+                    bindings.stats().rebuilds == 1,
+                "unchanged instance extraction reuses immutable snapshot");
+        authored->applyPatch(animated, {.transform = math::Transform3D{
+                                            .position = {.25f, 0, 0}}});
+        auto second = bindings.extract(world.snapshot(), camera, origin);
+        require(
+            bindings.stats().rebuilds == 1 &&
+                bindings.stats().updatedVisuals == 1 &&
+                first->draws()[1].model.at(0, 3) == 0 &&
+                second->draws()[1].model.at(0, 3) == .25f &&
+                first->draws()[0] == second->draws()[0],
+            "one animated draw preserves static bindings and old snapshots");
+        authored->applyPatch(animated, {.material = scene::MaterialProps{
+                                            .baseColor = {1, 2, 3, 255}}});
+        auto material = bindings.extract(world.snapshot(), camera, origin);
+        require(bindings.stats().rebuilds == 1 &&
+                    bindings.stats().updatedVisuals == 2 &&
+                    material->draws()[1].mesh == first->draws()[1].mesh &&
+                    material->draws()[1].material.baseColor.r == 1,
+                "material overrides invalidate values without changing mesh "
+                "identity");
+        authored->applyPatch(animated, {.visible = false});
+        require(bindings.extract(world.snapshot(), camera, origin)
+                            ->draws()
+                            .size() == 1 &&
+                    bindings.stats().rebuilds == 2,
+                "visibility changes rebuild topology without stale draws");
+        require(first->draws().size() == 2,
+                "retained snapshots survive topology replacement");
+      }
       auto view = std::make_unique<ui::SceneView>(ui::SceneViewProps{
           .preferredSize = {64, 64}, .worldScene = extracted});
       auto *node = view.get();

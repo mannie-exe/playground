@@ -317,6 +317,15 @@ Native synchronization references: [POSIX/Linux fsync](https://www.man7.org/linu
 [Windows FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)
 and [MoveFileEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
 
+## Scene instance bindings
+
+`scene::SceneInstanceProjection` connects entity-local Scene3D instances to world
+entities. Static scenery can use one binding; independently moving objects use
+separate instances and entity bindings. Scene revisions update changed visual
+values without replacing immutable assets. Draw-count changes rebuild bindings.
+Each extracted WorldSceneSnapshot remains immutable and independently retained.
+The adapter and its output use the injected world/host resource ledger.
+
 ## Future capabilities
 
 Planetary/astronomical coordinate hierarchies, non-Euclidean or seamlessly rendered

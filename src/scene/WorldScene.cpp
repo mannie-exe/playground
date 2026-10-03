@@ -88,26 +88,41 @@ CameraView WorldCamera::view(world::RenderOrigin origin,
   return result;
 }
 
+namespace {
+void validateVisual(const EntityVisual &v) {
+  world::validate(v.entity);
+  if (!v.draw.mesh || !math::isFinite(v.draw.model) ||
+      v.draw.model.at(3, 0) != 0 || v.draw.model.at(3, 1) != 0 ||
+      v.draw.model.at(3, 2) != 0 || v.draw.model.at(3, 3) != 1)
+    throw std::invalid_argument("World visual requires an affine mesh binding");
+  scene::validate(v.draw.material);
+}
+} // namespace
+
 SceneProjection::SceneProjection(
     std::vector<EntityVisual> visuals,
     std::shared_ptr<rendering::ResourceLedger> ledger, std::size_t maxVisuals)
     : _ledger{std::move(ledger)}, _visuals{std::move(visuals)} {
   if (!_ledger || !maxVisuals || _visuals.size() > maxVisuals)
     throw std::invalid_argument("Invalid world scene bindings or limits");
-  for (const auto &v : _visuals) {
-    world::validate(v.entity);
-    if (!v.draw.mesh || !math::isFinite(v.draw.model) ||
-        v.draw.model.at(3, 0) != 0 || v.draw.model.at(3, 1) != 0 ||
-        v.draw.model.at(3, 2) != 0 || v.draw.model.at(3, 3) != 1)
-      throw std::invalid_argument(
-          "World visual requires an affine mesh binding");
-    scene::validate(v.draw.material);
-  }
+  for (const auto &v : _visuals)
+    validateVisual(v);
   _charge = _ledger->reserve(
       rendering::MemoryClass::CPU, rendering::ResourceKind::Asset,
       bytes(_visuals.capacity(), sizeof(EntityVisual), sizeof(SceneProjection)),
       "World scene bindings");
   _charge->setState(rendering::AllocationState::Owned);
+}
+
+bool SceneProjection::setVisual(std::size_t index, EntityVisual visual) {
+  if (index >= _visuals.size())
+    throw std::out_of_range("World visual index");
+  if (_visuals[index] == visual)
+    return false;
+  validateVisual(visual);
+  _visuals[index] = std::move(visual);
+  _last.reset();
+  return true;
 }
 
 std::shared_ptr<const WorldSceneSnapshot>
@@ -200,6 +215,73 @@ SceneProjection::extract(world::WorldSnapshot state, const WorldCamera &camera,
   result->_charge->setState(rendering::AllocationState::Owned);
   _last = result;
   return result;
+}
+
+SceneInstanceProjection::SceneInstanceProjection(
+    std::vector<SceneInstanceBinding> bindings,
+    std::shared_ptr<rendering::ResourceLedger> ledger, std::size_t maxVisuals)
+    : _ledger{std::move(ledger)}, _bindings{std::move(bindings)},
+      _maxVisuals{maxVisuals} {
+  if (!_ledger || !maxVisuals || _bindings.size() > maxVisuals)
+    throw std::invalid_argument("Invalid scene instance bindings");
+  for (const auto &binding : _bindings) {
+    world::validate(binding.entity);
+    if (!binding.scene)
+      throw std::invalid_argument("Scene binding requires a scene");
+  }
+  _charge = _ledger->reserve(
+      rendering::MemoryClass::CPU, rendering::ResourceKind::Asset,
+      bytes(_bindings.capacity(),
+            sizeof(SceneInstanceBinding) + sizeof(std::uint64_t) +
+                sizeof(std::size_t),
+            sizeof(SceneInstanceProjection)),
+      "Scene instance bindings");
+  _charge->setState(rendering::AllocationState::Owned);
+  _counts.resize(_bindings.size());
+  _revisions.resize(_bindings.size());
+}
+
+std::shared_ptr<const WorldSceneSnapshot>
+SceneInstanceProjection::extract(world::WorldSnapshot world,
+                                 const WorldCamera &camera,
+                                 world::RenderOrigin origin) {
+  bool rebuild = !_projection;
+  std::size_t total{};
+  for (std::size_t i = 0; i < _bindings.size(); ++i) {
+    const auto count = _bindings[i].scene->draws().size();
+    if (count > _maxVisuals - total)
+      throw std::length_error("Scene instance visual cap exceeded");
+    total += count;
+    rebuild |= count != _counts[i];
+  }
+  if (rebuild) {
+    std::vector<EntityVisual> visuals;
+    visuals.reserve(total);
+    for (const auto &binding : _bindings)
+      for (const auto &draw : binding.scene->draws())
+        visuals.push_back({binding.entity, draw});
+    auto projection = std::make_unique<SceneProjection>(std::move(visuals),
+                                                        _ledger, _maxVisuals);
+    _projection = std::move(projection);
+    ++_stats.rebuilds;
+  } else {
+    std::size_t offset{};
+    for (std::size_t i = 0; i < _bindings.size(); ++i) {
+      const auto &binding = _bindings[i];
+      if (_revisions[i] != binding.scene->revision()) {
+        std::size_t index = offset;
+        for (const auto &draw : binding.scene->draws())
+          _stats.updatedVisuals +=
+              _projection->setVisual(index++, {binding.entity, draw});
+      }
+      offset += _counts[i];
+    }
+  }
+  for (std::size_t i = 0; i < _bindings.size(); ++i) {
+    _counts[i] = _bindings[i].scene->draws().size();
+    _revisions[i] = _bindings[i].scene->revision();
+  }
+  return _projection->extract(std::move(world), camera, origin);
 }
 
 } // namespace playground::scene

@@ -115,6 +115,8 @@ public:
   math::Matrix4 worldTransform(ObjectId id) const;
   std::vector<MeshDraw>
   snapshot(std::span<const ObjectId> exclusions = {}) const;
+  // Borrowed until the next mutation/cache refresh; callers must not retain.
+  std::span<const MeshDraw> draws() const;
   std::optional<PickResult> pick(Ray3 ray) const;
 
   std::uint64_t revision() const noexcept { return _revision; }

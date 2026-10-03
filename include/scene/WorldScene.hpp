@@ -28,6 +28,7 @@ struct WorldCamera {
 struct EntityVisual {
   world::EntityId entity;
   MeshDraw draw; // Model is local to the entity; assets remain immutable.
+  bool operator==(const EntityVisual &) const = default;
 };
 
 class WorldSceneSnapshot {
@@ -67,7 +68,7 @@ public:
   std::size_t omittedForExtent() const noexcept { return _omitted; }
 };
 
-// Immutable bindings; extraction/cache access stays on the owner thread.
+// Owner-thread bindings; published snapshots retain immutable draw values.
 class SceneProjection {
   rendering::ResourceLedger::Token _charge;
   std::shared_ptr<rendering::ResourceLedger> _ledger;
@@ -78,8 +79,41 @@ public:
   explicit SceneProjection(std::vector<EntityVisual>,
                            std::shared_ptr<rendering::ResourceLedger>,
                            std::size_t maxVisuals = 65536);
+  // Returns false for an unchanged draw; existing snapshots remain valid.
+  bool setVisual(std::size_t index, EntityVisual);
   std::shared_ptr<const WorldSceneSnapshot>
   extract(world::WorldSnapshot, const WorldCamera &, world::RenderOrigin) const;
+};
+
+// A scene supplies entity-local model instances. Use separate bindings for
+// independently moving world entities; static scenery can remain one batch.
+struct SceneInstanceBinding {
+  world::EntityId entity;
+  std::shared_ptr<const Scene3D> scene;
+};
+
+struct SceneBindingStats {
+  std::uint64_t rebuilds{}, updatedVisuals{};
+};
+
+class SceneInstanceProjection {
+  std::shared_ptr<rendering::ResourceLedger> _ledger;
+  rendering::ResourceLedger::Token _charge;
+  std::vector<SceneInstanceBinding> _bindings;
+  std::vector<std::uint64_t> _revisions;
+  std::vector<std::size_t> _counts;
+  std::unique_ptr<SceneProjection> _projection;
+  SceneBindingStats _stats;
+  std::size_t _maxVisuals;
+
+public:
+  SceneInstanceProjection(std::vector<SceneInstanceBinding>,
+                          std::shared_ptr<rendering::ResourceLedger>,
+                          std::size_t maxVisuals = 65536);
+  std::shared_ptr<const WorldSceneSnapshot>
+  extract(world::WorldSnapshot, const WorldCamera &, world::RenderOrigin);
+
+  const SceneBindingStats &stats() const noexcept { return _stats; }
 };
 
 } // namespace playground::scene
