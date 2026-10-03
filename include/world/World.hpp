@@ -51,6 +51,8 @@ struct WorldVersion {
 
 struct WorldProps {
   std::size_t maxSpaces{256}, maxEntities{65536}, maxCommands{4096};
+  // Final logical snapshot size; temporary mutation storage is separately
+  // admitted by the resource ledger, together with retained reader snapshots.
   std::size_t maxEntityBytes{1024 * 1024}, maxStateBytes{64 * 1024 * 1024};
   void validate() const;
 };

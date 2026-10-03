@@ -90,8 +90,7 @@ void SceneView::prepareContent(PrepareContext &context) {
   scene::SceneRenderProps view{viewport->camera,  pixels,
                                _props.clearColor, _props.lighting,
                                _props.exposure,   _props.toneMap};
-  view.resourceOwner =
-      _props.worldScene ? _props.worldScene->resourceOwner() : _resourceOwner;
+  view.resourceOwner = _resourceOwner;
   view.workloadId = _props.adaptiveResolution ? _workload : 0;
   view.qualityRevision = context.graphics ? context.graphics->revision : 0;
   const auto revision = _props.worldScene

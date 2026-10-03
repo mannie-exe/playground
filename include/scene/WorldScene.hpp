@@ -34,7 +34,7 @@ class WorldSceneSnapshot {
   WorldCamera _camera;
   std::vector<MeshDraw> _draws;
   std::vector<world::EntityId> _entities;
-  std::shared_ptr<const void> _resourceOwner;
+  std::shared_ptr<const void> _resourceOwner{std::make_shared<const int>(0)};
   std::size_t _omitted{};
 
   explicit WorldSceneSnapshot(world::WorldSnapshot);
@@ -67,7 +67,6 @@ class SceneProjection {
   rendering::ResourceLedger::Token _charge;
   std::shared_ptr<rendering::ResourceLedger> _ledger;
   std::vector<EntityVisual> _visuals;
-  std::shared_ptr<const void> _resourceOwner{std::make_shared<const int>(0)};
   mutable std::weak_ptr<const WorldSceneSnapshot> _last;
 
 public:
