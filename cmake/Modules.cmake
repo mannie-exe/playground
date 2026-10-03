@@ -33,13 +33,14 @@ playground_add_module(playground_scene
     src/scene/Scene3D.cpp
     src/scene/Scene2D.cpp
     src/scene/SceneViewport.cpp
+    src/scene/WorldScene.cpp
     src/scene/Controllers.cpp
     src/scene/ModelImport.cpp
     src/scene/MeshPreparation.cpp
     src/scene/Animation.cpp
     src/scene/Environment.cpp)
 target_include_directories(playground_scene SYSTEM PRIVATE ${cgltf_SOURCE_DIR})
-target_link_libraries(playground_scene PUBLIC playground_rendering)
+target_link_libraries(playground_scene PUBLIC playground_rendering playground_world)
 target_link_libraries(playground_scene PRIVATE playground_mikktspace meshoptimizer)
 
 playground_add_module(playground_assets src/assets/AssetCatalog.cpp)

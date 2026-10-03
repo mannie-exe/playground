@@ -1,6 +1,7 @@
 #pragma once
 
 #include <scene/Scene3D.hpp>
+#include <world/Spatial.hpp>
 
 namespace playground::scene {
 
@@ -18,10 +19,14 @@ struct SceneViewport {
   math::Rect contentBounds;
   math::Vec2i pixelSize;
   CameraView camera;
+  std::optional<world::RenderOrigin> origin;
+  world::SpatialLimits spatialLimits;
 
   std::optional<math::Vec2f> normalizedPosition(math::Point2 local) const;
   std::optional<Ray3> rayAt(math::Point2 local) const;
   std::optional<math::Point2> project(math::Vec3f world) const;
+  std::optional<world::WorldRay> worldRayAt(math::Point2 local) const;
+  std::optional<math::Point2> projectWorld(world::WorldPosition) const;
 };
 
 // Empty content resolves to no viewport; malformed values throw before

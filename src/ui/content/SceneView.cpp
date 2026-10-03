@@ -6,14 +6,22 @@
 
 namespace playground::ui {
 namespace {
+scene::CameraProps camera(const SceneViewProps &props) {
+  return props.worldScene
+             ? props.worldScene->camera().localCamera(
+                   props.worldScene->origin(), props.worldScene->limits())
+             : props.camera;
+}
+
 void validate(const SceneViewProps &props) {
-  if (!props.scene || !math::isFinite(props.preferredSize) ||
+  if (bool(props.scene) == bool(props.worldScene) ||
+      !math::isFinite(props.preferredSize) ||
       !math::hasArea(props.preferredSize) ||
       !std::isfinite(props.resolutionScale) || props.resolutionScale <= 0 ||
       props.resolutionScale > 4)
     throw std::invalid_argument("Invalid scene view properties");
-  props.camera.view(props.preferredSize.width / props.preferredSize.height);
-  scene::validate({props.camera.view(1),
+  camera(props).view(props.preferredSize.width / props.preferredSize.height);
+  scene::validate({camera(props).view(1),
                    {1, 1},
                    props.clearColor,
                    props.lighting,
@@ -56,8 +64,8 @@ void SceneView::prepareContent(PrepareContext &context) {
     _sampling = sampling;
     invalidatePaint();
   }
-  const auto viewport = scene::resolveViewport(
-      _props.camera,
+  auto viewport = scene::resolveViewport(
+      camera(_props),
       {content_detail::contentBounds(bounds(), contentInsets()),
        context.pixelScale, _props.resolutionScale * scale, _props.aspectRatio});
   if (!viewport) {
@@ -67,6 +75,12 @@ void SceneView::prepareContent(PrepareContext &context) {
     return;
   }
   const auto size = viewport->contentBounds.size;
+  if (_props.worldScene) {
+    viewport->origin = _props.worldScene->origin();
+    viewport->spatialLimits = _props.worldScene->limits();
+    viewport->camera = _props.worldScene->camera().view(
+        *viewport->origin, viewport->spatialLimits, size.width / size.height);
+  }
   const auto pixels = viewport->pixelSize;
   const auto imageDomain = context.images ? context.images->resourceDomain()
                                           : rendering::ResourceDomainId::cpu();
@@ -76,10 +90,14 @@ void SceneView::prepareContent(PrepareContext &context) {
   scene::SceneRenderProps view{viewport->camera,  pixels,
                                _props.clearColor, _props.lighting,
                                _props.exposure,   _props.toneMap};
-  view.resourceOwner = _resourceOwner;
+  view.resourceOwner =
+      _props.worldScene ? _props.worldScene->resourceOwner() : _resourceOwner;
   view.workloadId = _props.adaptiveResolution ? _workload : 0;
   view.qualityRevision = context.graphics ? context.graphics->revision : 0;
-  if (_image && _renderedRevision == _props.scene->revision() &&
+  const auto revision = _props.worldScene
+                            ? _props.worldScene->world().revision()
+                            : _props.scene->revision();
+  if (_image && _renderedRevision == revision &&
       _rendererDomain == context.scenes->resourceDomain() &&
       _imageDomain == imageDomain &&
       _image->pixelSize() == math::Size2{float(pixels.x), float(pixels.y)} &&
@@ -88,12 +106,17 @@ void SceneView::prepareContent(PrepareContext &context) {
     _prepared = true;
     return;
   }
-  const auto draws = scene::orderedDraws(view.camera, _props.scene->snapshot(),
-                                         _props.transparentOrder);
+  const auto snapshot =
+      _props.scene ? _props.scene->snapshot() : std::vector<scene::MeshDraw>{};
+  const auto draws = scene::orderedDraws(
+      view.camera,
+      _props.worldScene ? _props.worldScene->draws()
+                        : std::span<const scene::MeshDraw>{snapshot},
+      _props.transparentOrder);
   auto image = context.scenes->render(view, draws);
   _image = rendering::prepareImage(std::move(image), context.images);
   _viewport = viewport;
-  _renderedRevision = _props.scene->revision();
+  _renderedRevision = revision;
   _rendererDomain = context.scenes->resourceDomain();
   _imageDomain = imageDomain;
   _renderedAspect = size.width / size.height;
@@ -144,7 +167,8 @@ void SceneView::applyPatch(const SceneViewPatch &patch) {
        patch.exposure.appliedTo(_props.exposure, defaults.exposure),
        patch.toneMap.appliedTo(_props.toneMap, defaults.toneMap),
        patch.adaptiveResolution.appliedTo(_props.adaptiveResolution,
-                                          defaults.adaptiveResolution)});
+                                          defaults.adaptiveResolution),
+       patch.worldScene.appliedTo(_props.worldScene)});
 }
 
 } // namespace playground::ui
