@@ -16,10 +16,10 @@ remains future; its adapter boundary is specified here and in PHYSICS.md.
 | Value | Contract |
 |---|---|
 | `WorldId` | Stable saved/session world identity, distinct from app and package identities |
-| `WorldEpoch` | Runtime incarnation; changes on replacement/restore and rejects stale work |
+| `WorldSnapshot::epoch()` | Runtime incarnation (`std::uint64_t`); changes on construction/restore and rejects stale work |
 | `EntityId` | Stable identity within a world; never reused for a different logical entity |
 | `SpaceId` | World-qualified stable coordinate-space identity; foreign-world values reject |
-| `EntityHandle` | Checked runtime identity/generation; not a save or wire identity |
+| `EntityHandle` | EntityId plus world epoch; checked against a snapshot, not a save or wire identity |
 | `ZoneId` | Semantic area with explicit membership/rules; not a residency owner |
 | `CellId` | Stable residency partition identity; entities can move between cells |
 | `FrameId` | Checked reference-frame identity within one space |
@@ -28,26 +28,32 @@ remains future; its adapter boundary is specified here and in PHYSICS.md.
 
 Entities reference immutable definitions and own mutable domain state. Neither
 Scene3D ObjectId nor UI NodeHandle substitutes for EntityId. A SceneProjection
-maps entity representations to scene handles; one entity can have zero or many
-render objects in several views. Removing a view does not destroy its entities.
+maps entity representations to immutable render draws; one entity can have zero
+or many render objects in several views. Removing a view does not destroy its entities.
 Render parents do not establish entity ownership, frame attachment or authority.
 
 World owns mutation and publishes snapshots at declared boundaries. Snapshots
 retain immutable storage, not permission to access the live model from workers.
-Retention has byte/count/age limits; copy-on-write or owned copies are internal
-choices. Cross-entity references resolve by identity and can be unresolved while
-content is absent; they do not silently pin every referenced cell.
+Retained generations share ledger-accounted storage; consumers own additional
+count/age retention policies. Cross-entity references resolve by identity and can
+be unresolved while content is absent; they do not silently pin every referenced cell.
 
 | Operation | Boundary/result |
 |---|---|
 | `World::apply(batch, expectedVersion, tick)` | Validate bounded domain mutations and commit once; conflict/failure preserves prior state |
-| `World::resolve(entity)` | Return current checked handle/status; distinguish absent residency from destroyed identity |
+| `World::handle(entity)` | Return a current-epoch handle; reject foreign, absent or destroyed identities |
+| `WorldSnapshot::find(entity)` | Return a record or null for an absent identity; retained tombstones have `destroyed=true`; foreign-world identities reject |
+| `WorldSnapshot::resolve(handle)` | Return a live record from this snapshot; reject foreign epochs, absent or destroyed entities |
+| `WorldSnapshot::sample(handle)` | Copy actual pose/velocity, snapshot tick and entity discontinuity from a checked live record |
 | `World::snapshot()` | Retain an admitted immutable generation; never borrow mutable storage |
-| `World::setActivation(request)` | Validate domain policy and readiness before the next simulation boundary |
+| `World::setActivation(request, expectedVersion, tick)` | Validate declared readiness/authority minimum and commit at the caller's mutation boundary |
 
-Command batches carry world epoch, authority and command identity; app schemas own
-payload validation. Successful commits advance revision and emit copied domain
-events. The caller cannot bypass session validation by choosing a streaming cell.
+`World::apply` checks the expected epoch/revision and nondecreasing tick. Domain
+owners validate authority, command identity and payload schemas before constructing
+WorldMutation batches; the core does not authenticate commands or emit domain
+events. Successful publication returns the committed revision. Applications own
+domain event delivery and cannot bypass session validation by choosing a
+streaming cell.
 Read-only snapshots expose only their retained coverage, not the entire persistent
 world by implication. Retention pressure refuses new work or ends a consumer's
 contract explicitly; it never invalidates memory behind a live lease.
@@ -251,14 +257,15 @@ The app executes domain behavior and applies resulting world mutations; coarse
 steps never imply a larger physics integration step. Paused simulation time does
 not advance this scheduler. Restored epochs require a new scheduler.
 
-`WorldStore::save(snapshot, expectedStoreRevision)` writes a versioned candidate and
-atomically publishes a durable checkpoint; mutation can continue after capture.
+`WorldStore::save(snapshot, frames, metadata, expectedStoreRevision)` writes a
+versioned candidate and atomically publishes a durable checkpoint; mutation can
+continue after capture.
 The expected store revision is a compare-and-swap guard against another writer,
 separate from the snapshot's captured world revision.
 The result reports the captured revision, not the latest live state. Per-world
 serialization prevents an older save completion replacing a newer checkpoint.
 `load` validates/migrates a candidate before owner-thread replacement and advances
-WorldEpoch. Failure preserves the active world and last valid checkpoint.
+the world epoch. Failure preserves the active world and last valid checkpoint.
 
 A save transaction retains the persistent checkpoint plus committed dirty state;
 snapshot coverage of resident entities alone is not a complete save. Unchanged

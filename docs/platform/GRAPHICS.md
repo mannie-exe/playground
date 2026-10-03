@@ -16,8 +16,8 @@ labels, units, ranges, categories and inactive-feature markers to persistence an
 the standard view. New fields require validation, round-trip tests and a stated
 capability contract. A stored value is not evidence that a renderer implements it.
 
-Settings documents use schema version 6 with an optional `[graphics]` section;
-version 6 adds audio without changing graphics field semantics.
+Settings writers emit schema version 7 with an optional `[graphics]` section;
+version 7 adds shared `[controls]` without changing graphics field semantics.
 Enumeration values use stable string choices (for example `linear`, `high`,
 `msaa-4x`); scales are percentages and memory ceilings are MiB.
 One user graphics value replaces the project graphics value; omitted fields in a
@@ -28,7 +28,7 @@ preference object, not a patch over the project object. Without a project graphi
 section, legacy project `[defaults]` render fields
 provide its presentation baseline. When the user graphics section is absent,
 legacy user-wide render preferences still override the project baseline. Legacy
-per-app render overrides do not override shared graphics. Versions 1–5 remain
+per-app render overrides do not override shared graphics. Versions 1–6 remain
 readable; window/session persistence retains its separate schema and ownership.
 
 `SettingsStore::graphics()` returns the resolved shared preferences.
@@ -115,8 +115,9 @@ allocations remain cached or retained by consumers.
 `ui::SettingsView` is a retained, theme-aware component accepting assets, a font,
 initial preferences and callbacks. It owns only the draft and controls: it does
 not access files, mutate the host or start GPU work. General, 2D, 3D, Automatic
-and Resources tabs use the shared schema. Resource readouts show managed usage,
-ceilings, peaks, retirement, outstanding frames and quality/pressure state; these
+and Resources tabs use the graphics schema; Controls uses the shared controls
+schema. Resource readouts show managed usage, ceilings, peaks, retirement,
+outstanding frames and quality/pressure state; these
 are not physical RAM/VRAM measurements.
 
 NumberStepper supplies direct numeric editing; keyed Select controls present
