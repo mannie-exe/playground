@@ -207,6 +207,17 @@ int main(int argc, char **argv) {
 #endif
       return pixels(root, size);
     };
+    AssetRegistry assets;
+    auto catalog = std::make_shared<assets::AssetCatalog>(
+        std::filesystem::path{PLAYGROUND_SOURCE_DIR} / "assets");
+    app::registerAssets(*catalog);
+    demo2d::registerAssets(*catalog);
+    catalog->freeze();
+    sdl::AssetResources resources{catalog, assets};
+    if (!captureDirectory.empty()) {
+      screenshots(captureDirectory, assets, resources);
+      return;
+    }
     // Compare animation samples to independently authored static scenes on
     // both software and GPU painters; include compositing and geometry.
     {
@@ -255,17 +266,6 @@ int main(int argc, char **argv) {
                         !animated.motion().nextDelay() &&
                         !animated.needsPaint(),
                     "finished motion returns to idle after final render");
-    }
-    AssetRegistry assets;
-    auto catalog = std::make_shared<assets::AssetCatalog>(
-        std::filesystem::path{PLAYGROUND_SOURCE_DIR} / "assets");
-    app::registerAssets(*catalog);
-    demo2d::registerAssets(*catalog);
-    catalog->freeze();
-    sdl::AssetResources resources{catalog, assets};
-    if (!captureDirectory.empty()) {
-      screenshots(captureDirectory, assets, resources);
-      return;
     }
     // A split overlay must equal the corresponding parts of two single-ink
     // references, including the icon's transparent exclamation cutout.

@@ -82,6 +82,13 @@ if(PLAYGROUND_GPU)
     target_include_directories(playground_gpu_materials_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/platform/sdl)
     target_compile_definitions(playground_gpu_materials_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     set_tests_properties(gpu_materials PROPERTIES SKIP_RETURN_CODE 77)
+    # Explicit asset capture is a developer tool, never a regression-test mode.
+    add_executable(playground_model_capture tools/model_capture.cpp)
+    playground_configure_cpp_target(playground_model_capture)
+    target_include_directories(playground_model_capture PRIVATE
+        ${PROJECT_SOURCE_DIR}/tests ${PROJECT_SOURCE_DIR}/src/platform/sdl)
+    target_link_libraries(playground_model_capture PRIVATE playground_sdl)
+    target_compile_definitions(playground_model_capture PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     playground_add_shader(custom_pipeline_vertex tests/shaders/custom.vert.hlsl vertex NO_INSTALL)
     playground_add_shader(custom_pipeline_fragment tests/shaders/custom.frag.hlsl fragment NO_INSTALL)
     playground_add_shader(custom_pipeline_fragment_alt tests/shaders/custom_alt.frag.hlsl fragment NO_INSTALL)

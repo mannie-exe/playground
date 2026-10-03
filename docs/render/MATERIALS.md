@@ -213,15 +213,18 @@ alpha masks, then renders the real prop.
 The alpha regressions cover zero-alpha opaque PBR, shared opaque/blend/mask
 realizations, bilinear/mip filtering and straight PaintImage sampling on GPU
 and software. `texture_materials` also checks partial and authored opaque chains.
-The optional first executable argument to `gpu_materials`
-is a BMP capture path; an optional second argument selects a GLB for a single-frame
-acceptance capture with environment illumination and scene framing. For example:
+`gpu_materials` accepts no arguments and always uses the checked-in BoomBox
+fixture. Arbitrary-model preview and BMP output belong to the separate
+`playground_model_capture` developer tool:
 
 ```sh
-MVK_CONFIG_LOG_LEVEL=2 build/debug/bin/playground_gpu_materials_tests build/chess.bmp assets/demoscene/chess/ABeautifulGame.glb
+cmake --build --preset debug --target playground_model_capture
+./build/debug/bin/playground_model_capture assets/demoscene/chess/ABeautifulGame.glb build/chess.bmp
 ```
 
-This is an import/render check, not the deferred camera-path workload. These checks are not a calibrated reference-viewer comparison;
+The capture tool does not execute material regressions. See [capture commands and
+limits](TESTING.md#model-capture) and the separate native camera/benchmark workflows.
+These checks are not a calibrated reference-viewer comparison;
 broader driver testing, complex UV/tangent seam visual cases and appearance matching
 remain verification work, not claims established by the unit suite.
 `software_materials` checks exposure/alpha preservation, explicit preview conversion

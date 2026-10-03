@@ -133,3 +133,32 @@ cover the whole run. Managed memory peaks cover the host process since startup,
 not physical residency or per-scene allocation deltas. CPU iterations without a
 render retain absent render/present phases. GPU intervals are admitted by their
 originating frame IDs, not completion arrival time.
+
+## Model capture
+
+`playground_model_capture` imports one local glTF/GLB and writes a 256×256,
+tone-mapped BMP using the bundled studio environment. It uses the existing
+importer, material fallbacks, draw ordering, GPU renderer and readback helper;
+it does not run regression fixtures or assert a minimum visible-pixel count for
+arbitrary content. Nonfinite output and import/render/write failures remain errors.
+
+```sh
+cmake --build --preset debug --target playground_model_capture --parallel 4
+./build/debug/bin/playground_model_capture --help
+./build/debug/bin/playground_model_capture assets/demo3d/BoomBox.glb build/boombox.bmp
+./build/debug/bin/playground_model_capture assets/demoscene/chess/ABeautifulGame.glb build/chess.bmp
+```
+
+Both model and output paths are required; the output directory must already
+exist. Models use bounds framing; a file named `Bistro.glb` retains the existing
+reference street camera. The capture uses a fixed studio setup, not an authored
+camera/light rig or a guarantee of correct unsupported material extensions.
+Import limits are 320 MiB per document/resource and 1 GiB total source resources.
+Decoded resources additionally obey the renderer/preparation budgets.
+
+The target exists when tests and GPU support are enabled. It is a development
+executable, excluded from CTest, `playground_tests` and installation; the normal
+build includes it. Exit codes are 0 for success/help, 2 for usage errors and 1 for
+execution failures, including unavailable Vulkan. MoltenVK logging defaults to
+level 2 on macOS while preserving an explicit environment override. Output files
+belong under ignored build directories.
