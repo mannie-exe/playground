@@ -4,7 +4,7 @@ IncludeBlocks: Regroup
 # Keep a .cpp's matching header in the project group, not ahead of std headers.
 IncludeIsMainRegex: '$.'
 IncludeCategories:
-  - Regex: '^<(app|assets|demo2d|demo3d|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui)/'
+  - Regex: '^<(app|assets|demo2d|demo3d|input|interfaces|layout|math|menu|minesweeper|platform|rendering|rock_paper_scissors|runtime|scene|snake|support|surface|ui|world)/'
     Priority: 3
   - Regex: '^"'
     Priority: 3
