@@ -73,6 +73,7 @@ playground_add_test(shader_contracts SOURCE rendering/shader_contracts.cpp MODUL
 playground_add_test(model_import SOURCE rendering/model_import.cpp MODULE rendering LABELS unit scene assets LIBRARIES playground_scene)
 playground_add_test(model_import_files SOURCE rendering/model_import_files.cpp MODULE rendering LABELS integration sdl scene assets LIBRARIES playground_sdl)
 playground_add_test(scene_viewport SOURCE rendering/scene_viewport.cpp MODULE rendering LABELS unit scene viewport LIBRARIES playground_scene)
+playground_add_test(inspection_view SOURCE ui/inspection_view.cpp MODULE ui LABELS integration scene input ownership LIBRARIES playground_sdl)
 playground_add_test(scenes SOURCE rendering/scenes.cpp MODULE rendering LABELS unit scene ownership pixels failure LIBRARIES playground_sdl)
 playground_add_test(software_materials SOURCE rendering/software_materials.cpp MODULE rendering LABELS unit material pixels failure LIBRARIES playground_sdl)
 playground_add_test(texture_materials SOURCE rendering/texture_materials.cpp MODULE rendering LABELS unit texture material arithmetic failure LIBRARIES playground_scene)

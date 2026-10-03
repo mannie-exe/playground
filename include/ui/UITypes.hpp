@@ -60,7 +60,8 @@ enum class Key {
   V,
   X,
   Y,
-  Z
+  Z,
+  R
 };
 
 struct UIEvent {

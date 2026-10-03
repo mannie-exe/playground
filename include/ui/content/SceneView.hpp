@@ -49,7 +49,7 @@ struct SceneViewPatch {
   Patch<SceneVisibility> visibility;
 };
 
-class SceneView final : public Node {
+class SceneView : public Node {
   SceneViewProps _props;
   std::shared_ptr<const void> _resourceOwner{std::make_shared<const int>(0)};
 

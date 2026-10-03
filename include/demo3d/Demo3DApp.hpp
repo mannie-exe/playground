@@ -17,6 +17,7 @@
 #include <scene/Controllers.hpp>
 #include <scene/Environment.hpp>
 #include <scene/ModelImport.hpp>
+#include <ui/content/InspectionView.hpp>
 #include <ui/content/SceneView.hpp>
 #include <ui/content/Text.hpp>
 #include <world/Locomotion.hpp>
@@ -88,6 +89,12 @@ class Demo3DApp final : public IApp {
 
   sdl::UISession _ui{sdl::UISessionTiming::Monotonic};
   ui::SceneView *_view{};
+  ui::InspectionView *_inspection{};
+  ui::Connection _inspectionChanged;
+
+  bool inspecting() const noexcept {
+    return _kind == DemoKind::Material || _kind == DemoKind::Chess;
+  }
 
   std::future<Resources> _pending;
   std::optional<runtime::TaskTicket> _task;
@@ -106,6 +113,8 @@ public:
 
   void onActivityInterrupted(AppContext &,
                              AppInterruption reason) noexcept override {
+    if (_inspection)
+      _inspection->cancelNavigation();
     _controls.suspend(reason == AppInterruption::Focus
                           ? input::ControlReason::Focus
                           : input::ControlReason::UI);
@@ -132,15 +141,17 @@ public:
 
   input::ControlCapabilities controlCapabilities() const override {
     const bool manual = _kind != DemoKind::Benchmark;
-    return {manual, manual, manual && _followMode, manual && _followMode};
+    return {manual, manual && !inspecting(), manual && _followMode,
+            manual && _followMode};
   }
 
   std::string_view controlRestriction() const override {
     return _kind == DemoKind::Benchmark
                ? "Benchmark playback ignores manual controls."
-           : _kind == DemoKind::Material
-               ? "Material inspection uses orbit and zoom; locomotion and "
-                 "perspective preferences are inactive."
+           : inspecting()
+               ? "Inspection uses visible-pointer orbit, pan and zoom; R "
+                 "resets "
+                 "panning. Gamepad, capture and locomotion are inactive."
            : _followMode
                ? "Follow control uses a kinematic subject without gravity or "
                  "collision. Gamepad: Start engages the selected viewport."

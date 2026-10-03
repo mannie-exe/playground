@@ -182,6 +182,30 @@ selection blend for RestoreSavedView or `cut()` for CutReset. The rig does not
 apply a second hand-off blend beneath the director. Camera priority never grants input
 ownership; cinematic/benchmark playback explicitly suspends manual channels.
 
+## Inspection navigation
+
+`OrbitController` owns an independent world-space pivot, yaw/pitch, distance and
+lens. Its pan operation translates the pivot in the camera plane; logical-pixel
+panning scales by viewport height and visible height at the pivot. Logarithmic
+zoom changes perspective distance or orthographic view height within explicit
+bounds. Inspection never moves a subject or evaluates locomotion.
+
+`ui::InspectionView` extends `SceneView` with visible-pointer navigation and emits
+camera changes for the app to publish through its normal scene/world projection.
+MMB drags orbit, Shift+MMB pans, Ctrl+MMB zooms, and wheel zooms over content.
+Alt+primary drag supplies the same operations for mice without MMB. Gesture mode
+is chosen at press; later modifier changes do not switch the operation mid-drag.
+Drag capture lasts until release/cancellation and never enters relative mouse mode.
+Only gestures beginning in viewport content acquire capture; letterboxing and
+other UI retain their input. Focus loss, input cancellation and detachment end
+the gesture. Escape ends an active gesture before the host opens Settings.
+
+`R` while the inspection view is focused resets panning to its authored pivot,
+preserving orientation and zoom. Orbit/zoom sensitivities and vertical inversion
+use shared Controls preferences; inspection has no locomotion/follow capability.
+Material Test and Chess use inspection. Bistro retains free/follow controls with
+Space/Left Shift for free-camera rise/fall; Shift remains aim in follow mode.
+
 ## Native pointer ownership
 
 `WindowServices::lockRelativeMouse(ActivationToken)` requires a focused active app

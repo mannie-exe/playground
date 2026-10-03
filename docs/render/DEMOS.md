@@ -75,32 +75,34 @@ data and missing resources never become silent material fallbacks.
 
 ## Camera controls
 
-Controllers consume typed intent and produce CameraProps independently of SDL,
-UI nodes and rendering. Material inspection keeps keyboard orbit/zoom. Scene
-navigation adds a free camera with explicit movement/angular rates and resettable
-framing. WASD moves, arrows look, Page Up/Down changes elevation, R resets,
-Right-click inside the viewport toggles relative mouse look; Escape first
-unlocks the mouse, then opens Settings on a subsequent press. Relative motion
-is angular displacement, not multiplied by frame time. Q/E changes exposure and
-L toggles direct light. Bistro starts at its source
-street camera; Chess starts framed around the board. Camera selection is
-viewport-local; named shots contain pose and lens values, never projection
-matrices or borrowed scene pointers.
+Controllers consume typed intent and produce world cameras independently of SDL.
+Material Test and Chess use inspection navigation: MMB orbit, Shift+MMB pan,
+Ctrl+MMB zoom, wheel zoom, and R to reset panning while the viewport is focused.
+Alt+primary drag substitutes for MMB. The cursor remains visible and each drag
+owns input only until release/cancellation. F does not change these scenes into
+free/follow mode. P toggles Material Test smoke playback.
+
+Bistro uses WASD movement, arrows to look, Space/Left Shift to rise/fall in free
+mode, F to switch free/follow, and R to restore the free-camera framing.
+Right-click inside the viewport engages relative mouse look; Escape first unlocks,
+then opens Settings on a subsequent press. Q/E changes exposure and L toggles
+light. Bistro starts at its authored street camera; Chess orbits the board center.
+Camera selection is viewport-local, and input displacement is consumed once.
 
 Phantom Camera informs the separation of camera behavior, selection and final
 viewport output; Playground does not depend on Godot or the plugin. The broader
 rig/director and pointer ownership contract is in [CAMERAS.md](CAMERAS.md).
 Opening Settings, losing focus or leaving an app cancels held navigation intent.
-Exposure and light controls remain separate from movement. Reset restores the
-scene's authored inspection camera without rebuilding its resources.
+Exposure and light controls remain separate from movement. Resetting inspection
+panning or free-camera framing does not rebuild scene resources.
 
 ### Subject-following navigation
 
-Scene apps expose free navigation and subject-following navigation as distinct
+Bistro exposes free navigation and subject-following navigation as distinct
 interaction choices. A following view uses an app-owned kinematic anchor and an
 optional simple avatar; importing Bistro or Chess does not imply a character,
 physics world or animation skeleton. Free navigation and authored reset framing
-remain available. Material Test remains an orbit inspection workload.
+remain available in Bistro. Material Test and Chess remain inspection workloads.
 
 Follow navigation exercises [Steered, Strafe and Tank](../platform/LOCOMOTION.md)
 with shared [control preferences](../platform/SETTINGS.md#shared-control-preferences).

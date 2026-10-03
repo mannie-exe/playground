@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <thread>
 
@@ -78,8 +79,9 @@ int main(int argc, char **argv) {
     const bool interrupted = scene == "interrupted";
     const bool benchmark = scene == "benchmark" || infinite || interrupted;
     const bool camera = scene == "camera";
+    const bool inspection = scene == "material" || scene == "chess";
     const auto id = benchmark             ? AppId::BistroBenchmark
-                    : camera              ? AppId::Chess
+                    : camera              ? AppId::Bistro
                     : scene == "material" ? AppId::Demo3D
                     : scene == "bistro"   ? AppId::Bistro
                     : scene == "chess"    ? AppId::Chess
@@ -339,8 +341,44 @@ int main(int argc, char **argv) {
               baselineSamples = state.cpuSamples;
               warm = true;
               measuredAt = elapsed;
-              if (scene != "material")
+              if (inspection) {
+                SDL_Event event{};
+                event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+                event.button.button = SDL_BUTTON_MIDDLE;
+                event.button.down = true;
+                event.button.x = host.windowState().actualSize.x / 2.f;
+                event.button.y = host.windowState().actualSize.y / 2.f;
+                SDL_PushEvent(&event);
+              } else {
+                if (!host.windowServices().focused()) {
+                  std::cerr
+                      << "Native focus unavailable for free-camera workload\n";
+                  log.invalid = true;
+                  host.request({.type = AppCommandType::Quit});
+                  return;
+                }
+                SDL_Event event{};
+                event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+                event.button.button = SDL_BUTTON_RIGHT;
+                event.button.down = true;
+                event.button.x = host.windowState().actualSize.x / 2.f;
+                event.button.y = host.windowState().actualSize.y / 2.f;
+                SDL_PushEvent(&event);
+                event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+                event.button.down = false;
+                SDL_PushEvent(&event);
                 key(SDL_SCANCODE_RIGHT, true);
+              }
+            }
+            if (inspection) {
+              SDL_Event event{};
+              event.type = SDL_EVENT_MOUSE_MOTION;
+              event.motion.x = host.windowState().actualSize.x / 2.f +
+                               100 * float(std::sin(elapsed - measuredAt));
+              event.motion.y =
+                  host.windowState().actualSize.y / 2.f +
+                  40 * float(std::sin((elapsed - measuredAt) * .7));
+              SDL_PushEvent(&event);
             }
             const auto telemetry = host.renderTelemetry();
             const auto available = std::min<std::uint64_t>(

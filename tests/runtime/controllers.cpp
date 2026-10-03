@@ -50,6 +50,45 @@ int main() {
     }
     require(rejected && orbit.props().distance == 0.1,
             "invalid props leave camera unchanged");
+    {
+      const scene::OrbitProps initial{
+          .target = {space, {1e6, 0, 0}}, .epoch = 1, .distance = 10};
+      scene::OrbitController whole{initial}, split{initial};
+      whole.pan({40, 20}, 400);
+      split.pan({20, 10}, 400);
+      split.pan({20, 10}, 400);
+      require(
+          world::length(world::relativeTo(whole.props().target,
+                                          split.props().target)) < 1e-8 &&
+              whole.props().target.meters.x < 1e6 &&
+              whole.props().target.meters.y > 0,
+          "pixel pan preserves precision and subdivision at distant origins");
+      const auto before = whole.camera();
+      test::rejects([&] { whole.pan({1, 2}, 0); },
+                    "empty pan viewport rejects");
+      require(whole.camera() == before, "invalid pan leaves camera unchanged");
+      whole.update({.zoomLog = std::log(.5)});
+      scene::OrbitController bounded{whole.props()};
+      bounded.update({.zoomLog = 1e6});
+      require(bounded.props().distance == bounded.props().maximumDistance,
+              "large positive log zoom saturates at maximum distance");
+      bounded.update({.zoomLog = -1e6});
+      require(bounded.props().distance == bounded.props().minimumDistance,
+              "large negative log zoom saturates at minimum distance");
+      require(std::abs(whole.props().distance - 5) < 1e-10,
+              "perspective wheel zoom scales distance proportionally");
+      auto ortho = initial;
+      ortho.lens.orthographicHeight = 8;
+      scene::OrbitController orthographic{ortho};
+      orthographic.update({.zoomLog = std::log(.5)});
+      require(std::abs(*orthographic.camera().lens.orthographicHeight - 4) <
+                      1e-5 &&
+                  orthographic.props().distance == 10,
+              "orthographic zoom scales view height without dollying");
+      orthographic.pan({100, 0}, 400);
+      require(std::abs(orthographic.props().target.meters.x - (1e6 - 1)) < 1e-8,
+              "orthographic pan derives scale from view height");
+    }
 
     scene::FreeCameraController fly{
         {.position = {space, {0, 0, -3}}, .epoch = 1, .unitsPerSecond = 2}};

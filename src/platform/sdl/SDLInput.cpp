@@ -22,6 +22,8 @@ ui::Key toUIKey(SDL_Keycode value) {
     return ui::Key::A;
   case SDLK_C:
     return ui::Key::C;
+  case SDLK_R:
+    return ui::Key::R;
   case SDLK_V:
     return ui::Key::V;
   case SDLK_X:
@@ -55,6 +57,11 @@ ui::Key toUIKey(SDL_Keycode value) {
 std::optional<ui::UIEvent> toUIEvent(const SDL_Event &event,
                                      math::Size2 windowSize) {
   ui::UIEvent result;
+  const auto modifiers = SDL_GetModState();
+  result.shift = (modifiers & SDL_KMOD_SHIFT) != 0;
+  result.control = (modifiers & SDL_KMOD_CTRL) != 0;
+  result.alt = (modifiers & SDL_KMOD_ALT) != 0;
+  result.command = (modifiers & SDL_KMOD_GUI) != 0;
   switch (event.type) {
   case SDL_EVENT_GAMEPAD_REMOVED:
   case SDL_EVENT_KEYBOARD_REMOVED:

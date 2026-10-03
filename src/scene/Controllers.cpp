@@ -164,11 +164,12 @@ void OrbitController::setProps(OrbitProps props) {
       props.distance > props.maximumDistance)
     throw std::invalid_argument("Invalid orbit camera distance/epoch");
   props.yaw = angle(props.yaw);
+  props.lens = lensOnly(props.lens);
   _props = props;
 }
 
 void OrbitController::update(OrbitIntent intent) {
-  if (!std::isfinite(intent.zoom))
+  if (!std::isfinite(intent.zoom) || !std::isfinite(intent.zoomLog))
     throw std::invalid_argument("Invalid orbit zoom");
   auto next = _props;
   LookController look{{next.yaw, next.pitch}, {next.maximumPitch}};
@@ -177,8 +178,43 @@ void OrbitController::update(OrbitIntent intent) {
   next.pitch = look.state().pitch;
   next.distance = std::clamp(next.distance + intent.zoom, next.minimumDistance,
                              next.maximumDistance);
+  const auto scale = [&](double value) {
+    const auto logarithm = std::log(value) + intent.zoomLog;
+    if (logarithm <= std::log(next.minimumDistance))
+      return next.minimumDistance;
+    if (logarithm >= std::log(next.maximumDistance))
+      return next.maximumDistance;
+    return std::clamp(std::exp(logarithm), next.minimumDistance,
+                      next.maximumDistance);
+  };
+  if (intent.zoomLog != 0) {
+    if (next.lens.orthographicHeight)
+      next.lens.orthographicHeight =
+          float(scale(*next.lens.orthographicHeight));
+    else
+      next.distance = scale(next.distance);
+  }
   setProps(next);
 }
+
+void OrbitController::pan(math::Vec2f pixels, double height) {
+  if (!math::isFinite(pixels) || !std::isfinite(height) || height <= 0)
+    throw std::invalid_argument("Invalid inspection pan extent/displacement");
+  const double visible =
+      _props.lens.orthographicHeight
+          ? double(*_props.lens.orthographicHeight)
+          : 2 * _props.distance * std::tan(_props.lens.verticalFov / 2);
+  auto next = _props;
+  next.target =
+      world::translated(next.target,
+                        world::rotate(camera().pose.orientation,
+                                      {-double(pixels.x) * visible / height,
+                                       double(pixels.y) * visible / height, 0}),
+                        next.limits);
+  setProps(next);
+}
+
+WorldCamera OrbitController::camera() const { return camera(_props.lens); }
 
 WorldCamera OrbitController::camera(CameraProps lens) const {
   const auto horizontal = std::cos(_props.pitch) * _props.distance;

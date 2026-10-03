@@ -62,9 +62,10 @@ Scene viewport nodes bridge application models into this same layout tree:
 | Node | Properties and preparation contract |
 |---|---|
 | [`SceneView`](../../include/ui/content/SceneView.hpp) | Shared read access to a `scene::Scene3D`, camera, preferred size, clear color, resolution scale, lighting, exposure and tone mapping. Requires the frame's separate scene renderer; caches output by model revision, view properties, logical aspect, pixel size and renderer domain. See [materials](../render/MATERIALS.md) for GPU requirements. |
+| [`InspectionView`](../../include/ui/content/InspectionView.hpp) | SceneView with visible-pointer orbit, pan, logarithmic zoom and pivot reset. Owns navigation state and emits a world camera for the application to publish; captures only an active pointer gesture. See [inspection navigation](../render/CAMERAS.md#inspection-navigation). |
 | [`Scene2DView`](../../include/ui/content/Scene2DView.hpp) | Shared read access to a `scene::Scene2D`, affine camera and preferred size. Prepares ordered image/solid items and clips them to its content box through the 2D painter. |
 
-Both expose complete props and Keep/Set/Reset patches, honor box insets, and leave
+Scene views expose complete props and Keep/Set/Reset patches, honor box insets, and leave
 world interaction/model updates to the application. Their scenes do not become UI
 children. Pass `RenderFrame` to `UISession::render` when using SceneView so its
 preparation receives the scene renderer. See [scene contracts](../render/3D.md)
