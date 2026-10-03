@@ -78,16 +78,37 @@ int main() {
       require(std::abs(whole.props().distance - 5) < 1e-10,
               "perspective wheel zoom scales distance proportionally");
       auto ortho = initial;
+      ortho.distance = 30;
+      ortho.minimumDistance = 20;
+      ortho.maximumDistance = 40;
       ortho.lens.orthographicHeight = 8;
       scene::OrbitController orthographic{ortho};
       orthographic.update({.zoomLog = std::log(.5)});
       require(std::abs(*orthographic.camera().lens.orthographicHeight - 4) <
                       1e-5 &&
-                  orthographic.props().distance == 10,
-              "orthographic zoom scales view height without dollying");
+                  orthographic.props().distance == 30,
+              "orthographic zoom uses height independently of distance bounds");
       orthographic.pan({100, 0}, 400);
       require(std::abs(orthographic.props().target.meters.x - (1e6 - 1)) < 1e-8,
               "orthographic pan derives scale from view height");
+      orthographic.update({.zoomLog = 1e6});
+      require(orthographic.props().lens.orthographicHeight ==
+                  orthographic.props().maximumOrthographicHeight,
+              "orthographic zoom saturates at its independent upper limit");
+      orthographic.update({.zoomLog = -1e6});
+      require(orthographic.props().lens.orthographicHeight ==
+                  orthographic.props().minimumOrthographicHeight,
+              "orthographic zoom saturates at its independent lower limit");
+      const auto valid = orthographic.camera();
+      ortho.minimumOrthographicHeight = 10;
+      test::rejects(
+          [&] { orthographic.setProps(ortho); },
+          "initial height outside zoom bounds rejects without a jump");
+      ortho.maximumOrthographicHeight = 5;
+      test::rejects([&] { orthographic.setProps(ortho); },
+                    "inverted orthographic height range rejects");
+      require(orthographic.camera() == valid,
+              "invalid height bounds leave the prior camera unchanged");
     }
 
     scene::FreeCameraController fly{

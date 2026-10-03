@@ -165,6 +165,14 @@ void OrbitController::setProps(OrbitProps props) {
     throw std::invalid_argument("Invalid orbit camera distance/epoch");
   props.yaw = angle(props.yaw);
   props.lens = lensOnly(props.lens);
+  if (!std::isfinite(props.minimumOrthographicHeight) ||
+      !std::isfinite(props.maximumOrthographicHeight) ||
+      props.minimumOrthographicHeight <= 0 ||
+      props.maximumOrthographicHeight < props.minimumOrthographicHeight ||
+      (props.lens.orthographicHeight &&
+       (*props.lens.orthographicHeight < props.minimumOrthographicHeight ||
+        *props.lens.orthographicHeight > props.maximumOrthographicHeight)))
+    throw std::invalid_argument("Invalid orbit orthographic height bounds");
   _props = props;
 }
 
@@ -178,21 +186,22 @@ void OrbitController::update(OrbitIntent intent) {
   next.pitch = look.state().pitch;
   next.distance = std::clamp(next.distance + intent.zoom, next.minimumDistance,
                              next.maximumDistance);
-  const auto scale = [&](double value) {
+  const auto scale = [&](double value, double minimum, double maximum) {
     const auto logarithm = std::log(value) + intent.zoomLog;
-    if (logarithm <= std::log(next.minimumDistance))
-      return next.minimumDistance;
-    if (logarithm >= std::log(next.maximumDistance))
-      return next.maximumDistance;
-    return std::clamp(std::exp(logarithm), next.minimumDistance,
-                      next.maximumDistance);
+    if (logarithm <= std::log(minimum))
+      return minimum;
+    if (logarithm >= std::log(maximum))
+      return maximum;
+    return std::clamp(std::exp(logarithm), minimum, maximum);
   };
   if (intent.zoomLog != 0) {
     if (next.lens.orthographicHeight)
-      next.lens.orthographicHeight =
-          float(scale(*next.lens.orthographicHeight));
+      next.lens.orthographicHeight = float(
+          scale(*next.lens.orthographicHeight, next.minimumOrthographicHeight,
+                next.maximumOrthographicHeight));
     else
-      next.distance = scale(next.distance);
+      next.distance =
+          scale(next.distance, next.minimumDistance, next.maximumDistance);
   }
   setProps(next);
 }

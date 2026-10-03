@@ -69,6 +69,7 @@ struct OrbitProps {
       maximumPitch{1.5533430342749532};
   world::SpatialLimits limits;
   CameraProps lens;
+  float minimumOrthographicHeight{.01f}, maximumOrthographicHeight{1e6f};
 };
 
 struct OrbitIntent {

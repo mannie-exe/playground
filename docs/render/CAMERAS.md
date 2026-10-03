@@ -187,8 +187,11 @@ ownership; cinematic/benchmark playback explicitly suspends manual channels.
 `OrbitController` owns an independent world-space pivot, yaw/pitch, distance and
 lens. Its pan operation translates the pivot in the camera plane; logical-pixel
 panning scales by viewport height and visible height at the pivot. Logarithmic
-zoom changes perspective distance or orthographic view height within explicit
-bounds. Inspection never moves a subject or evaluates locomotion.
+zoom changes perspective distance or orthographic view height within independent
+distance and height bounds. `minimumOrthographicHeight`/`maximumOrthographicHeight`
+default to 0.01/1,000,000 meters; an authored orthographic height must lie within
+that range. Invalid bounds/initial heights reject atomically; zoom saturates at
+the corresponding limits. Inspection never moves a subject or evaluates locomotion.
 
 `ui::InspectionView` extends `SceneView` with visible-pointer navigation and emits
 camera changes for the app to publish through its normal scene/world projection.

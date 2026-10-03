@@ -110,7 +110,11 @@ desktop focus. Controller tests cover distant pivots and orthographic zoom/pan.
 Material/Bistro/Chess workloads allow 30 seconds for preparation before measuring;
 measurement starts after scene upload and requires rendered samples. Scene
 workloads inject inspection drags (Material/Chess) or engaged held look (Bistro)
-to exercise camera redraws. Camera mode
+to exercise camera redraws. Inspection workloads pause Material smoke and require
+a stationary half-second baseline before input. Measurement must then show new
+scene mesh hits, so unrelated UI paints or smoke animation cannot pass a broken
+camera-input path. All input-driven scene workloads require native focus throughout
+measurement; unavailable/lost focus fails explicitly. Camera mode
 checks native lock/unlock, relative motion, held movement across Settings,
 focus cancellation and app exit. Early exit cannot pass unfinished checks. Keep
 that window focused; focus enforcement is part of the contract.
