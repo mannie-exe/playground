@@ -11,12 +11,6 @@
 
 namespace playground::world {
 
-struct FrameId {
-  SpaceId space;
-  std::uint64_t epoch{}, value{};
-  auto operator<=>(const FrameId &) const = default;
-};
-
 struct FrameVersion {
   std::uint64_t epoch{}, revision{};
   bool operator==(const FrameVersion &) const = default;
@@ -47,12 +41,6 @@ struct FrameRecord {
 struct FramePosition {
   FrameId frame;
   Vec3d offset;
-};
-
-struct FrameAttachment {
-  FrameId frame;
-  LocalPose local;
-  Vec3d linear{}, angular{};
 };
 
 enum class FrameVelocityPolicy { PreserveWorld, FollowFrame };

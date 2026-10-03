@@ -38,6 +38,8 @@ int main() {
     executor.close();
     test::require(first->isCanceled() && second->isCanceled(),
                   "close cancels active and queued work");
+    test::require(second->retired(),
+                  "discarded queued work reports retirement");
     test::require(!executor.submit([](std::stop_token) noexcept {}, 0),
                   "closed rejects publication");
     test::require(executions == 0, "canceled queued task never runs");

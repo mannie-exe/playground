@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -20,14 +21,22 @@ struct ExecutorProps {
 
 class TaskTicket {
   std::stop_source _stop;
+  std::shared_ptr<std::atomic<bool>> _retired;
 
-  explicit TaskTicket(std::stop_source stop) : _stop{std::move(stop)} {}
+  TaskTicket(std::stop_source stop, std::shared_ptr<std::atomic<bool>> retired)
+      : _stop{std::move(stop)}, _retired{std::move(retired)} {}
   friend class Executor;
 
 public:
   void cancel() noexcept { _stop.request_stop(); }
 
   bool isCanceled() const noexcept { return _stop.stop_requested(); }
+
+  // Includes canceled queued work. Result readiness alone does not establish
+  // that worker captures and their admission reservations have retired.
+  bool retired() const noexcept {
+    return _retired->load(std::memory_order_acquire);
+  }
 };
 
 struct ExecutorStats {

@@ -2,6 +2,7 @@
 
 #include <compare>
 #include <cstdint>
+#include <optional>
 
 #include <math/Geometry3D.hpp>
 
@@ -93,6 +94,18 @@ WorldPosition worldPosition(math::Vec3f, RenderOrigin,
 struct LocalPose {
   Vec3d offset;
   math::Quaternion orientation{};
+};
+
+struct FrameId {
+  SpaceId space;
+  std::uint64_t epoch{}, value{};
+  auto operator<=>(const FrameId &) const = default;
+};
+
+struct FrameAttachment {
+  FrameId frame;
+  LocalPose local;
+  Vec3d linear{}, angular{};
 };
 
 WorldPose compose(WorldPose parent, LocalPose, const SpatialLimits & = {});

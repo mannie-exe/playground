@@ -94,6 +94,15 @@ void validProps(const detail::WorldState &state, const EntityProps &p,
   }
   if (p.data.size() > limits.maxEntityBytes)
     throw std::length_error("Entity domain data exceeds limit");
+  if (p.attachment) {
+    const auto &a = *p.attachment;
+    if (a.frame.space != p.pose.position.space ||
+        a.frame.epoch != state.epoch || !a.frame.value ||
+        !isFinite(a.local.offset) || !isFinite(a.linear) ||
+        !isFinite(a.angular))
+      throw std::invalid_argument("Invalid entity frame attachment");
+    math::normalizedRotation(a.local.orientation);
+  }
 }
 
 auto candidate(const detail::WorldState &source,
@@ -361,8 +370,28 @@ void World::restore(const WorldSnapshot &source, WorldVersion expected) {
   auto next = candidate(*source._state, _ledger, stateBytes(*source._state),
                         source.spaces().size(), source.entities().size(),
                         _props, nextEpoch());
+  for (auto &entity : next->entities)
+    if (entity.props.attachment)
+      entity.props.attachment->frame.epoch = next->epoch;
   next->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(next);
+}
+
+std::uint64_t World::setActivation(ActivationRequest request,
+                                   WorldVersion expected, std::uint64_t tick) {
+  if (!request.ready || unsigned(request.mode) > unsigned(Activation::Full) ||
+      unsigned(request.authorityMinimum) > unsigned(Activation::Full) ||
+      request.mode < request.authorityMinimum)
+    throw std::invalid_argument("Activation violates readiness or authority");
+  const auto &source = snapshot().resolve(request.entity).props;
+  auto staging = _ledger->reserve(
+      runtime::MemoryClass::CPU, runtime::ResourceKind::World,
+      add(sizeof(EntityProps), source.data.size()),
+      "Activation mutation staging", {_state->id.value, _state->epoch, 2});
+  auto props = source;
+  props.activation = request.mode;
+  const WorldMutation mutation = SetEntity{request.entity.id, std::move(props)};
+  return apply({&mutation, 1}, expected, tick);
 }
 
 } // namespace playground::world

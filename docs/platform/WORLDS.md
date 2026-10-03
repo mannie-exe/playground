@@ -139,6 +139,13 @@ through the old/new samples, or adopts an authored local pose. Neither operation
 silently guesses that policy. A FramePosition conversion requires its matching
 FrameSample; applications retain the sample and enforce their tick boundary.
 
+`EntityProps::attachment` stores the frame-local pose and relative velocity beside
+actual space-relative state. Domain owners resolve the attachment at their
+simulation boundary; it does not move an entity from a render callback. World
+mutation validates its space/epoch and finite values. `ReferenceFrames::apply`
+also rejects a candidate that removes a frame still referenced by a live entity
+in its source snapshot. Detach or transfer the entity before removing that frame.
+
 `WorldTransfer::prepare(request)` validates source identity/revision, destination
 SpaceId/pose, declared dependent entities, admission and readiness requirements.
 The request specifies velocity policy, authority and cancellation/deadline.
@@ -154,6 +161,18 @@ are reset or mapped through an explicit rigid mapping, never copied by coinciden
 Successful transfer increments discontinuity, resets interpolation/follow history
 and publishes one domain result. Local transfers remain within one world/authority;
 distributed authority migration and seamless portals are future work.
+
+`world/Lifecycle.hpp` supplies `WorldTransfer` with bounded retained tickets.
+`prepare` takes the entire dependent entity group, explicit destination poses,
+reset/rigid-mapped velocity policies, optional checked destination frame samples,
+streaming readiness requests, deadline and the domain owner's authorization.
+`advance` checks source entity revisions and retains destination leases; `commit`
+rechecks and publishes one World batch. Missing physical placement returns
+Unsupported. Unframed destinations explicitly detach; attached destinations
+publish the attachment with the pose. Cancelled/failed/committed outcomes remain
+until `forget`. The world, streamer and optional frame registry outlive this owner;
+close transfer services before those dependencies. Native domain authorization is
+not a sandbox or a substitute for future network permission enforcement.
 
 ## Spatial queries
 
@@ -183,6 +202,13 @@ Zone enter/leave events compare committed membership using declared overlap and
 boundary rules. Incomplete coverage cannot synthesize a confirmed exit. Initial
 membership, teleports and destruction have explicit reasons and stable ordering.
 Queries and triggers do not apply forces or solve penetration.
+
+`ZoneTracker` retains committed membership and returns ordered owned `ZoneEvents`.
+`updateBounds` uses closed point-in-AABB membership. Query-based owners can supply
+`ZoneObservation` with explicit completeness through `update`; positive evidence
+can enter, but missing coverage cannot exit. A later complete observation preserves
+a pending teleport reason. Tombstones confirm destruction exits independently of
+coverage. Epoch replacement requires a new tracker.
 
 `world/Queries.hpp` supplies immutable, ledger-admitted query snapshots from a
 WorldSnapshot, explicit SpatialCoverage and authored QueryPrimitives. Primitive
@@ -214,6 +240,16 @@ domain updates per entity/group. Coarse simulation is app-defined behavior, not
 automatically running physics at an unsafe larger timestep. A dormant entity has
 explicit wake/deadline handling and does not accidentally consume paused time.
 Authority requirements override local visibility-based deactivation.
+
+`World::setActivation` requires the domain owner's readiness declaration and
+authority minimum. `ActivationScheduler::advance` consumes monotonic simulation
+time and returns owned `ActivationStep` values. Full updates receive elapsed
+simulation time, Coarse updates use `ActivationPolicy::coarseSeconds`, and Dormant
+updates occur only for explicit `wake` deadlines with zero accumulated movement.
+First observation, mode changes and discontinuities restart the elapsed interval.
+The app executes domain behavior and applies resulting world mutations; coarse
+steps never imply a larger physics integration step. Paused simulation time does
+not advance this scheduler. Restored epochs require a new scheduler.
 
 `WorldStore::save(snapshot, expectedStoreRevision)` writes a versioned candidate and
 atomically publishes a durable checkpoint; mutation can continue after capture.

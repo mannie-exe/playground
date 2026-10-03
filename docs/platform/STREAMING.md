@@ -16,13 +16,30 @@ Cell membership is not entity identity, visibility or authority.
 | `CellLease` | Retains admitted data for a declared consumer/purpose until released |
 | `CellState` | Requested versus available readiness, work status, leases and diagnostic reason |
 | `WorldStreamer::setSources` | Validate and replace one owner's demand without changing others |
-| `request / cancel / state` | Explicit bounded demand for transfers, navigation, tools or simulation |
+| `request / cancel / requestState / forget` | Bounded explicit demand; retain cancellation/failure until the owner forgets its request |
+| `state / lease` | Inspect cell readiness or retain a matching current generation |
 | `advance(budget)` | Admit and publish bounded work at the owner's service boundary |
 
 Sources can represent players, views, authority regions, destination preparation
 or explicit domain needs. They are not necessarily cameras. Readiness dimensions
 include definition/data, query, navigation, simulation and presentation; no single
 Loaded flag stands for all of them. A headless authority requires no GPU resources.
+
+`world/Streaming.hpp` supplies an owner-thread `WorldStreamer` attached to a
+`ServiceScope` or advanced explicitly. `WorldManifest::spaces` declares coordinate
+limits; every cell and source must name a declared space. `CellProvider::prepare`
+runs on the shared executor with immutable dependency products, admitted output
+and scratch bounds, and cooperative cancellation. A provider advertises supported
+readiness; unsupported dimensions fail explicitly. Package and generator domains
+supply their providers rather than triggering implicit acquisition.
+
+Control calls validate bounded source/request/manifest inputs synchronously.
+`advance` grants count cell operations, copied metadata bytes and published worker
+messages; provider work has separate scratch/output bounds. These are cooperative
+work limits, not thread preemption or allocator-enforced resident-memory limits.
+`replace` advances a cell's content revision and invalidates its dependency closure;
+changing dependency topology requires a new manifest/scope. Leases retain the prior
+immutable generation across replacement, eviction and scope closure.
 
 Cells use explicit authored bounds or a declared grid. Grids use floor division
 for negative coordinates and half-open intervals to assign boundaries once.
