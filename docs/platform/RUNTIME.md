@@ -20,9 +20,11 @@ owner boundary. Device audio mixing and socket I/O do not execute in UI update.
 | API | Contract |
 |---|---|
 | ServiceScope | Activation-owned registrations and cancellation; destruction removes demand and rejects late publication |
+| ServiceHandle | Retained terminal status/error and individual cancellation; does not retain callbacks after closure |
 | ServiceDemand | Pending work and absolute monotonic wake deadline; no deadline invented by a query |
 | ServiceWorkBudget | Per-pump work/byte/message limits; exhaustion preserves pending demand |
 | ServicePump::demand | Combine service deadlines with application, window and rendering demand |
+| ServicePumpProps | Bounded registrations, visits and shared work allowance; each registration can lower its own allowance |
 | ServicePump::advance | Process ready bounded work before simulation/presentation, including while Settings is open |
 | AppContext::services | Borrow active scope for owner-thread registration; workers retain only safe posting endpoints |
 
@@ -33,6 +35,16 @@ Completion notifications do not own the only result copy; saturation preserves
 durable outcomes. Terminal failures are delivered once with service/instance
 identity. Closing a scope cancels pending work and invalidates publication before
 resource destruction; it does not forcibly interrupt a native decoder.
+`ServiceScope::wakeCallback` is safe to copy to workers and becomes inert when
+the scope or pump closes. Publish into synchronized service-owned result storage
+before waking; the wake itself transfers no result. Service wakes/deadlines do
+not imply local app updates or paints. A service requests those explicitly when
+it publishes visible changes. Cancellation may close another scope; cleanup
+finishes before the outer closure returns. Closing from within a handler defers
+cleanup until traversal returns, so callbacks cannot destroy their own owner.
+`takeFailures` reports each terminal exception once; `stats` retains work and
+failure counts. Services must honor every granted limit, including zero remaining
+bytes/messages; an overreported allowance fails that registration.
 
 Keep local simulation, authority/session ticks, UI monotonic time, audio sample
 time and presentation time distinct. Settings/focus pause local app input and
@@ -288,6 +300,7 @@ changes reset history; an origin-only change does not.
 |---|---|
 | `input/InputMap.hpp` | IApp owns a map; `addContext`, `contextProps/setContextProps`, `bindings/rebind`, `setEnabled/removeContext` |
 | `platform/sdl/SDLActionInput.hpp` | SDL physical event translation and cancellation; host calls `routeInputEvent` around UI |
+| `runtime/Services.hpp` | Host-owned pump; activation-owned scopes, demand, bounded advancement and cancellation |
 | `runtime/SimulationClock.hpp` | Optional per-app clock; `beginFrame/nextStep`, `setPaused`, `state/reset` |
 | `runtime/ActivationLifetime.hpp` | Owner activation; tokens are weak, generations are separate control-block identities |
 | `runtime/CompletionQueue.hpp` | Thread-safe posting, owner-thread draining; guarded `ActivationSink` |

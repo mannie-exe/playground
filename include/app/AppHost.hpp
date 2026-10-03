@@ -38,7 +38,9 @@ class AppHost {
   SDLGuard _sdl;
   TTFGuard _ttf;
   playground::sdl::EventWake _wake;
+  playground::sdl::EventWake _serviceWake;
   playground::runtime::CompletionQueue _hostCompletions;
+  playground::runtime::ServicePump _servicePump;
   playground::sdl::SDLGamepads _gamepads;
   playground::platform::DirectoryStore _projectFiles;
   playground::platform::DirectoryStore _userFiles;
@@ -97,6 +99,7 @@ public:
                    playground::ui::SettingsViewFactory settingsView =
                        playground::ui::makeSettingsView,
                    AppHostDirectories directories = {});
+  ~AppHost();
 
   const WindowState &windowState() const { return _session.windowState(); }
 
@@ -196,6 +199,12 @@ public:
 
   playground::runtime::ActivationSink completions() {
     return {_activeApp->_completions.sink(), _activeApp->activationToken()};
+  }
+
+  playground::runtime::ServiceScope &services() {
+    if (!_activeApp)
+      throw std::logic_error("No active application service scope");
+    return _activeApp->services();
   }
 
   playground::runtime::ActivationToken activationToken() const {

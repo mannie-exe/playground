@@ -55,6 +55,10 @@ playground::sdl::AssetResources &AppContext::resources() {
 
 playground::runtime::Executor &AppContext::workers() { return _host.workers(); }
 
+playground::runtime::ServiceScope &AppContext::services() {
+  return _owner ? _owner->services() : _host.services();
+}
+
 PerformanceMonitor &AppContext::performance() { return _host.performance(); }
 
 void AppContext::requestSwitch(AppId appId, AppLaunchProps launch) {

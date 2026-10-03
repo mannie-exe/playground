@@ -54,12 +54,19 @@ AppHost::AppHost(WindowConfig initialWindow,
   _resources =
       std::make_unique<playground::sdl::AssetResources>(_catalog, _assets);
   _hostCompletions.setWakeCallback(_wake.callback());
+  _servicePump.setWakeCallback(_serviceWake.callback());
   registerDefaultApps();
   _settings.reload();
   _quality.configure(_settings.graphics());
   _renderRuntime.applyPatch({.budgets = _quality.state().requested.budgets,
                              .pacing = _quality.state().requested.pacing});
   switchTo(AppId::Menu);
+}
+
+AppHost::~AppHost() {
+  if (_activeApp && _activeApp->activationToken().isActive())
+    cleanupApp(*_activeApp);
+  _servicePump.close();
 }
 
 void AppHost::request(PendingAppCommand command) {
@@ -107,6 +114,7 @@ void AppHost::switchTo(AppId appId, AppLaunchProps launch) {
         _session.prepareWindowForSizing();
         _session.applyWindowProps();
         _activeApp->_activation.activate();
+        _activeApp->_services = _servicePump.scope();
         _activeApp->onEnter(ctx);
         applyViewSizing();
       },
@@ -134,6 +142,7 @@ void AppHost::cleanupApp(IApp &app) noexcept {
   try {
     playground::app::suppressCommands(_commandsSuppressed, [&] {
       AppContext ctx{*this, app};
+      app._services.close();
       app.input().cancelAll();
       app.onExit(ctx);
     });
@@ -250,6 +259,7 @@ int AppHost::run() {
                                       : _activeApp->activityDemand();
     const bool simulation = !_settingsView && _activeApp->_simulation &&
                             !_activeApp->_simulationPaused && _inputFocused;
+    const auto serviceDemand = _servicePump.demand();
     const auto admission =
         _renderRuntime.admission(now, _paintRequest.capture());
     const bool paintDue =
@@ -263,8 +273,8 @@ int AppHost::run() {
         _updateRequested || _hostCompletions.pending() ||
         _activeApp->_completions.pending() || demand.updateDue(now) ||
         now >= maintenanceAt;
-    if (!updateDue && !paintDue && !_pendingCommand &&
-        !SDL_PollEvent(nullptr)) {
+    if (!updateDue && !paintDue && !serviceDemand.due(now) &&
+        !_pendingCommand && !SDL_PollEvent(nullptr)) {
       auto deadline =
           std::min(maintenanceAt, now + std::chrono::milliseconds{100});
       if (_settingsView)
@@ -277,6 +287,8 @@ int AppHost::run() {
         deadline = std::min(deadline, now + std::chrono::milliseconds{2});
       if (demand.wakeAt)
         deadline = std::min(deadline, *demand.wakeAt);
+      if (serviceDemand.wakeAt)
+        deadline = std::min(deadline, *serviceDemand.wakeAt);
       if (const auto wakeAt = _session.windowTransitionWakeAt())
         deadline = std::min(deadline, *wakeAt);
       if (retryAt > now)
@@ -303,6 +315,8 @@ int AppHost::run() {
     _renderRuntime.begin(FramePhase::Poll);
 
     while (SDL_PollEvent(&event)) {
+      if (_serviceWake.consume(event))
+        continue;
       receivedEvent = true;
       const bool hostHandled{handleHostEvent(event)};
 
@@ -374,6 +388,19 @@ int AppHost::run() {
     advanceWindowTransition(Clock::now());
 
     _renderRuntime.begin(FramePhase::Update);
+    _servicePump.advance(Clock::now());
+    for (const auto &failure : _servicePump.takeFailures()) {
+      try {
+        std::rethrow_exception(failure.error);
+      } catch (const std::exception &error) {
+        SDL_Log("Service %s (%llu) failed: %s", failure.name.c_str(),
+                static_cast<unsigned long long>(failure.id), error.what());
+      } catch (...) {
+        SDL_Log("Service %s (%llu) failed with a non-standard exception",
+                failure.name.c_str(),
+                static_cast<unsigned long long>(failure.id));
+      }
+    }
     const bool shouldUpdate = updateDue || receivedEvent || _updateRequested;
     double frameSeconds{};
     _updateRequested = false;

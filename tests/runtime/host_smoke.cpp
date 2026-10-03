@@ -28,6 +28,9 @@ int main() {
     std::ofstream{user.path() / "settings.toml"}
         << "schema_version = 5\n[graphics]\nrenderer = 'software'\n";
     ui::SettingsView *settings{};
+    unsigned serviceCalls{}, settingsServiceCalls{};
+    bool serviceCancelled{};
+    auto serviceWakeAt = runtime::ActivityClock::now();
     AppHost host{{},
                  {},
                  [&](auto &assets, auto font, auto graphics, auto actions) {
@@ -38,6 +41,19 @@ int main() {
                  },
                  {.project = PLAYGROUND_SOURCE_DIR, .user = user.path()}};
     auto sink = host.completions();
+    const auto service = host.services().add(
+        {.name = "host service smoke",
+         .demand =
+             [&] { return runtime::ServiceDemand{.wakeAt = serviceWakeAt}; },
+         .advance =
+             [&](auto now, auto) {
+               ++serviceCalls;
+               if (host.settingsVisible())
+                 ++settingsServiceCalls;
+               serviceWakeAt = now + 5ms;
+               return runtime::ServiceWork{1};
+             },
+         .cancel = [&] { serviceCancelled = true; }});
     unsigned stage{};
     math::Vec2i original;
     std::exception_ptr failure;
@@ -75,6 +91,8 @@ int main() {
               ++stage;
               break;
             case 2: {
+              if (!settingsServiceCalls)
+                return;
               if (host.graphicsState().requested.threeD.shadows !=
                   rendering::QualityLevel::Ultra)
                 return;
@@ -134,5 +152,9 @@ int main() {
       std::rethrow_exception(failure);
     test::require(result == 0 && stage == 4 && host.lastCommandError().empty(),
                   "isolated host workflow succeeds");
+    test::require(
+        serviceCalls && settingsServiceCalls && serviceCancelled &&
+            service.status() == runtime::ServiceStatus::Closed,
+        "host services continue during Settings and close on app exit");
   });
 }
