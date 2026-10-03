@@ -51,6 +51,7 @@ playground_add_test(asset_resources SOURCE assets/resources.cpp MODULE assets LA
 target_compile_definitions(playground_asset_resources_tests PRIVATE PLAYGROUND_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 playground_add_test(model_preparation SOURCE assets/model_preparation.cpp MODULE assets LABELS unit async ownership failure LIBRARIES playground_sdl)
 playground_add_test(runtime_executor SOURCE runtime/executor.cpp MODULE runtime LABELS unit async ownership failure LIBRARIES playground_runtime)
+playground_add_test(runtime_services SOURCE runtime/services.cpp MODULE runtime LABELS unit scheduling ownership failure LIBRARIES playground_runtime)
 playground_add_test(ui_completion_queue SOURCE ui/completion_queue.cpp MODULE runtime LABELS unit async failure ownership LIBRARIES playground_runtime)
 playground_add_test(runtime_transitions SOURCE rendering/runtime_transitions.cpp MODULE rendering LABELS unit runtime failure LIBRARIES playground_rendering)
 playground_add_test(host_transitions SOURCE rendering/host_transitions.cpp MODULE rendering LABELS unit runtime failure ownership LIBRARIES playground_rendering playground_runtime)

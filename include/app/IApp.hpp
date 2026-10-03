@@ -15,6 +15,7 @@ class IApp : public IRuntimeObject {
   friend class AppHost;
   playground::runtime::ActivationLifetime _activation;
   playground::runtime::CompletionQueue _completions;
+  playground::runtime::ServiceScope _services;
   std::optional<playground::runtime::SimulationClock> _simulation;
   bool _simulationPaused{};
   playground::input::InputMap _input;
@@ -38,6 +39,8 @@ public:
   virtual playground::input::InputClaims inputClaims() { return {}; }
 
   playground::input::InputMap &input() noexcept { return _input; }
+
+  playground::runtime::ServiceScope &services() noexcept { return _services; }
 
   playground::runtime::ActivationToken activationToken() const noexcept {
     return _activation.token();

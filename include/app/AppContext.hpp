@@ -12,6 +12,7 @@
 #include <rendering/RenderFailure.hpp>
 #include <runtime/CompletionQueue.hpp>
 #include <runtime/Executor.hpp>
+#include <runtime/Services.hpp>
 #include <runtime/SimulationClock.hpp>
 #include <support/AssetRegistry.hpp>
 #include <support/PerformanceMonitor.hpp>
@@ -55,6 +56,7 @@ public:
   AssetRegistry &assets();
   playground::sdl::AssetResources &resources();
   playground::runtime::Executor &workers();
+  playground::runtime::ServiceScope &services();
   PerformanceMonitor &performance();
   const playground::rendering::ResolvedGraphicsState &graphicsState() const;
   void requestGraphics(playground::rendering::GraphicsSettings,

@@ -16,6 +16,7 @@ playground_add_module(playground_runtime
     src/runtime/CompletionQueue.cpp
     src/runtime/Executor.cpp
     src/runtime/SimulationClock.cpp
+    src/runtime/Services.cpp
     src/input/InputMap.cpp)
 playground_add_module(playground_world src/world/Spatial.cpp src/world/World.cpp)
 target_link_libraries(playground_world PUBLIC playground_math playground_rendering)
