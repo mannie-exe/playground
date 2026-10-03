@@ -140,3 +140,14 @@ output to reference signals and measure peak callback duration/underruns while
 UI sleeps, windows resize, assets decode and rendering is under pressure. No
 general DSP graph, audio editor, microphone capture or voice chat is required
 by the playback contract.
+
+## Spatial-data consumers
+
+Audio-driven visualizations consume bounded control-side analysis/sample snapshots
+with clock identity, sequence and declared age. [Dataset sources](../platform/SPATIAL_DATA.md)
+and [presentation kernels](../platform/SIMULATION.md) coalesce disposable output
+under Latest policy. Audio callbacks never allocate voxel/mesh storage, access the
+ledger, run generation or wait for product publication. Captured control samples
+support deterministic offline visual workloads without live audio hardware.
+Surface sound profiles reference domain identities separately from render colors;
+a voxel material label is not an audio voice or proof of physical contact.

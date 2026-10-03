@@ -152,3 +152,14 @@ updates and pauses simulation. Focus/settings interruption still gates input.
 Benchmark playback and completion draining request updates until reporting finishes.
 Asset preparation signals completion through the activation sink and uses an
 explicit deadline for temporary admission refusal, not per-frame future polling.
+
+## Spatial service demand
+
+[Spatial preparation](SPATIAL_PRODUCTS.md) retains work/results independently of
+paint demand. Worker completion posts a scoped wake after storing its result;
+owner publication requests paint only when a visible binding changes. Busy
+admission and required-input waits contribute bounded deadlines or dependency
+wakes. A continuously arriving live source coalesces demand rather than requiring
+one host frame per sample. Sleeping simulation cannot clear a final product/paint
+invalidation. Latest output and frame pacing preserve the existing revision-based
+presentation acknowledgement rules.

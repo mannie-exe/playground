@@ -47,9 +47,40 @@ not promise deterministic cross-platform simulation. Results identify dropped or
 failed work; overflow must not silently omit authoritative contacts. Contact
 callbacks cannot mutate world/scene ownership while the solver traverses bodies.
 
+## Spatial collision products
+
+Collision preparation and revision/readiness integration are implementation
+requirements independent of solver selection. `CollisionProfile` declares occupancy
+channels, interpretation, shape recipe, spacing/units, filters and output limits.
+`CollisionRecipe` produces a typed immutable `CollisionProduct` with dependency
+stamps, bounds, geometry encoding and required adapter capabilities. The baseline
+recipe supplies bounded occupied-cell boxes in local coordinates; optional merging
+must preserve occupied volume and profile boundaries. This is geometry preparation,
+not a claim that rigid-body dynamics exists.
+
+`PhysicsAdapter::stageCollision(product, placement, regionGeneration)` returns an
+owned inactive candidate or Unsupported/Failed. `CollisionActivation` carries the
+candidate, expected old binding and region/tick. `activateCollision` validates and
+exchanges at a solver-safe model boundary; `retireCollision` retains native uses
+until the adapter acknowledges release. An adapter advertises whether atomic
+replacement is supported. RequireProducts edits need that capability and completed
+staging; absent capability cannot become a successful no-op activation.
+
+A failed stage/validation preserves the previous active binding. The final exchange
+must be non-failing after validation, or the adapter must provide a proven rollback
+protocol before claiming atomic replacement. Queries/results identify the active
+source revision. After an authoritative geometry edit, stale collision does not
+count as current; the app stops/waits or explicitly keeps a coherent older
+simulation generation. Unknown coverage is not free space. Unequal grid spacing
+is validated independently of renderer support.
+
+Fake activation adapters test ownership, staging failure, safe-boundary exchange
+and delayed retirement. Real solver contact/sweep behavior requires separate tests.
+See [spatial products](SPATIAL_PRODUCTS.md) and [voxel commits](VOXELS.md).
+
 ## Future implementation
 
-Solver selection/integration, collision cooking, rigid-body dynamics, character
+Solver selection/integration, solver-specific native cooking, rigid-body dynamics, character
 motors, vehicle dynamics, cross-region physical interaction and root motion are
 future. Camera obstruction remains separately [future](../render/CAMERAS.md#future-camera-obstruction).
 Prediction/rollback requires additional state capture/replay contracts and is

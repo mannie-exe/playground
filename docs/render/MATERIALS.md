@@ -17,6 +17,16 @@ software requests for tone mapping fail explicitly. GPU tone mapping is opt-in
 and compresses the exposed scene before ordinary UI composition. Apps that require
 it must select the GPU backend; it is not implied by the shared unlit capability.
 
+## Domain surface interpretation
+
+Voxel labels/intensities are dataset values, not renderer Material enums. A
+versioned [surface interpretation](../platform/VOXELS.md#values-and-interpretation)
+can map samples to render profiles separately from collision, traversal and sound.
+Render profile changes invalidate their products without rewriting source samples
+or unrelated physical/navigation profiles. Scalar transfer maps specify numerical
+sampling, output color space and alpha association explicitly. See
+[spatial presentation](SPATIAL.md).
+
 ## API map
 
 ### Preparation boundary

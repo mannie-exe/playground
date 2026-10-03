@@ -53,6 +53,28 @@ continue. An online model advances through its AuthorityRunner, not the paused
 local SimulationClock. Headless hosting uses the same service/domain contracts
 without the desktop IApp/SDL window adapter.
 
+## Spatial work and clocks
+
+[DatasetService](SPATIAL_DATA.md#sources-and-preparation),
+[ProductService](SPATIAL_PRODUCTS.md) and edit/save services share Executor,
+ServiceScope, wake endpoints and ResourceLedger. Policy queues bound and coalesce
+work before executor admission; they do not create private competing pools.
+Latest, Ordered, Deadline, Background and Durable work have explicit overload and
+retention behavior. Completion precedes its wake, and publication validates epochs,
+input stamps and request policy at the owner boundary.
+
+ServiceWorkBudget bounds owner-side staging/publication. Prepare large metadata or
+scene candidates incrementally, then exchange validated roots/handles; do not hide
+unbounded work behind one counted operation. PreRender never waits for preparation.
+Input, settings and window transitions remain serviced while work is queued.
+
+[Simulation kernels](SIMULATION.md) choose local interactive time or an independent
+ordered authority clock. Only domains explicitly permitting dropped steps use the
+interactive catch-up policy. Services can prepare while paused; authoritative edits
+and physics activation await their declared model boundary. Standalone/headless
+dataset tools pump these services without AppHost or SDL. Real-time audio producers
+use bounded preallocated handoff, not these allocation/publication calls directly.
+
 ## Input
 
 ### Ownership policy

@@ -582,3 +582,14 @@ tests, compile guide snippets, and inspect `git diff --check` plus untracked fil
 Installation verifies packaging separately from execution. Keep GPU hardware,
 interactive behavior and non-Windows checks explicitly separate from CPU/offscreen
 success. No commit/staging or external publishing is implied by verification.
+
+### Spatial-data changes
+
+[Spatial verification](docs/platform/SPATIAL_TESTING.md) defines CPU contracts,
+connected editable/live-volume workloads and native presentation evidence. Reuse
+existing CMake module tests and shared workload helpers; add runnable target commands
+here when implemented. Record revision/configuration, source/profile identity,
+budgets, correctness outcomes and preparation/publication/upload measurements.
+Do not commit transient captures or benchmark dumps. Documentation-only changes
+require contract/cross-reference review and `git diff --check`; they do not establish
+runtime coverage or require rebuilding unchanged C++.

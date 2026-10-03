@@ -41,6 +41,20 @@ Render parenting does not imply physics ownership. Kinematic controllers,
 collision/physics, navigation and character pose production remain separate
 interfaces; a universal ECS or behavior tree is not required by this boundary.
 
+## Spatial-data applications
+
+Apps may own DatasetStore, source/product/edit services and optional simulation
+without creating a World. A world app attaches datasets through explicit bindings;
+neither storage chunks nor samples automatically become entities. Generators,
+material interpretations, update rules and multimedia meaning belong to app/domain
+providers. Core services own bounds, lifetime, admission and publication.
+
+UI input, automation and network adapters submit the same validated SpatialEdit
+commands. Views select current versus displayed-generation queries explicitly.
+Apps choose live ReadOnly/Captured/Overlay editing, undo retention, durability and
+required-product barriers. There is no implicit universal game material or ECS.
+See [datasets](SPATIAL_DATA.md), [edits](VOXELS.md) and [simulation](SIMULATION.md).
+
 ## Minesweeper screen contract
 
 Minesweeper owns its difficulty draft, active board, and pending screen intent.

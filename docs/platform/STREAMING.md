@@ -55,6 +55,26 @@ Zones may cross cells. Membership of large objects is indexed in all necessary
 query regions while a declared owner retains the object only once. Moving an
 entity across a boundary changes residency bookkeeping without respawning it.
 
+## Dataset directories and product demand
+
+[DatasetDirectory](SPATIAL_DATA.md#bounded-directory-and-demand) extends finite
+WorldManifest enumeration with bounded region queries and revision-bound pages.
+WorldStreamer adapts world sources to dataset index ranges through validated grid
+mapping. A directory descriptor does not imply CPU data, geometry or navigation is
+ready. Directory pages and retained metadata share service/ledger bounds; replacing
+the directory invalidates old cursors and affected demand before publication.
+
+A `CellProduct` can retain typed [product leases](SPATIAL_PRODUCTS.md) for exact
+recipe/profile requirements. Aggregate readiness is computed from those leases;
+request state exposes represented revisions, freshness and missing capabilities.
+Independent data, query, collision, navigation and presentation replacement must
+not collapse into one unqualified Loaded flag. Old consumers can retain old leases,
+but they cannot satisfy new Exact readiness from those generations.
+
+World cells, dataset chunks, package entries, query regions and navigation tiles
+may have different extents. Their adapters declare overlap/dependencies explicitly.
+Moving the camera does not invalidate voxel content or rebuild local meshes.
+
 ## Admission, publication and retirement
 
 Work status is Absent, Queued, Preparing, Ready, Failed or Cancelled; retirement

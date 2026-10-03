@@ -19,6 +19,16 @@ The GPU evaluates coverage from segments, without a CPU bitmap upload. Existing
 SVG documents retain their full raster compatibility path; this API does not
 silently reinterpret arbitrary SVG CSS, filters or gradients as solid paths.
 
+## Spatial-data products
+
+[Dataset sources](../platform/SPATIAL_DATA.md) and
+[product recipes](../platform/SPATIAL_PRODUCTS.md) prepare versioned immutable
+outputs without owning scenes/devices. [Spatial presentation](SPATIAL.md) supplies
+baseline block surfaces, scalar/label slices and selection. Scene adapters bind
+those outputs to world/local placements; renderers retain ordinary resource
+identity and native accounting. No frame callback waits for a worker mesh batch.
+Source edits, product invalidation and view paint demand are distinct revisions.
+
 ## Backend policy
 
 Software and SDL GPU/Vulkan are the supported implementations.

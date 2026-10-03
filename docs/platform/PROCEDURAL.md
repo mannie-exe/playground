@@ -1,91 +1,66 @@
-# Procedural worlds and voxel data
+# Procedural spatial providers
 
-Authored and generated cells share [streaming](STREAMING.md), identity, accounting
-and persistence contracts. Generation produces data, not executable app instances.
-Procedural/voxel generation, bounded block edits and derived mesh/navigation work
-are implementation requirements; an editor or general scripting runtime is not.
+Procedural generation is one [spatial data source](SPATIAL_DATA.md), alongside
+loaded and live data. The framework defines requests, identity, bounds and
+publication. Applications implement terrain, scalar fields, visual effects or other
+generation algorithms. [Voxel storage/editing](VOXELS.md) and
+[derived products](SPATIAL_PRODUCTS.md) do not require a procedural baseline.
 
-## Definitions and generation
+## Definitions and API
 
-| API | Contract |
+| Value/API | Contract |
 |---|---|
-| `GeneratorDefinition` | Stable generator ID/version, supported schema, parameters and exact content dependencies |
-| `GenerationKey` | Generator/build identity, seed, configuration digest, cell address and output kind |
-| `GenerationRequest` | Key, bounded immutable neighbor inputs, output/work limits and cancellation |
-| `CellGenerator::generate` | Produce owned immutable cell data under the request's limits |
-| `GenerationResult` | Products, dependency revisions, measurements and terminal outcome |
-| `GeneratedEntityKey` | Stable cell/feature identity mapped to persistent EntityId without runtime-order dependence |
+| `GeneratorDefinition` | Registered provider ID/version, schema, parameter schema, exact dependencies, supported targets and reproduction capability |
+| `GenerationKey` | Provider/build compatibility, seed encoding where applicable, configuration/content digests, address/channels and output kind |
+| `GenerationRequest` | DataRequest plus GenerationKey and bounded immutable neighbor inputs |
+| `GenerationResult` | PrepareResult with generated source identity, dependency stamps, measurements and terminal outcome |
+| `GeneratedEntityKey` | Stable domain feature identity mapped explicitly to persistent EntityId without scheduling-order dependence |
+| `CellGenerator` | Application adapter implementing SpatialDataSource for generated regions; no second scheduler or mutable-world API |
 
-Generators are trusted compiled providers selected by an allowlisted ID. Packs
-can supply bounded validated parameters for registered recipes, not C++ names,
-scripts, filesystem/network access or arbitrary executable plugins. Unsupported
-recipes fail before work. Authoring/build and runtime invoke the same provider
-contract; offline baking can replace generation with immutable equivalent outputs.
+Providers are trusted compiled implementations selected by an allowlisted ID.
+Packs supply bounded validated parameters for registered recipes, not C++ names,
+scripts, filesystem/network privilege or executable plugins. Unsupported recipes
+fail before execution. Authoring/cooking and runtime invoke the same provider
+contract; baked immutable data can replace generation without changing consumers.
 
-Same key and declared compatible generator build produce identical authoritative
-data independent of scheduling and traversal order. Specify PRNG algorithm, seed
-encoding, coordinate hashing, overflow behavior, numeric operations and canonical
-serialization; standard-library distributions or unspecified floating-point math
-cannot establish cross-platform determinism. Providers declare supported targets
-and pass golden fixtures; incompatible targets consume authoritative baked data.
-Derived visual products may have a separately declared tolerance/compatibility key.
+## Reproduction and compatibility
 
-Cross-cell features have a canonical owner and bounded influence region. Requests
-declare neighbor halos and derive them from immutable base inputs, not whichever
-neighbor finished first. No recursive unbounded generation or load-order-dependent
-random stream. Cancellation, work exhaustion and output-limit failure publish no
-partial authoritative cell. Long providers expose cooperative checkpoints; a job
-timeout cannot forcibly interrupt unsafe native execution.
+A provider advertising reproducibility produces identical authoritative samples
+for the same key on declared compatible targets regardless of scheduling/traversal.
+Specify PRNG algorithm, seed encoding, coordinate hashing, integer overflow rules,
+numeric operations and canonical serialization. Standard-library distributions or
+unspecified floating-point behavior do not establish cross-platform determinism.
+Golden fixtures establish supported compatibility; incompatible peers consume
+baked/recorded authoritative samples or fail admission.
 
-## Voxel coordinates and edits
+Live/nonreproducible providers use explicit sample identity and cannot claim that
+a seed reconstructs a save. Derived visual products may declare separate numeric
+tolerances without relaxing authoritative-data equality. Generator version,
+interpretation version and mesh cooker version are independent identities.
 
-`VoxelGridDefinition` specifies SpaceId, origin, positive voxel size in meters,
-bounded integer chunk extent and stable block/material definitions. Signed 64-bit
-chunk addresses and bounded local integer coordinates identify blocks; checked
-floor division and half-open bounds apply on negative axes. Conversion to double
-world positions must satisfy SpatialLimits rather than accepting every int64 value.
-Rigid placement follows world frame contracts; nonuniform physical voxel scale is
-not implicit. 2D tile fields use the same address rules on a declared plane.
+Cross-region features have a canonical owner and bounded influence region.
+Requests declare halos derived from immutable base inputs, not whichever neighbor
+finished first. Dependency cycles and recursive unbounded generation are refused.
+Missing neighbors produce bounded NeedsInput demand rather than assumed empty data.
 
-`VoxelChunk` owns immutable revisioned block/palette data with explicit byte and
-dimension bounds. Baseline geometry is a block grid; smooth density-field terrain,
-fluid simulation and multiresolution voxel terrain are future capabilities.
+## Work and persistence
 
-`VoxelEdit` carries command identity, expected chunk revisions and bounded block
-changes. The authority validates permissions, values and affected cells, stages the
-transaction, then publishes all affected chunks together. Duplicated commands do
-not reapply edits. Unloaded chunks are prepared explicitly before mutation or the
-request fails; missing data is not assumed to be air. Emptying a generated block
-is a persistent override, not deletion of the evidence that it was changed.
+Providers reserve output and scratch and cooperate with work/cancellation checks.
+Oversized regions are explicitly tiled or refused. Cancellation, work exhaustion
+or failure publishes no partial authoritative region. Native timeouts cannot safely
+interrupt arbitrary provider execution. Framework budgets do not sandbox callbacks.
 
-Edits invalidate only products depending on changed blocks and their declared
-neighbor halo. Boundary edits invalidate the neighbor's affected product even if
-that neighbor is absent; its next preparation observes the new revision. Queries
-and navigation cannot advertise old data as matching new authoritative geometry.
-Frame-local mesh presentation may lag under an explicit stale-visual policy.
+Baseline identity includes exact provider/configuration/content dependencies, not
+just a seed. Edits retain overrides including set-to-empty values. Generator updates
+require explicit migration, a retained compatible provider or baked baseline;
+regenerating incompatible saved data without its edits is forbidden. Unknown
+providers preserve stored references while reporting unavailable interpretation.
+See [checkpoints](VOXELS.md#persistence-api-and-encoding).
 
-## Derived products and persistence
+## Verification
 
-Meshing, spatial indexes and navigation preparation consume immutable source
-revisions and publish separately. Cache keys include generator/source revisions,
-neighbor revisions, product settings and cooker version. Replace complete mesh
-handles; never mutate geometry retained by a render submission. Baseline meshing
-removes internal faces and preserves material boundaries; further mesh optimization
-must preserve the same occupancy/material semantics.
-
-Missing neighbor data has an explicit visual policy (temporary boundary faces or
-deferred mesh). It never establishes empty query/navigation space. Changing that
-availability invalidates affected products. Neighbor stitching and tile publication
-must not expose navigable seams before their dependencies agree.
-
-Saves pin generator identity/version/configuration and content digests, plus voxel
-overrides, entity changes and deletion records. A seed alone is not a save. Cache
-eviction can discard regenerable products but not uncommitted edits. Generator
-upgrades require explicit migration or a retained old provider/baked baseline;
-silently regenerating old cells with a new algorithm is forbidden.
-
-Sparse edits can compact into bounded chunk snapshots under the same save revision.
-Compaction preserves negative overrides and exact baseline identity. Storage quota,
-failed writes and interrupted compaction preserve the previous checkpoint and dirty
-state. See [world persistence](WORLDS.md#state-activation-and-persistence) and
-[verification](WORLD_TESTING.md).
+Reference providers cover a uniform/label grid and an explicitly timed scalar
+field. They establish loading/generation interchangeability without mandating a
+particular terrain algorithm. [Spatial workloads](SPATIAL_TESTING.md) verify
+negative addresses, neighbor ownership, changed traversal/worker order, exact source
+keys, captured live samples, bounded failure and incompatible saved baselines.
