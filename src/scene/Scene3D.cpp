@@ -250,6 +250,7 @@ void Scene3D::refreshWorldCache() const {
     return;
   std::vector<std::size_t> chain;
   std::vector<MeshDraw> draws;
+  std::vector<ObjectId> objects;
   for (std::size_t i = 0; i < _entries.size(); ++i) {
     if (!_entries[i].props ||
         (!_entries[i].worldDirty && !_entries[i].visibilityDirty))
@@ -287,17 +288,31 @@ void Scene3D::refreshWorldCache() const {
     const auto &slot = _entries[i];
     if (!slot.props || !slot.props->mesh)
       continue;
-    if (slot.worldVisible)
+    if (slot.worldVisible) {
       draws.push_back({slot.props->mesh, slot.props->material, slot.world});
+      objects.push_back(
+          {_owner, static_cast<std::uint32_t>(i), slot.generation});
+    }
   }
   _cachedDraws = std::move(draws);
+  _cachedObjects = std::move(objects);
   _cachedRevision = _revision;
   ++_cacheStats.snapshots;
 }
 
-std::vector<MeshDraw> Scene3D::snapshot() const {
+std::vector<MeshDraw>
+Scene3D::snapshot(std::span<const ObjectId> exclusions) const {
+  for (auto id : exclusions)
+    entry(id);
   refreshWorldCache();
-  return _cachedDraws;
+  if (exclusions.empty())
+    return _cachedDraws;
+  std::vector<MeshDraw> result;
+  result.reserve(_cachedDraws.size());
+  for (std::size_t i = 0; i < _cachedDraws.size(); ++i)
+    if (std::ranges::find(exclusions, _cachedObjects[i]) == exclusions.end())
+      result.push_back(_cachedDraws[i]);
+  return result;
 }
 
 Ray3 pickingRay(const CameraView &camera, math::Vec2f position) {

@@ -302,7 +302,7 @@ void SettingsDocument::apply(std::string_view app, PresentationProps &p,
 }
 
 SettingsDocument parseSettings(std::string_view text) {
-  const auto root = document(text, 5);
+  const auto root = document(text, 7);
   SettingsDocument result;
   for (const auto &[key, node] : root) {
     if (key == "schema_version")
@@ -330,6 +330,29 @@ SettingsDocument parseSettings(std::string_view text) {
       }
       settings.validate();
       result.graphics = settings;
+    } else if (key == "controls") {
+      input::ControlsSettings settings;
+      for (const auto &[field, entry] : table(node)) {
+        const auto schema = input::controlsSettingsSchema();
+        const auto it = std::ranges::find(schema, field.str(),
+                                          &input::ControlsSetting::key);
+        if (it == schema.end())
+          throw std::invalid_argument("Unknown controls setting");
+        double number{};
+        if (!it->choices.empty()) {
+          const auto choice = value<std::string>(entry);
+          const auto selected = std::ranges::find(it->choices, choice);
+          if (selected == it->choices.end())
+            throw std::invalid_argument("Unknown controls choice");
+          number = std::distance(it->choices.begin(), selected);
+        } else
+          number = it->kind == runtime::SettingKind::Boolean
+                       ? value<bool>(entry)
+                       : value<double>(entry);
+        input::setControlsSetting(settings, *it, number);
+      }
+      settings.validate();
+      result.controls = settings;
     } else if (key == "defaults")
       result.defaults = readPatch(table(node));
     else if (key == "apps") {
@@ -354,7 +377,7 @@ std::string serializeSettings(const SettingsDocument &document) {
   toml::table apps;
   for (const auto &[key, patch] : document.apps)
     apps.insert(key, writePatch(patch));
-  toml::table root{{"schema_version", 5},
+  toml::table root{{"schema_version", 7},
                    {"defaults", writePatch(document.defaults)},
                    {"apps", std::move(apps)}};
   if (document.graphics) {
@@ -371,6 +394,21 @@ std::string serializeSettings(const SettingsDocument &document) {
         values.insert(field.key, v);
     }
     root.insert("graphics", std::move(values));
+  }
+  if (document.controls) {
+    document.controls->validate();
+    toml::table values;
+    for (const auto &field : input::controlsSettingsSchema()) {
+      const auto number = field.get(*document.controls);
+      if (field.kind == runtime::SettingKind::Boolean)
+        values.insert(field.key, bool(number));
+      else if (!field.choices.empty())
+        values.insert(field.key,
+                      std::string{field.choices[std::size_t(number)]});
+      else
+        values.insert(field.key, number);
+    }
+    root.insert("controls", std::move(values));
   }
   return format(root);
 }
@@ -414,6 +452,11 @@ std::string serializeSession(const SessionState &state) {
     apps.insert(app, std::move(fields));
   }
   return format(toml::table{{"schema_version", 2}, {"apps", std::move(apps)}});
+}
+
+input::ControlsSettings SettingsStore::controls() const {
+  return _user.controls.value_or(
+      _project.controls.value_or(input::ControlsSettings{}));
 }
 
 rendering::GraphicsSettings SettingsStore::graphics() const {

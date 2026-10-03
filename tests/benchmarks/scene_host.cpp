@@ -108,6 +108,8 @@ int main(int argc, char **argv) {
     double measuredAt{};
     std::uint64_t resumedMeshHits{};
     unsigned cameraStage{};
+    std::optional<unsigned> focusStage;
+    auto focusAt = started;
     auto stageAt = started;
     const auto key = [](SDL_Scancode code, bool down) {
       SDL_Event e{};
@@ -170,6 +172,34 @@ int main(int argc, char **argv) {
             }
           } else if (camera && elapsed > 30 && state.sceneWork.uploads &&
                      std::chrono::steady_clock::now() - stageAt > 250ms) {
+            const bool captureStage = cameraStage == 0 || cameraStage == 3 ||
+                                      cameraStage == 8 || cameraStage == 11 ||
+                                      cameraStage == 13 || cameraStage == 16;
+            if (captureStage && focusStage != cameraStage) {
+              // Window-manager focus follows the real pointer on some desktops.
+              // Establish native focus before injecting the engagement gesture.
+              int count{};
+              auto windows = SDL_GetWindows(&count);
+              for (int i = 0; i < count; ++i) {
+                SDL_WarpMouseInWindow(windows[i],
+                                      host.windowState().actualSize.x / 2.f,
+                                      host.windowState().actualSize.y / 2.f);
+                SDL_RaiseWindow(windows[i]);
+              }
+              SDL_free(windows);
+              focusStage = cameraStage;
+              focusAt = std::chrono::steady_clock::now();
+              return;
+            }
+            if (captureStage && !host.windowServices().focused()) {
+              if (std::chrono::steady_clock::now() - focusAt > 5s) {
+                std::cerr << "Native focus unavailable; desktop policy "
+                             "prevents the capture workload\n";
+                log.invalid = true;
+                host.request({.type = AppCommandType::Quit});
+              }
+              return;
+            }
             const auto mouse = [&] {
               SDL_Event e{};
               e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
@@ -260,13 +290,44 @@ int main(int argc, char **argv) {
             case 12:
               require(host.windowServices().relativeMouseActive(),
                       "mouse relocks after focus restoration");
-              host.request({.type = AppCommandType::ReturnToMenu});
+              key(SDL_SCANCODE_F, true);
+              key(SDL_SCANCODE_F, false);
               break;
             case 13:
               require(!host.windowServices().relativeMouseActive(),
+                      "follow takeover revokes manual lease");
+              mouse();
+              key(SDL_SCANCODE_W, true);
+              resumedMeshHits = state.sceneWork.meshHits;
+              break;
+            case 14: {
+              require(host.windowServices().relativeMouseActive() &&
+                          state.sceneWork.meshHits > resumedMeshHits,
+                      "follow motor and camera redraw after engagement");
+              key(SDL_SCANCODE_W, false);
+              SDL_Event wheel{};
+              wheel.type = SDL_EVENT_MOUSE_WHEEL;
+              wheel.wheel.y = 20;
+              SDL_PushEvent(&wheel);
+              break;
+            }
+            case 15:
+              key(SDL_SCANCODE_F, true);
+              key(SDL_SCANCODE_F, false);
+              break;
+            case 16:
+              require(!host.windowServices().relativeMouseActive(),
+                      "return to free camera requires reengagement");
+              mouse();
+              break;
+            case 17:
+              host.request({.type = AppCommandType::ReturnToMenu});
+              break;
+            case 18:
+              require(!host.windowServices().relativeMouseActive(),
                       "app exit releases mouse lock");
               completed = !log.invalid;
-              std::cout << "CameraWorkflow checks=9 complete=" << completed
+              std::cout << "CameraWorkflow checks=12 complete=" << completed
                         << '\n';
               host.request({.type = AppCommandType::Quit});
               break;

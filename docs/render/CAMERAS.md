@@ -12,7 +12,7 @@ state. Empty draws, missing meshes and nonfinite bounds are errors.
 the longest extent, retaining lens settings. This is not an exact frustum fit;
 callers choose clipping planes and framing policy. Invalid/inverted bounds,
 nonpositive minimum extent and arithmetic overflow are errors. Demo 3D and model
-capture share this geometry helper; `demo3d::bistroView` is an explicit authored
+capture share this geometry helper; `demo3d::bistroView(space, epoch)` is an explicit authored
 street preset, independent of filenames.
 
 ## Controller boundaries
@@ -20,7 +20,7 @@ street preset, independent of filenames.
 | API | Contract |
 |---|---|
 | `Scene2DViewProps::camera` | Affine scene-to-content mapping |
-| `WorldCamera` | Precise space-identified position, orientation, focus distance and lens values |
+| `WorldCamera` | Precise space-identified position, world epoch, orientation, focus distance and lens values |
 | `CameraProps` | View-local float eye/target/up and lens values after render-origin conversion |
 | `SceneViewport` | Content bounds, aspect, pixel extent and projection/picking mapping |
 | `OrbitController` | Angular/distance intent around an inspection target |
@@ -129,7 +129,10 @@ direct look or changing locomotion semantics.
 
 Self-visibility is viewport-local. `SceneViewProps::visibility` supplies explicit
 object exclusions for the observing subject, such as its head or whole body;
-exclusions use validated identities and participate in view invalidation. Never
+exclusions use validated identities and participate in view invalidation.
+`objects` excludes exact Scene3D object IDs (not implicit descendants); `entities`
+excludes every extracted visual belonging to those world entities. Source-specific
+exclusions cannot be mixed. Stale or foreign IDs reject before publication. Never
 hide the shared Scene3D object globally when entering first person. Visibility
 changes affect draw selection, not asset identity or resource recreation. Body
 visibility and optional first-person meshes remain app-authored policies.
@@ -174,7 +177,9 @@ The receiving rig adopts the outgoing view where reachable, blends back to saved
 state, or resets explicitly. Constraints such as pitch/zoom limits can prevent
 exact adoption; report that result and use a declared blend/cut. Suspend obsolete
 input accumulation during takeover. Control transfer occurs at an app-declared
-boundary independently of blend completion. Camera priority never grants input
+boundary independently of blend completion. `returnView` resolves the receiving rig's target; the caller uses the director's
+selection blend for RestoreSavedView or `cut()` for CutReset. The rig does not
+apply a second hand-off blend beneath the director. Camera priority never grants input
 ownership; cinematic/benchmark playback explicitly suspends manual channels.
 
 ## Native pointer ownership

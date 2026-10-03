@@ -61,6 +61,9 @@ public:
   const playground::rendering::ResolvedGraphicsState &graphicsState() const;
   void requestGraphics(playground::rendering::GraphicsSettings,
                        bool persist = false);
+  playground::input::ControlsState controlsState() const;
+  void requestControls(playground::input::ControlsSettings,
+                       bool persist = false);
   void requestSettings(bool visible = true);
   playground::rendering::RenderRuntimeSnapshot renderRuntimeState() const;
   playground::rendering::RenderTelemetrySnapshot renderTelemetry() const;

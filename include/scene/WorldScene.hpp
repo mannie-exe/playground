@@ -13,7 +13,12 @@ struct WorldCamera {
   world::WorldPose pose;
   CameraProps lens;
   double focusDistance{1};
+  std::uint64_t epoch{};
   bool operator==(const WorldCamera &) const = default;
+  void validate(const world::SpatialLimits & = {}) const;
+  static WorldCamera fromLocal(CameraProps, world::RenderOrigin,
+                               std::uint64_t epoch,
+                               const world::SpatialLimits & = {});
   CameraProps localCamera(world::RenderOrigin,
                           const world::SpatialLimits &) const;
   CameraView view(world::RenderOrigin, const world::SpatialLimits &,

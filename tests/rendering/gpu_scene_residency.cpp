@@ -87,7 +87,8 @@ int main() {
             world::SpawnEntity{entity,
                                {{{space, {offset, 0, 2}}, {}}, {space}}}};
         state.apply(seed, state.snapshot().version(), 0);
-        scene::WorldCamera camera{.pose = {{space, {offset, 0, 0}}, {}}};
+        scene::WorldCamera camera{.pose = {{space, {offset, 0, 0}}, {}},
+                                  .epoch = state.snapshot().epoch()};
         for (const double rebase : {0., 1.}) {
           const auto extracted = projection.extract(
               state.snapshot(), camera, {{space, {offset + rebase, 0, 0}}, 1});
@@ -128,8 +129,10 @@ int main() {
       const auto farMesh = scene::makeMesh(mesh->data());
       scene::SceneProjection projection(
           {{near, {mesh, {}, {}}}, {far, {farMesh, {}, {}}}}, ledger);
-      const scene::WorldCamera nearCamera{.pose = {{space, {}}, {}}},
-          farCamera{.pose = {{space, {1e6, 0, 0}}, {}}};
+      const scene::WorldCamera nearCamera{.pose = {{space, {}}, {}},
+                                          .epoch = state.snapshot().epoch()},
+          farCamera{.pose = {{space, {1e6, 0, 0}}, {}},
+                    .epoch = state.snapshot().epoch()};
       const std::array views{projection.extract(state.snapshot(), nearCamera,
                                                 {nearCamera.pose.position, 1}),
                              projection.extract(state.snapshot(), farCamera,

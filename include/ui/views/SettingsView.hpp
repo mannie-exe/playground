@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 
+#include <input/ControlsSettings.hpp>
 #include <rendering/GraphicsSettings.hpp>
 #include <ui/containers/Box.hpp>
 #include <ui/content/Text.hpp>
@@ -13,6 +14,10 @@ namespace playground::ui {
 struct SettingsViewActions {
   std::function<void(rendering::GraphicsSettings, bool persist)> apply;
   std::function<void()> close, returnToMenu;
+  input::ControlsState controls;
+  std::function<void(rendering::GraphicsSettings, input::ControlsSettings,
+                     bool)>
+      applyShared;
 };
 
 // Replaceable host seam. A fork can supply any retained content and own draft
@@ -20,6 +25,9 @@ struct SettingsViewActions {
 class SettingsPanel : public Box {
 public:
   using Box::Box;
+
+  virtual void setControls(input::ControlsState) {}
+
   virtual void setRuntime(const rendering::ResolvedGraphicsState &,
                           const rendering::RenderRuntimeSnapshot &) = 0;
   virtual void setResult(rendering::GraphicsSettings, std::string message) = 0;
@@ -33,9 +41,10 @@ class SettingsView : public SettingsPanel {
   FontHandle _font;
   SettingsViewActions _actions;
   rendering::GraphicsSettings _draft, _applied;
+  input::ControlsSettings _controlsDraft, _controlsApplied;
   std::optional<rendering::ResourceSnapshot> _usage;
   std::vector<Connection> _connections;
-  Text *_status{}, *_meters{};
+  Text *_status{}, *_meters{}, *_controlRestrictions{};
   Form _form;
 
   struct EditorEntry {
@@ -50,6 +59,7 @@ class SettingsView : public SettingsPanel {
   Tabs *_tabs{};
   Meter *_cpuMeter{}, *_gpuMeter{};
   std::vector<std::function<void()>> _refresh;
+  std::vector<std::pair<Node *, unsigned>> _controlFields;
   std::unique_ptr<Text> text(std::string value,
                              TextRole role = TextRole::Label);
   void build();
@@ -65,6 +75,7 @@ protected:
 public:
   SettingsView(AssetRegistry &, FontHandle, rendering::GraphicsSettings,
                SettingsViewActions);
+  void setControls(input::ControlsState) override;
   void setRuntime(const rendering::ResolvedGraphicsState &,
                   const rendering::RenderRuntimeSnapshot &) override;
   void setResult(rendering::GraphicsSettings applied,
@@ -72,7 +83,10 @@ public:
 
   const auto &draft() const noexcept { return _draft; }
 
-  bool dirty() const { return _draft != _applied || _form.dirty(); }
+  bool dirty() const {
+    return _draft != _applied || _controlsDraft != _controlsApplied ||
+           _form.dirty();
+  }
 };
 
 std::unique_ptr<SettingsView> makeSettingsView(AssetRegistry &, FontHandle,

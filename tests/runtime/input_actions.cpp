@@ -225,5 +225,56 @@ int main() {
     ownership.setUIClaims({.capturedPointers = {std::uint64_t{1} << 63}});
     require(ownership.takeTickSnapshot()["click"].pressed,
             "touch capture does not erase another mouse's pending action");
+    InputMap deltas;
+    deltas.addContext({.name = "view"}, {{.action = "look",
+                                          .kind = ActionKind::Delta,
+                                          .control = ControlKind::PointerMotion,
+                                          .contribution = {1, 1}},
+                                         {.action = "zoom",
+                                          .kind = ActionKind::Delta,
+                                          .control = ControlKind::Wheel,
+                                          .contribution = {1, 1},
+                                          .cadence = DeltaCadence::Tick}});
+    auto delta = [&](ControlKind kind, playground::math::Vec2f value,
+                     bool blocked = false) {
+      routeInputEvent(deltas, {{kind, 0, 5}, 0, false, value}, false,
+                      [=] { return blocked; });
+    };
+    delta(ControlKind::PointerMotion, {10, -3});
+    delta(ControlKind::PointerMotion, {4, 2});
+    delta(ControlKind::Wheel, {0, .25f});
+    require(deltas.takeTickSnapshot()["look"].value ==
+                playground::math::Vec2f{},
+            "tick cannot consume frame-owned displacement");
+    require(deltas.takeFrameSnapshot()["look"].value ==
+                playground::math::Vec2f{14, -1},
+            "pointer deltas accumulate without normalization");
+    require(deltas.takeFrameSnapshot()["look"].value ==
+                playground::math::Vec2f{},
+            "frame delta consumes once");
+    delta(ControlKind::Wheel, {0, .5f});
+    deltas.takeFrameSnapshot();
+    deltas.takeFrameSnapshot();
+    require(deltas.takeTickSnapshot()["zoom"].value.y == .5f &&
+                deltas.takeTickSnapshot()["zoom"].value.y == 0,
+            "zero-tick frames retain wheel while catch-up consumes once");
+    delta(ControlKind::PointerMotion, {1, 2}, true);
+    require(deltas.takeFrameSnapshot()["look"].value ==
+                playground::math::Vec2f{},
+            "UI-consumed motion never leaks to viewport");
+    delta(ControlKind::PointerMotion, {3, 4});
+    deltas.setUIClaims({.pointer = true});
+    require(deltas.takeFrameSnapshot()["look"].value ==
+                playground::math::Vec2f{},
+            "claims cancel pending displacement");
+    deltas.setUIClaims({});
+    delta(ControlKind::Wheel, {0, 5});
+    deltas.cancelDevice(ControlKind::Wheel, 5);
+    require(deltas.takeTickSnapshot()["zoom"].value.y == 0,
+            "device removal cancels unconsumed delta");
+    delta(ControlKind::Wheel, {0, 5});
+    deltas.cancelAll();
+    require(deltas.takeTickSnapshot()["zoom"].value.y == 0,
+            "focus cancellation clears deltas");
   });
 }

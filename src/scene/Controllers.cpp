@@ -1,193 +1,67 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <iterator>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
-#include <utility>
 
 #include <scene/Controllers.hpp>
 
 namespace playground::scene {
-MovementController::MovementController(MovementProps props) { setProps(props); }
-
-void MovementController::setProps(MovementProps props) {
-  if (!std::isfinite(props.unitsPerSecond) || props.unitsPerSecond < 0)
-    throw std::invalid_argument(
-        "Movement speed must be finite and nonnegative");
-  _props = props;
-}
-
-math::Vec3f MovementController::advance(math::Vec3f position,
-                                        MovementIntent intent,
-                                        double seconds) const {
-  if (!math::isFinite(position) || !math::isFinite(intent.direction) ||
-      !std::isfinite(seconds) || seconds < 0)
-    throw std::invalid_argument("Invalid movement input");
-  auto direction = intent.direction;
-  const double length = std::hypot(static_cast<double>(direction.x),
-                                   static_cast<double>(direction.y),
-                                   static_cast<double>(direction.z));
-  if (length > 1)
-    direction = direction * static_cast<float>(1 / length);
-  auto result = position +
-                direction * static_cast<float>(_props.unitsPerSecond * seconds);
-  if (!math::isFinite(result))
-    throw std::overflow_error("Movement exceeds coordinate range");
-  return result;
-}
-
-OrbitController::OrbitController(OrbitProps props) { setProps(props); }
-
-void OrbitController::setProps(OrbitProps props) {
-  if (!math::isFinite(props.target) || !std::isfinite(props.yaw) ||
-      !std::isfinite(props.pitch) || !std::isfinite(props.distance) ||
-      !std::isfinite(props.minimumDistance) ||
-      !std::isfinite(props.maximumDistance) ||
-      !std::isfinite(props.maximumPitch) || props.minimumDistance <= 0 ||
-      props.maximumDistance < props.minimumDistance ||
-      props.distance < props.minimumDistance ||
-      props.distance > props.maximumDistance || props.maximumPitch <= 0 ||
-      props.maximumPitch >= std::numbers::pi_v<float> / 2 ||
-      std::abs(props.pitch) > props.maximumPitch)
-    throw std::invalid_argument("Invalid orbit camera props");
-  props.yaw = std::remainder(props.yaw, 2 * std::numbers::pi_v<float>);
-  _props = props;
-}
-
-void OrbitController::update(OrbitIntent intent) {
-  if (!std::isfinite(intent.radians.x) || !std::isfinite(intent.radians.y) ||
-      !std::isfinite(intent.zoom))
-    throw std::invalid_argument("Invalid orbit intent");
-  auto next = _props;
-  next.yaw = static_cast<float>(std::remainder(
-      static_cast<double>(next.yaw) + intent.radians.x, 2 * std::numbers::pi));
-  next.pitch = static_cast<float>(
-      std::clamp(static_cast<double>(next.pitch) + intent.radians.y,
-                 -static_cast<double>(next.maximumPitch),
-                 static_cast<double>(next.maximumPitch)));
-  next.distance = static_cast<float>(
-      std::clamp(static_cast<double>(next.distance) + intent.zoom,
-                 static_cast<double>(next.minimumDistance),
-                 static_cast<double>(next.maximumDistance)));
-  setProps(next);
-}
-
-CameraProps OrbitController::camera(CameraProps lens) const {
-  const float horizontal = std::cos(_props.pitch) * _props.distance;
-  lens.target = _props.target;
-  lens.eye = lens.target + math::Vec3f{std::sin(_props.yaw) * horizontal,
-                                       std::sin(_props.pitch) * _props.distance,
-                                       -std::cos(_props.yaw) * horizontal};
-  lens.up = {0, 1, 0};
-  lens.view(
-      1); // Validate lens and numerical camera separation before publication.
-  return lens;
-}
-
-FreeCameraController::FreeCameraController(FreeCameraProps props) {
-  setProps(props);
-}
-
-void FreeCameraController::setProps(FreeCameraProps props) {
-  if (!math::isFinite(props.position) || !std::isfinite(props.yaw) ||
-      !std::isfinite(props.pitch) || !std::isfinite(props.unitsPerSecond) ||
-      props.unitsPerSecond < 0 || !std::isfinite(props.maximumPitch) ||
-      props.maximumPitch <= 0 ||
-      props.maximumPitch >= std::numbers::pi_v<float> / 2 ||
-      std::abs(props.pitch) > props.maximumPitch)
-    throw std::invalid_argument("Invalid free camera props");
-  props.yaw = std::remainder(props.yaw, 2 * std::numbers::pi_v<float>);
-  _props = props;
-}
-
-void FreeCameraController::advance(FreeCameraIntent intent, double seconds) {
-  if (!math::isFinite(intent.movement) || !std::isfinite(intent.radians.x) ||
-      !std::isfinite(intent.radians.y) || !std::isfinite(seconds) ||
-      seconds < 0)
-    throw std::invalid_argument("Invalid free camera intent");
-  auto next = _props;
-  next.yaw = static_cast<float>(std::remainder(
-      static_cast<double>(next.yaw) + intent.radians.x, 2 * std::numbers::pi));
-  next.pitch = static_cast<float>(
-      std::clamp(static_cast<double>(next.pitch) + intent.radians.y,
-                 -static_cast<double>(next.maximumPitch),
-                 static_cast<double>(next.maximumPitch)));
-  const math::Vec3f forward{std::sin(next.yaw) * std::cos(next.pitch),
-                            std::sin(next.pitch),
-                            std::cos(next.yaw) * std::cos(next.pitch)};
-  const math::Vec3f right{std::cos(next.yaw), 0, -std::sin(next.yaw)};
-  next.position = MovementController{{next.unitsPerSecond}}.advance(
-      next.position,
-      {right * intent.movement.x + math::Vec3f{0, 1, 0} * intent.movement.y +
-       forward * intent.movement.z},
-      seconds);
-  setProps(next);
-}
-
-CameraProps FreeCameraController::camera(CameraProps lens) const {
-  lens.eye = _props.position;
-  lens.target =
-      lens.eye + math::Vec3f{std::sin(_props.yaw) * std::cos(_props.pitch),
-                             std::sin(_props.pitch),
-                             std::cos(_props.yaw) * std::cos(_props.pitch)};
-  lens.up = {0, 1, 0};
-  lens.view(1);
-  return lens;
-}
-
 namespace {
-void validateCamera(const CameraProps &camera) {
-  if (!std::isfinite(camera.verticalFov) || camera.verticalFov <= 0 ||
-      camera.verticalFov >= std::numbers::pi_v<float>)
-    throw std::invalid_argument("Invalid camera FOV");
-  const auto view = camera.view(1);
-  if (!math::isFinite(view.view) || !math::isFinite(view.projection))
-    throw std::invalid_argument("Nonfinite camera matrices");
+void elapsed(double seconds) {
+  if (!std::isfinite(seconds) || seconds < 0)
+    throw std::invalid_argument("Invalid camera elapsed time");
 }
 
-math::Quaternion orientation(const CameraProps &camera) {
-  return math::lookRotation(camera.target - camera.eye, camera.up);
+double angle(double value) {
+  return std::remainder(value, 2 * std::numbers::pi);
 }
 
-bool sameProjection(const CameraProps &a, const CameraProps &b) {
-  return a.orthographicHeight.has_value() == b.orthographicHeight.has_value();
+CameraProps lensOnly(CameraProps camera) {
+  camera.eye = {};
+  camera.target = {0, 0, 1};
+  camera.up = {0, 1, 0};
+  camera.view(1);
+  return camera;
 }
 
-CameraProps blend(const CameraProps &a, const CameraProps &b, double alpha) {
+world::WorldPose interpolate(world::WorldPose a, world::WorldPose b, double t) {
+  if (a.position.space != b.position.space)
+    throw std::invalid_argument("Cannot interpolate different spaces");
+  const auto x = a.position.meters, y = b.position.meters;
+  return {{a.position.space,
+           {std::lerp(x.x, y.x, t), std::lerp(x.y, y.y, t),
+            std::lerp(x.z, y.z, t)}},
+          math::slerp(a.orientation, b.orientation, t)};
+}
+
+bool compatible(const WorldCamera &a, const WorldCamera &b) {
+  return a.pose.position.space == b.pose.position.space && a.epoch == b.epoch &&
+         a.lens.orthographicHeight.has_value() ==
+             b.lens.orthographicHeight.has_value();
+}
+
+WorldCamera blend(const WorldCamera &a, const WorldCamera &b, double alpha,
+                  const world::SpatialLimits &limits) {
   if (alpha >= 1)
     return b;
-  if (alpha <= 0 || !sameProjection(a, b))
+  if (alpha <= 0 || !compatible(a, b))
     return a;
-  const double t = alpha * alpha * (3 - 2 * alpha);
-  auto mix = [t](float x, float y) {
-    return static_cast<float>(
-        std::lerp(static_cast<double>(x), static_cast<double>(y), t));
+  const auto t = alpha * alpha * (3 - 2 * alpha);
+  WorldCamera result = b;
+  result.pose = interpolate(a.pose, b.pose, t);
+  result.focusDistance = std::lerp(a.focusDistance, b.focusDistance, t);
+  const auto mix = [t](float x, float y) {
+    return float(std::lerp(double(x), double(y), t));
   };
-  CameraProps result = a;
-  result.eye = {mix(a.eye.x, b.eye.x), mix(a.eye.y, b.eye.y),
-                mix(a.eye.z, b.eye.z)};
-  const auto rotation =
-      math::rotation(math::slerp(orientation(a), orientation(b), t));
-  const auto forward = math::transformDirection(rotation, {0, 0, 1});
-  auto distance = [](const CameraProps &c) {
-    return std::hypot(static_cast<double>(c.target.x) - c.eye.x,
-                      static_cast<double>(c.target.y) - c.eye.y,
-                      static_cast<double>(c.target.z) - c.eye.z);
-  };
-  const double focus = std::lerp(distance(a), distance(b), t);
-  result.target = {static_cast<float>(result.eye.x + forward.x * focus),
-                   static_cast<float>(result.eye.y + forward.y * focus),
-                   static_cast<float>(result.eye.z + forward.z * focus)};
-  result.up = math::transformDirection(rotation, {0, 1, 0});
-  result.verticalFov = mix(a.verticalFov, b.verticalFov);
-  result.nearPlane = mix(a.nearPlane, b.nearPlane);
-  result.farPlane = mix(a.farPlane, b.farPlane);
-  if (a.orthographicHeight)
-    result.orthographicHeight =
-        mix(*a.orthographicHeight, *b.orthographicHeight);
-  validateCamera(result);
+  result.lens.verticalFov = mix(a.lens.verticalFov, b.lens.verticalFov);
+  result.lens.nearPlane = mix(a.lens.nearPlane, b.lens.nearPlane);
+  result.lens.farPlane = mix(a.lens.farPlane, b.lens.farPlane);
+  if (a.lens.orthographicHeight)
+    result.lens.orthographicHeight =
+        mix(*a.lens.orthographicHeight, *b.lens.orthographicHeight);
+  result.validate(limits);
   return result;
 }
 
@@ -200,27 +74,199 @@ CameraId nextCameraId() {
   } while (!next.compare_exchange_weak(id, id + 1, std::memory_order_relaxed));
   return id;
 }
+
+PoseSample checked(world::EntitySample value,
+                   const world::SpatialLimits &limits) {
+  world::validate(value.entity.id);
+  world::validate(value.pose, limits);
+  world::validate(value.velocity);
+  if (!value.entity.epoch || !value.discontinuity ||
+      value.entity.id.world != value.pose.position.space.world ||
+      value.velocity.space != value.pose.position.space)
+    throw std::invalid_argument("Invalid pose history sample");
+  value.pose.orientation = math::normalizedRotation(value.pose.orientation);
+  return {value.entity, value.pose, value.tick, value.discontinuity};
+}
 } // namespace
 
-CameraDirector::CameraDirector(CameraProps initial, double transitionSeconds)
-    : _camera(initial), _from(initial), _to(initial),
-      _duration(transitionSeconds) {
-  validateCamera(initial);
-  if (!std::isfinite(_duration) || _duration < 0)
-    throw std::invalid_argument("Invalid camera transition duration");
+MovementController::MovementController(MovementProps props) { setProps(props); }
+
+void MovementController::setProps(MovementProps props) {
+  if (!std::isfinite(props.unitsPerSecond) || props.unitsPerSecond < 0)
+    throw std::invalid_argument(
+        "Movement speed must be finite and nonnegative");
+  _props = props;
 }
 
-void CameraDirector::transition(CameraProps target) {
+world::WorldPosition
+MovementController::advance(world::WorldPosition position,
+                            MovementIntent intent, double seconds,
+                            const world::SpatialLimits &limits) const {
+  elapsed(seconds);
+  limits.validate(position);
+  const auto length = world::length(intent.direction);
+  if (!world::isFinite(intent.direction) || !std::isfinite(length))
+    throw std::invalid_argument("Invalid movement direction");
+  if (length > 1)
+    intent.direction = intent.direction * (1 / length);
+  return world::translated(
+      position, intent.direction * (_props.unitsPerSecond * seconds), limits);
+}
+
+LookController::LookController(LookState state, LookProps props)
+    : _props{props} {
+  if (!std::isfinite(props.maximumPitch) || props.maximumPitch <= 0 ||
+      props.maximumPitch >= std::numbers::pi / 2)
+    throw std::invalid_argument("Invalid look pitch limit");
+  setState(state);
+}
+
+void LookController::setState(LookState state) {
+  if (!std::isfinite(state.yaw) || !std::isfinite(state.pitch) ||
+      std::abs(state.pitch) > _props.maximumPitch)
+    throw std::invalid_argument("Invalid look state");
+  state.yaw = angle(state.yaw);
+  _state = state;
+}
+
+void LookController::advance(LookIntent intent, double seconds) {
+  elapsed(seconds);
+  if (!math::isFinite(intent.deltaRadians) ||
+      !math::isFinite(intent.radiansPerSecond))
+    throw std::invalid_argument("Invalid look intent");
+  const auto yaw = _state.yaw + intent.deltaRadians.x +
+                   double(intent.radiansPerSecond.x) * seconds;
+  const auto pitch = _state.pitch + intent.deltaRadians.y +
+                     double(intent.radiansPerSecond.y) * seconds;
+  if (!std::isfinite(yaw) || !std::isfinite(pitch))
+    throw std::overflow_error("Look input exceeds range");
+  setState({angle(yaw),
+            std::clamp(pitch, -_props.maximumPitch, _props.maximumPitch)});
+}
+
+math::Quaternion LookController::orientation() const {
+  return math::lookRotation(
+      {float(std::sin(_state.yaw) * std::cos(_state.pitch)),
+       float(std::sin(_state.pitch)),
+       float(std::cos(_state.yaw) * std::cos(_state.pitch))});
+}
+
+OrbitController::OrbitController(OrbitProps props) { setProps(props); }
+
+void OrbitController::setProps(OrbitProps props) {
+  props.limits.validate(props.target);
+  LookController{{props.yaw, props.pitch}, {props.maximumPitch}};
+  if (!props.epoch || !std::isfinite(props.distance) ||
+      !std::isfinite(props.minimumDistance) ||
+      !std::isfinite(props.maximumDistance) || props.minimumDistance <= 0 ||
+      props.maximumDistance < props.minimumDistance ||
+      props.distance < props.minimumDistance ||
+      props.distance > props.maximumDistance)
+    throw std::invalid_argument("Invalid orbit camera distance/epoch");
+  props.yaw = angle(props.yaw);
+  _props = props;
+}
+
+void OrbitController::update(OrbitIntent intent) {
+  if (!std::isfinite(intent.zoom))
+    throw std::invalid_argument("Invalid orbit zoom");
+  auto next = _props;
+  LookController look{{next.yaw, next.pitch}, {next.maximumPitch}};
+  look.advance({intent.radians, {}}, 0);
+  next.yaw = look.state().yaw;
+  next.pitch = look.state().pitch;
+  next.distance = std::clamp(next.distance + intent.zoom, next.minimumDistance,
+                             next.maximumDistance);
+  setProps(next);
+}
+
+WorldCamera OrbitController::camera(CameraProps lens) const {
+  const auto horizontal = std::cos(_props.pitch) * _props.distance;
+  const world::Vec3d offset{std::sin(_props.yaw) * horizontal,
+                            std::sin(_props.pitch) * _props.distance,
+                            -std::cos(_props.yaw) * horizontal};
+  const auto orientation = LookController{
+      {-_props.yaw, -_props.pitch},
+      {_props.maximumPitch}}.orientation();
+  WorldCamera result{
+      {world::translated(_props.target, offset, _props.limits), orientation},
+      lensOnly(lens),
+      _props.distance,
+      _props.epoch};
+  result.validate(_props.limits);
+  return result;
+}
+
+FreeCameraController::FreeCameraController(FreeCameraProps props) {
+  setProps(props);
+}
+
+void FreeCameraController::setProps(FreeCameraProps props) {
+  props.limits.validate(props.position);
+  LookController{{props.yaw, props.pitch}, {props.maximumPitch}};
+  if (!props.epoch || !std::isfinite(props.unitsPerSecond) ||
+      props.unitsPerSecond < 0)
+    throw std::invalid_argument("Invalid free camera speed/epoch");
+  props.yaw = angle(props.yaw);
+  _props = props;
+}
+
+void FreeCameraController::advance(FreeCameraIntent intent, double seconds) {
+  elapsed(seconds);
+  if (!world::isFinite(intent.movement))
+    throw std::invalid_argument("Invalid free camera movement");
+  auto next = _props;
+  LookController look{{next.yaw, next.pitch}, {next.maximumPitch}};
+  look.advance({intent.radians, {}}, seconds);
+  next.yaw = look.state().yaw;
+  next.pitch = look.state().pitch;
+  const auto forward = world::rotate(look.orientation(), {0, 0, 1});
+  const world::Vec3d right{std::cos(next.yaw), 0, -std::sin(next.yaw)};
+  next.position = MovementController{{next.unitsPerSecond}}.advance(
+      next.position,
+      {right * intent.movement.x + world::Vec3d{0, 1, 0} * intent.movement.y +
+       forward * intent.movement.z},
+      seconds, next.limits);
+  setProps(next);
+}
+
+WorldCamera FreeCameraController::camera(CameraProps lens) const {
+  WorldCamera result{
+      {_props.position,
+       LookController{{_props.yaw, _props.pitch}, {_props.maximumPitch}}
+           .orientation()},
+      lensOnly(lens),
+      1,
+      _props.epoch};
+  result.validate(_props.limits);
+  return result;
+}
+
+CameraDirector::CameraDirector(WorldCamera initial, double seconds,
+                               world::SpatialLimits limits)
+    : _camera{initial}, _from{initial}, _to{initial}, _limits{limits} {
+  initial.validate(_limits);
+  setTransitionProps({seconds});
+}
+
+void CameraDirector::setTransitionProps(CameraTransitionProps props) {
+  if (!std::isfinite(props.seconds) || props.seconds < 0)
+    throw std::invalid_argument("Invalid camera transition duration");
+  _props = props;
+}
+
+void CameraDirector::transition(WorldCamera target) {
   _from = _camera;
   _to = target;
   _elapsed = 0;
-  _transitioning = _duration > 0 && sameProjection(_from, _to);
+  _duration = _props.reducedMotion ? 0 : _props.seconds;
+  _transitioning = _duration > 0 && compatible(_from, _to);
   if (!_transitioning)
     _camera = target;
 }
 
-void CameraDirector::resolve(bool refreshActive) {
-  const Entry *winner = nullptr;
+void CameraDirector::resolve(bool refresh) {
+  const Entry *winner{};
   for (const auto &entry : _sources) {
     if (!entry.source.enabled)
       continue;
@@ -231,20 +277,34 @@ void CameraDirector::resolve(bool refreshActive) {
       winner = &entry;
   }
   const auto next = winner ? std::optional{winner->id} : std::nullopt;
-  if (next == _active && !refreshActive)
-    return;
-  _active = next;
-  if (winner)
-    transition(winner->source.camera);
-  else if (_fallback)
-    transition(*_fallback);
-  else
+  const auto target = winner ? std::optional{winner->source.camera} : _fallback;
+  if (next != _active) {
+    _active = next;
+    if (target)
+      transition(*target);
+    else {
+      _to = _camera;
+      _transitioning = false;
+    }
+  } else if (refresh && target) {
+    if (!compatible(_camera, *target)) {
+      _camera = _to = *target;
+      _transitioning = false;
+    } else {
+      _to = *target;
+      _camera = _transitioning
+                    ? blend(_from, _to, _elapsed / _duration, _limits)
+                    : _to;
+    }
+  } else if (!target) {
+    _to = _camera;
     _transitioning = false;
+  }
 }
 
 CameraId CameraDirector::add(CameraSource source) {
-  validateCamera(source.camera);
-  const auto id = nextCameraId();
+  source.camera.validate(_limits);
+  auto id = nextCameraId();
   _sources.push_back({id, source});
   resolve();
   return id;
@@ -252,111 +312,117 @@ CameraId CameraDirector::add(CameraSource source) {
 
 void CameraDirector::update(CameraId id, CameraSource source) {
   const auto entry = std::find_if(_sources.begin(), _sources.end(),
-                                  [id](const Entry &e) { return e.id == id; });
+                                  [&](const auto &e) { return e.id == id; });
   if (entry == _sources.end())
     throw std::invalid_argument("Stale or foreign camera ID");
-  validateCamera(source.camera);
+  source.camera.validate(_limits);
   entry->source = source;
   resolve(_active == id);
 }
 
 void CameraDirector::remove(CameraId id) {
   const auto entry = std::find_if(_sources.begin(), _sources.end(),
-                                  [id](const Entry &e) { return e.id == id; });
+                                  [&](const auto &e) { return e.id == id; });
   if (entry == _sources.end())
     throw std::invalid_argument("Stale or foreign camera ID");
   _sources.erase(entry);
   resolve();
 }
 
-void CameraDirector::setFallback(std::optional<CameraProps> camera) {
+void CameraDirector::setFallback(std::optional<WorldCamera> camera) {
   if (camera)
-    validateCamera(*camera);
+    camera->validate(_limits);
+  if (_fallback == camera)
+    return;
   _fallback = camera;
-  if (!_active)
-    resolve(true);
+  if (!_active) {
+    if (camera)
+      transition(*camera);
+    else {
+      _to = _camera;
+      _transitioning = false;
+    }
+  }
+}
+
+void CameraDirector::restartTransition() { transition(_to); }
+
+void CameraDirector::cut() {
+  _camera = _to;
+  _transitioning = false;
+  _elapsed = _duration;
 }
 
 void CameraDirector::advance(double seconds) {
-  if (!std::isfinite(seconds) || seconds < 0)
-    throw std::invalid_argument("Invalid camera elapsed time");
+  elapsed(seconds);
   if (!_transitioning)
     return;
-  const double elapsed = _elapsed + std::min(seconds, _duration - _elapsed);
-  const auto camera = blend(_from, _to, elapsed / _duration);
-  _camera = camera;
-  _elapsed = elapsed;
-  _transitioning = elapsed < _duration;
+  _elapsed += std::min(seconds, _duration - _elapsed);
+  _camera = blend(_from, _to, _elapsed / _duration, _limits);
+  _transitioning = _elapsed < _duration;
 }
 
-CameraPath::CameraPath(double durationSeconds, std::vector<CameraPathKey> keys)
-    : _duration(durationSeconds), _keys(std::move(keys)) {
-  if (!std::isfinite(_duration) || _duration <= 0 || _keys.size() < 2 ||
-      _keys.front().seconds != 0)
+CameraPath::CameraPath(double duration, std::vector<CameraPathKey> keys,
+                       world::SpatialLimits limits)
+    : _duration{duration}, _keys{std::move(keys)}, _limits{limits} {
+  if (!std::isfinite(duration) || duration <= 0 || _keys.size() < 2 ||
+      _keys.size() > 65536 || _keys.front().seconds != 0)
     throw std::invalid_argument("Invalid camera path duration or keys");
   double previous = -1;
+  const auto &first = _keys.front().camera;
   for (const auto &key : _keys) {
     if (!std::isfinite(key.seconds) || key.seconds <= previous ||
-        key.seconds >= _duration)
-      throw std::invalid_argument("Camera path keys must increase within loop");
-    validateCamera(key.camera);
+        key.seconds >= duration || key.camera.epoch != first.epoch ||
+        key.camera.pose.position.space != first.pose.position.space)
+      throw std::invalid_argument(
+          "Camera path crosses time, epoch or space bounds");
+    key.camera.validate(_limits);
     previous = key.seconds;
   }
 }
 
-CameraProps CameraPath::sample(double elapsedSeconds) const {
-  if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0)
-    throw std::invalid_argument("Invalid camera path elapsed time");
-  const double time = std::fmod(elapsedSeconds, _duration);
-  const auto next =
-      std::upper_bound(_keys.begin(), _keys.end(), time,
-                       [](double seconds, const CameraPathKey &key) {
-                         return seconds < key.seconds;
-                       });
-  const auto &from = *std::prev(next);
-  const auto &to = next == _keys.end() ? _keys.front() : *next;
-  const double end = next == _keys.end() ? _duration : to.seconds;
+WorldCamera CameraPath::sample(double seconds) const {
+  elapsed(seconds);
+  const auto time = std::fmod(seconds, _duration);
+  const auto next = std::upper_bound(
+      _keys.begin(), _keys.end(), time,
+      [](double t, const auto &key) { return t < key.seconds; });
+  const auto &from = *std::prev(next),
+             &to = next == _keys.end() ? _keys.front() : *next;
+  const auto end = next == _keys.end() ? _duration : to.seconds;
   return blend(from.camera, to.camera,
-               (time - from.seconds) / (end - from.seconds));
+               (time - from.seconds) / (end - from.seconds), _limits);
 }
 
-namespace {
-math::Transform3D checked(math::Transform3D pose) {
-  pose.matrix();
-  pose.orientation = math::normalizedRotation(pose.orientation);
-  return pose;
+PoseHistory::PoseHistory(world::EntitySample initial,
+                         world::SpatialLimits limits)
+    : _limits{limits} {
+  teleport(initial);
 }
-} // namespace
 
-PoseHistory::PoseHistory(math::Transform3D initial) { teleport(initial); }
-
-void PoseHistory::publish(math::Transform3D pose) {
-  pose = checked(pose);
+void PoseHistory::publish(world::EntitySample value) {
+  const auto pose = checked(value, _limits);
+  if (pose.entity != _current.entity ||
+      pose.pose.position.space != _current.pose.position.space ||
+      pose.discontinuity != _current.discontinuity) {
+    _previous = _current = pose;
+    return;
+  }
+  if (pose.tick <= _current.tick)
+    throw std::invalid_argument("Pose history requires a new simulation tick");
   _previous = _current;
   _current = pose;
 }
 
-void PoseHistory::teleport(math::Transform3D pose) {
-  pose = checked(pose);
-  _previous = _current = pose;
+void PoseHistory::teleport(world::EntitySample value) {
+  _previous = _current = checked(value, _limits);
 }
 
-math::Transform3D PoseHistory::sample(double alpha) const {
+PoseSample PoseHistory::sample(double alpha) const {
   if (!std::isfinite(alpha) || alpha < 0 || alpha > 1)
     throw std::invalid_argument("Interpolation alpha must be in [0,1]");
-  const float t = static_cast<float>(alpha);
-  auto mix = [t](math::Vec3f a, math::Vec3f b) {
-    return math::Vec3f{std::lerp(a.x, b.x, t), std::lerp(a.y, b.y, t),
-                       std::lerp(a.z, b.z, t)};
-  };
-  const auto a = _previous.orientation;
-  auto b = _current.orientation;
-  if (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w < 0)
-    b = {-b.x, -b.y, -b.z, -b.w};
-  return {.position = mix(_previous.position, _current.position),
-          .orientation = math::normalizedRotation(
-              {std::lerp(a.x, b.x, t), std::lerp(a.y, b.y, t),
-               std::lerp(a.z, b.z, t), std::lerp(a.w, b.w, t)}),
-          .scale = mix(_previous.scale, _current.scale)};
+  auto result = _current;
+  result.pose = interpolate(_previous.pose, _current.pose, alpha);
+  return result;
 }
 } // namespace playground::scene

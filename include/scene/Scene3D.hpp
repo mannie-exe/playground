@@ -84,6 +84,7 @@ class Scene3D {
   std::uint64_t _revision{};
   mutable std::optional<std::uint64_t> _cachedRevision;
   mutable std::vector<MeshDraw> _cachedDraws;
+  mutable std::vector<ObjectId> _cachedObjects;
   mutable SceneCacheStats _cacheStats;
 
   Entry &entry(ObjectId id);
@@ -112,7 +113,8 @@ public:
   void remove(ObjectId id);
   bool contains(ObjectId id) const noexcept;
   math::Matrix4 worldTransform(ObjectId id) const;
-  std::vector<MeshDraw> snapshot() const;
+  std::vector<MeshDraw>
+  snapshot(std::span<const ObjectId> exclusions = {}) const;
   std::optional<PickResult> pick(Ray3 ray) const;
 
   std::uint64_t revision() const noexcept { return _revision; }

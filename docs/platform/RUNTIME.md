@@ -133,7 +133,10 @@ and keyboard/mouse removal cancel their matching actions.
 and WindowServices lease. It does not introduce a parallel event router. Bind it
 to one viewport, logical player and explicit runtime device assignment. Multiple
 viewports do not share a global active camera/player. SDL device instance IDs are
-runtime handles, not persistent player identities.
+runtime handles, not persistent player identities. `InputDevice` ID zero groups
+local keyboards/mice for a desktop viewport; nonzero IDs select a specific device.
+Gamepads always use explicit instance IDs. `physicalValue(kind, code)` inspects
+the strongest physical value across a grouped keyboard/pointer channel.
 
 | API / state | Contract |
 |---|---|
@@ -167,7 +170,9 @@ apply the winning source's new input once, preserving the current view pose.
 Last-used-device prompts do not change assignments, capture or channel ownership.
 Background controller input remains disabled for local gameplay.
 
-A delta stream has one declared frame or fixed-tick consumer. Untaken deltas
+`Binding::cadence` selects a delta stream’s one frame or fixed-tick consumer.
+`physicalValue(Control)` inspects normalized raw state without consuming a
+snapshot; use it for neutral rearming even while a binding is suppressed. Untaken deltas
 survive zero-tick frames; consumption happens once, not once per catch-up tick.
 Inspection cannot consume input, and frame/event snapshots must not accidentally
 clear a tick-owned delta. Local look can update at presentation cadence and expose
@@ -289,8 +294,8 @@ and advances at meters/second. It provides no gravity/contact solver.
 bounds. Intent contains angular deltas in radians and additive zoom distance;
 callers convert device values or rates to deltas. `camera(lens)` preserves lens
 settings while replacing world placement/orientation. `PoseHistory` linearly
-interpolates same-space position and shortest-sign normalized quaternion orientation
-(nlerp, not constant-angular-speed slerp); visual scale interpolates separately.
+interpolates same-space double position and shortest-arc quaternion orientation
+(slerp). Its presentation-only `PoseSample` excludes authoritative velocity and visual scale.
 Published and teleported poses are validated first. Epoch, space or discontinuity
 changes reset history; an origin-only change does not.
 
@@ -307,21 +312,16 @@ changes reset history; an origin-only change does not.
 | `runtime/DeferredMutations.hpp` | Owner-thread `defer/remove/flush` at application-chosen safe boundaries |
 | `scene/Controllers.hpp` | Kinematic movement, orbit/free cameras, camera director/path and pose history |
 
-For a simulated app, register digital/analog bindings in its constructor, return
-timing props, and advance an owned pose in `fixedUpdate`. For example, inside that
-hook (with owned `movement` and `poses` members):
-
-```cpp
-auto pose = poses.current();
-const auto axis = actions["move"].value;
-pose.position = movement.advance(pose.position, {{axis.x, 0, axis.y}}, step.seconds);
-poses.publish(pose);
-```
-
-Before rendering, obtain `ctx.simulationState()->alpha`, sample the history and
-apply its result to a Scene3D object's transform. Never feed that interpolated
-render pose back into simulation. The focused controller test exercises precisely
-this path with one moving object, without opening a window or adding a demo game.
+For a simulated app, register digital/analog bindings, return timing props and
+publish actual world state in `fixedUpdate`. `LocomotionRequest` expresses desired
+movement; the selected motor returns the realized `EntitySample`. Publish that
+result through `World::apply`, then pass the snapshot sample to `PoseHistory`.
+Before rendering, sample history with `ctx.simulationState()->alpha` and pass the
+presentation sample to `cameraTarget`/`FollowCameraRig`. The renderer receives a
+world extraction with its captured origin. Never feed the interpolated camera or
+presentation pose back into authoritative simulation. `world_workflow` exercises
+this sequence without a window; the scene camera workload exercises native input
+handoff and rendering.
 
 For asynchronous work, capture `auto delivery = ctx.completions()` before starting
 the worker. Post a closure owning its prepared result; it may borrow app state only
@@ -338,7 +338,7 @@ Focused constituent tests cover context consumption, rebinding, cancellation,
 multiple bindings, edge latching, SDL translation, timing limits/pause, stale
 delivery, deferred removal and controller arithmetic. App behavior is additionally
 build-checked; ordinary tests do not open windows or modify desktop settings.
-The focused cases are `input_actions`, `sdl_actions`, `simulation_clock`,
+The focused cases are `input_actions`, `sdl_actions`, `view_controls`, `simulation_clock`,
 `activation_lifetime`, `controllers`, and the rollback cases in `host_transitions`.
 
 Service tests use fake time to verify deadline aggregation, fairness under queue

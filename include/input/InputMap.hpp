@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,8 +14,16 @@
 
 namespace playground::input {
 
-enum class ControlKind { Key, MouseButton, GamepadButton, GamepadAxis };
-enum class ActionKind { Button, Axis, Vector };
+enum class ControlKind {
+  Key,
+  MouseButton,
+  GamepadButton,
+  GamepadAxis,
+  PointerMotion,
+  Wheel
+};
+enum class ActionKind { Button, Axis, Vector, Delta };
+enum class DeltaCadence { Frame, Tick };
 enum class InputStage { BeforeUI, AfterUI };
 
 struct Control {
@@ -28,6 +37,7 @@ struct InputEvent {
   Control control;
   float value{};
   bool repeat{};
+  math::Vec2f displacement{};
 };
 
 // Persistent UI reservation, independent of whether an event performed work.
@@ -48,6 +58,7 @@ struct Binding {
   std::optional<std::uint32_t> device;
   math::Vec2f contribution{1, 0};
   float deadZone{};
+  DeltaCadence cadence{DeltaCadence::Frame};
 };
 
 struct InputContextProps {
@@ -91,9 +102,14 @@ public:
   void rebind(ContextId, std::vector<Binding>);
   bool setUIClaims(InputClaims);
   const InputClaims &uiClaims() const noexcept;
+  float physicalValue(Control) const noexcept;
+  float physicalValue(ControlKind, int code) const noexcept;
   // Call BeforeUI once, then AfterUI with the accumulated consumption result.
   bool route(const InputEvent &, InputStage, bool blocked = false);
   void cancelAll();
+  void cancelActions(std::span<const std::string_view>);
+  void cancelDeviceActions(std::span<const std::string_view>, ControlKind,
+                           std::optional<std::uint32_t>);
   void cancelDevice(ControlKind, std::uint32_t);
   void inheritHeld(const InputMap &);
   InputSnapshot takeFrameSnapshot();

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -20,6 +21,18 @@ void validate(const SceneViewProps &props) {
       !std::isfinite(props.resolutionScale) || props.resolutionScale <= 0 ||
       props.resolutionScale > 4)
     throw std::invalid_argument("Invalid scene view properties");
+  if ((!props.scene && !props.visibility.objects.empty()) ||
+      (!props.worldScene && !props.visibility.entities.empty()))
+    throw std::invalid_argument(
+        "Visibility exclusions require matching scene source");
+  for (auto id : props.visibility.objects)
+    if (!props.scene->contains(id))
+      throw std::invalid_argument("Stale/foreign view object exclusion");
+  for (auto id : props.visibility.entities) {
+    const auto *entity = props.worldScene->world().find(id);
+    if (!entity || entity->destroyed)
+      throw std::invalid_argument("Missing view entity exclusion");
+  }
   camera(props).view(props.preferredSize.width / props.preferredSize.height);
   scene::validate({camera(props).view(1),
                    {1, 1},
@@ -105,12 +118,23 @@ void SceneView::prepareContent(PrepareContext &context) {
     _prepared = true;
     return;
   }
-  const auto snapshot =
-      _props.scene ? _props.scene->snapshot() : std::vector<scene::MeshDraw>{};
+  auto snapshot = _props.scene
+                      ? _props.scene->snapshot(_props.visibility.objects)
+                      : std::vector<scene::MeshDraw>{};
+  if (_props.worldScene && !_props.visibility.entities.empty()) {
+    const auto all = _props.worldScene->draws();
+    snapshot.reserve(all.size());
+    for (std::size_t i = 0; i < all.size(); ++i)
+      if (std::ranges::find(_props.visibility.entities,
+                            _props.worldScene->entities()[i]) ==
+          _props.visibility.entities.end())
+        snapshot.push_back(all[i]);
+  }
   const auto draws = scene::orderedDraws(
       view.camera,
-      _props.worldScene ? _props.worldScene->draws()
-                        : std::span<const scene::MeshDraw>{snapshot},
+      _props.worldScene && _props.visibility.entities.empty()
+          ? _props.worldScene->draws()
+          : std::span<const scene::MeshDraw>{snapshot},
       _props.transparentOrder);
   auto image = context.scenes->render(view, draws);
   _image = rendering::prepareImage(std::move(image), context.images);
@@ -167,7 +191,8 @@ void SceneView::applyPatch(const SceneViewPatch &patch) {
        patch.toneMap.appliedTo(_props.toneMap, defaults.toneMap),
        patch.adaptiveResolution.appliedTo(_props.adaptiveResolution,
                                           defaults.adaptiveResolution),
-       patch.worldScene.appliedTo(_props.worldScene)});
+       patch.worldScene.appliedTo(_props.worldScene),
+       patch.visibility.appliedTo(_props.visibility)});
 }
 
 } // namespace playground::ui

@@ -7,6 +7,12 @@
 
 namespace playground::ui {
 
+struct SceneVisibility {
+  std::vector<scene::ObjectId> objects;
+  std::vector<world::EntityId> entities;
+  bool operator==(const SceneVisibility &) const = default;
+};
+
 struct SceneViewProps {
   std::shared_ptr<const scene::Scene3D> scene;
   scene::CameraProps camera;
@@ -24,6 +30,7 @@ struct SceneViewProps {
   // captured with its origin; camera remains the direct Scene3D source's
   // camera.
   std::shared_ptr<const scene::WorldSceneSnapshot> worldScene;
+  SceneVisibility visibility;
   bool operator==(const SceneViewProps &) const = default;
 };
 
@@ -39,6 +46,7 @@ struct SceneViewPatch {
   Patch<float> exposure;
   Patch<bool> toneMap, adaptiveResolution;
   Patch<std::shared_ptr<const scene::WorldSceneSnapshot>> worldScene;
+  Patch<SceneVisibility> visibility;
 };
 
 class SceneView final : public Node {

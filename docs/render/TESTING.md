@@ -166,3 +166,11 @@ build includes it. Exit codes are 0 for success/help, 2 for usage errors and 1 f
 execution failures, including unavailable Vulkan. MoltenVK logging defaults to
 level 2 on macOS while preserving an explicit environment override. Output files
 belong under ignored build directories.
+
+The `camera` scene-host workload verifies relative capture, Escape unlock,
+Settings/focus cancellation, follow/free takeover, kinematic forward movement,
+perspective zoom and app-exit release. `F` switches scene demos between free and
+follow control; RMB (or gamepad Start) deliberately re-engages the selected view.
+Alt holds free look, Shift requests strafe aiming, and C recenters locomotion.
+Camera obstruction and physical grounding remain unavailable. Material inspection
+keeps orbit/zoom; benchmark playback ignores manual control preferences.

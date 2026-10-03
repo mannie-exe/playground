@@ -592,6 +592,10 @@ MotionStats MotionEngine::stats() const noexcept {
   return result;
 }
 
+MotionPreference MotionEngine::effectivePreference() const noexcept {
+  return _core->preference;
+}
+
 void MotionEngine::setPreference(MotionPreference preference,
                                  bool systemReduced) {
   detail::Traversal traversal{_core->traversing};

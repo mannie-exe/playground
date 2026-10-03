@@ -35,5 +35,17 @@ int main() {
     const auto canceled = map.takeTickSnapshot()["a"];
     require(canceled.canceled && !canceled.pressed && !canceled.held,
             "focus loss cancels latched input");
+    event = {};
+    event.type = SDL_EVENT_MOUSE_WHEEL;
+    event.wheel.y = .25f;
+    event.wheel.direction = SDL_MOUSEWHEEL_FLIPPED;
+    require(playground::sdl::toActionInput(event)->displacement.y == -.25f,
+            "fractional flipped wheel normalized once");
+    event = {};
+    event.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.xrel = 17;
+    event.motion.yrel = -2;
+    require(playground::sdl::toActionInput(event)->displacement.x == 17,
+            "relative pointer is unbounded displacement");
   });
 }
