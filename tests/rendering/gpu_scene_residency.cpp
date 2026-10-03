@@ -1,6 +1,12 @@
+#include <array>
+#include <memory>
+#include <span>
+#include <vector>
+
 #include "GPUSceneRenderer.hpp"
 #include <app/SDLGuard.hpp>
 #include <platform/sdl/GPURenderBackend.hpp>
+#include <scene/WorldScene.hpp>
 #include <support/GPUReadback.hpp>
 using namespace playground;
 using namespace playground::sdl;
@@ -65,6 +71,90 @@ int main() {
     test::require(!renderer.textureResidentBytes() &&
                       !renderer.meshResidentBytes(),
                   "released owners make resources eligible for idle eviction");
+    {
+      const world::WorldId worldId{31};
+      const world::SpaceId space{worldId, 1};
+      const world::EntityId entity{worldId, 1};
+      scene::SceneProjection projection(
+          {{entity, {mesh, {.baseColor = {255, 0, 0, 255}}, {}}}}, ledger);
+      std::vector<std::array<float, 4>> reference;
+      renderer.takeWork();
+      bool warmed{};
+      for (const auto offset : {0., 1e6, -1e6}) {
+        world::World state{worldId, ledger};
+        const std::array<world::WorldMutation, 2> seed{
+            world::CreateSpace{{space, {}}},
+            world::SpawnEntity{entity,
+                               {{{space, {offset, 0, 2}}, {}}, {space}}}};
+        state.apply(seed, state.snapshot().version(), 0);
+        scene::WorldCamera camera{.pose = {{space, {offset, 0, 0}}, {}}};
+        for (const double rebase : {0., 1.}) {
+          const auto extracted = projection.extract(
+              state.snapshot(), camera, {{space, {offset + rebase, 0, 0}}, 1});
+          scene::SceneRenderProps projected{
+              .camera =
+                  camera.view(extracted->origin(), extracted->limits(), 1),
+              .pixelSize = {32, 32},
+              .resourceOwner = extracted->resourceOwner()};
+          const auto image = std::dynamic_pointer_cast<const GPUImage>(
+              renderer.render(projected, extracted->draws()));
+          const auto pixels = test::readPixels(device, *image);
+          test::require(pixels[16 * 32 + 16][0] > .9f,
+                        "world-relative native GPU view shades geometry");
+          if (reference.empty())
+            reference = pixels;
+          test::require(pixels == reference,
+                        "native world images match across large translations "
+                        "and origin rebasing");
+          const auto work = renderer.takeWork();
+          if (warmed)
+            test::require(
+                !work.uploads && !work.evictions && work.meshHits,
+                "world and origin changes reuse native immutable mesh uploads");
+          warmed = true;
+        }
+      }
+    }
+    {
+      const world::WorldId worldId{32};
+      const world::SpaceId space{worldId, 1};
+      const world::EntityId near{worldId, 1}, far{worldId, 2};
+      world::World state{worldId, ledger};
+      const std::array<world::WorldMutation, 3> seed{
+          world::CreateSpace{{space, {}}},
+          world::SpawnEntity{near, {{{space, {0, 0, 2}}, {}}, {space}}},
+          world::SpawnEntity{far, {{{space, {1e6, 0, 2}}, {}}, {space}}}};
+      state.apply(seed, state.snapshot().version(), 0);
+      scene::SceneProjection projection(
+          {{near, {mesh, {}, {}}}, {far, {mesh, {}, {}}}}, ledger);
+      const scene::WorldCamera nearCamera{.pose = {{space, {}}, {}}},
+          farCamera{.pose = {{space, {1e6, 0, 0}}, {}}};
+      const std::array views{projection.extract(state.snapshot(), nearCamera,
+                                                {nearCamera.pose.position, 1}),
+                             projection.extract(state.snapshot(), farCamera,
+                                                {farCamera.pose.position, 1})};
+      std::vector<std::array<float, 4>> reference;
+      for (const auto &extracted : views) {
+        test::require(
+            extracted->draws().size() == 1 &&
+                extracted->omittedForExtent() == 1,
+            "simultaneous distant views each admit their local object");
+        scene::SceneRenderProps projected{
+            .camera = extracted->camera().view(extracted->origin(),
+                                               extracted->limits(), 1),
+            .pixelSize = {32, 32},
+            .resourceOwner = extracted->resourceOwner()};
+        const auto image = std::dynamic_pointer_cast<const GPUImage>(
+            renderer.render(projected, extracted->draws()));
+        const auto pixels = test::readPixels(device, *image);
+        if (reference.empty())
+          reference = pixels;
+        test::require(
+            pixels == reference && pixels[16 * 32 + 16][0] > .9f,
+            "simultaneously retained GPU views do not share a mutable origin");
+      }
+    }
+    renderer.trimUnused();
     const auto snapshot = ledger->snapshot();
     auto budgets = snapshot.budgets;
     budgets.gpuBytes = snapshot.memory[1].bytes + 1;

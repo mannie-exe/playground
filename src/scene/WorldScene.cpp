@@ -115,22 +115,54 @@ SceneProjection::extract(world::WorldSnapshot state, const WorldCamera &camera,
     // Compose the local translation in double precision before origin
     // subtraction.
     const auto &m = visual.draw.model;
-    const auto position = world::translated(
-        pose.position,
-        world::rotate(pose.orientation, {m.at(0, 3), m.at(1, 3), m.at(2, 3)}),
-        space->limits);
-    math::Vec3f local;
+    auto draw = visual.draw;
     try {
-      local = world::renderPosition(position, origin, space->limits);
+      const auto position = world::translated(
+          pose.position,
+          world::rotate(pose.orientation, {m.at(0, 3), m.at(1, 3), m.at(2, 3)}),
+          space->limits);
+      const auto local = world::renderPosition(position, origin, space->limits);
+      auto basis = m;
+      basis.at(0, 3) = basis.at(1, 3) = basis.at(2, 3) = 0;
+      draw.model =
+          math::translation(local) * math::rotation(pose.orientation) * basis;
+      if (!math::isFinite(draw.model))
+        throw std::out_of_range("Visual basis exceeds local matrix range");
+      // The entity's anchor can fit while scaled/offset geometry does not.
+      // Check all affine bounds corners before admitting a float submission.
+      const auto &bounds = draw.mesh->bounds();
+      for (unsigned corner = 0; corner < 8; ++corner) {
+        const math::Vec3f vertex{
+            corner & 1 ? bounds.maximum.x : bounds.minimum.x,
+            corner & 2 ? bounds.maximum.y : bounds.minimum.y,
+            corner & 4 ? bounds.maximum.z : bounds.minimum.z};
+        const world::Vec3d offset{
+            double(m.at(0, 0)) * vertex.x + double(m.at(0, 1)) * vertex.y +
+                double(m.at(0, 2)) * vertex.z + m.at(0, 3),
+            double(m.at(1, 0)) * vertex.x + double(m.at(1, 1)) * vertex.y +
+                double(m.at(1, 2)) * vertex.z + m.at(1, 3),
+            double(m.at(2, 0)) * vertex.x + double(m.at(2, 1)) * vertex.y +
+                double(m.at(2, 2)) * vertex.z + m.at(2, 3)};
+        const auto precise = world::translated(
+            pose.position, world::rotate(pose.orientation, offset),
+            space->limits);
+        world::renderPosition(precise, origin, space->limits);
+        const auto expected = world::relativeTo(precise, origin.position);
+        const auto actual = math::transformPoint(draw.model, vertex);
+        if (!math::isFinite(actual) ||
+            std::abs(double(actual.x) - expected.x) >
+                space->limits.localTolerance ||
+            std::abs(double(actual.y) - expected.y) >
+                space->limits.localTolerance ||
+            std::abs(double(actual.z) - expected.z) >
+                space->limits.localTolerance)
+          throw std::out_of_range(
+              "Visual bounds exceed local precision tolerance");
+      }
     } catch (const std::out_of_range &) {
       ++result->_omitted;
       continue;
     }
-    auto basis = m;
-    basis.at(0, 3) = basis.at(1, 3) = basis.at(2, 3) = 0;
-    auto draw = visual.draw;
-    draw.model =
-        math::translation(local) * math::rotation(pose.orientation) * basis;
     result->_draws.push_back(std::move(draw));
     result->_entities.push_back(entity->id);
   }
