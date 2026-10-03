@@ -67,9 +67,10 @@ ActivationBatch ActivationScheduler::advance(const WorldSnapshot &world,
       world.revision() < _revision || world.tick() < _tick)
     throw std::invalid_argument("Activation time/capacity exceeded");
   ActivationBatch result;
-  result.charge =
-      reserve(_ledger, world, world.entities().size() * sizeof(ActivationStep),
-              "Activation step output");
+  result.charge = reserve(_ledger, world,
+                          sizeof(ActivationBatch) +
+                              world.entities().size() * sizeof(ActivationStep),
+                          "Activation step output");
   result.steps.reserve(world.entities().size());
   auto candidate = _entries;
   std::erase_if(candidate, [&](const auto &pair) {
@@ -142,7 +143,8 @@ ZoneEvents ZoneTracker::update(const WorldSnapshot &world,
   ZoneEvents result;
   result.version = world.version();
   result.charge =
-      reserve(_ledger, world, _maximum * _zones.size() * sizeof(ZoneEvent),
+      reserve(_ledger, world,
+              sizeof(ZoneEvents) + _maximum * _zones.size() * sizeof(ZoneEvent),
               "Zone transition output");
   result.values.reserve(_maximum * _zones.size());
   auto candidate = _members;
@@ -211,8 +213,9 @@ ZoneEvents ZoneTracker::updateBounds(const WorldSnapshot &world) {
     throw std::length_error("Zone observation capacity exceeded");
   auto charge =
       reserve(_ledger, world,
-              world.entities().size() *
-                  (sizeof(ZoneObservation) + _zones.size() * sizeof(ZoneId)),
+              sizeof(std::vector<ZoneObservation>) +
+                  world.entities().size() * (sizeof(ZoneObservation) +
+                                             _zones.size() * sizeof(ZoneId)),
               "Zone bounds observations");
   std::vector<ZoneObservation> observations;
   for (const auto &entity : world.entities()) {

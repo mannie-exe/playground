@@ -41,6 +41,7 @@ struct FrameRecord {
 struct FramePosition {
   FrameId frame;
   Vec3d offset;
+  bool operator==(const FramePosition &) const = default;
 };
 
 enum class FrameVelocityPolicy { PreserveWorld, FollowFrame };

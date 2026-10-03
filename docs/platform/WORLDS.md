@@ -276,6 +276,38 @@ save data. Multi-cell edits/transfers use one transaction/checkpoint revision;
 recovery cannot expose half a move or resurrect a deleted entity from base content.
 Save storage is separate from immutable packs and shared settings.
 
+`world/Store.hpp` provides versioned bounded checkpoint encoding through
+`WorldStore` and a `CheckpointStorage` compare-and-swap boundary. Save requires
+world/frame snapshots from the same committed boundary. `CheckpointMetadata`
+contains the exact content lock and schema-tagged opaque domain records; owners
+retain unloaded cell references and provider state there when they are not present
+in live entity state. Saving only a resident subset without those records is not
+a complete world save. Unknown domain records round-trip without interpretation.
+
+`load` returns a complete `RestoredWorld` candidate with rebound frame/attachment
+identities and a fresh epoch. The owner swaps the bundle after validation; decode,
+migration or admission failure cannot replace its active bundle. Explicit bounded
+schema migrations produce a current-format candidate that is validated again.
+Unsupported schema versions fail without modifying the checkpoint. Encodings are
+little-endian, length-bounded and versioned; runtime pointers/caches are excluded.
+
+`platform::DirectoryCheckpointStore` lives in `playground_storage`, independently
+of SDL, and uses an existing local directory. Per-world file locks serialize
+cooperating writers. A checksummed envelope detects accidental corruption; it is
+not authentication. Publication flushes a temporary file and replaces the current
+checkpoint. POSIX also flushes the parent directory; macOS requests `F_FULLFSYNC`.
+Windows uses `FlushFileBuffers` and replacement with `MOVEFILE_WRITE_THROUGH`.
+An abandoned candidate is ignored on reopen. `CheckpointUncertain` means the new
+checkpoint may be visible but durable acknowledgement failed: re-read and reconcile
+instead of blindly retrying the previous store revision. These guarantees assume
+the local filesystem/device honors its synchronization API; network filesystems
+and hostile concurrent filesystem writers are outside this storage contract.
+
+Native synchronization references: [POSIX/Linux fsync](https://www.man7.org/linux/man-pages/man2/fsync.2.html),
+[Apple fsync](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fsync.2.html),
+[Windows FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)
+and [MoveFileEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+
 ## Future capabilities
 
 Planetary/astronomical coordinate hierarchies, non-Euclidean or seamlessly rendered

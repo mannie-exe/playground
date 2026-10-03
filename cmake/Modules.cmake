@@ -20,8 +20,12 @@ playground_add_module(playground_runtime
     src/input/InputMap.cpp)
 playground_add_module(playground_world
     src/world/Spatial.cpp src/world/World.cpp src/world/Queries.cpp
-    src/world/Frames.cpp src/world/Streaming.cpp src/world/Lifecycle.cpp)
+    src/world/Frames.cpp src/world/Streaming.cpp src/world/Lifecycle.cpp
+    src/world/Store.cpp src/world/Navigation.cpp src/world/NavigationGeometry.cpp
+    src/world/NavigationService.cpp)
 target_link_libraries(playground_world PUBLIC playground_math playground_runtime)
+playground_add_module(playground_storage src/platform/CheckpointStore.cpp)
+target_link_libraries(playground_storage PUBLIC playground_world)
 playground_add_module(playground_rendering
     src/rendering/RendererTypes.cpp
     src/rendering/RenderSettings.cpp
