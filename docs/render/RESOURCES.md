@@ -18,6 +18,11 @@ charges. Shared storage is charged once globally even when several apps or mount
 retain it; per-consumer logical demand is a separate view. Audio render callbacks
 do not call the ledger: control-side admission reserves buffers before playback,
 and acknowledged retirement releases them outside the callback.
+`ResourceOwner` identifies a world, epoch and service independently of device
+domains. Owner snapshots partition physical commitments; sharing a token never
+adds another charge. Idle owner entries retire with their last allocation.
+The `rendering/ResourceLedger.hpp` forwarding aliases preserve renderer source
+compatibility; the implementation belongs to `runtime/ResourceLedger.hpp`.
 Renderer replacement does not clear outstanding
 charges from the previous domain.
 

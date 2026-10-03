@@ -71,7 +71,7 @@ struct QueryHit {
 struct QueryResult {
   // Charge outlives the output storage. Copies are forbidden to avoid uncharged
   // vector copies; move the result or retain its owner.
-  rendering::ResourceLedger::Token charge;
+  runtime::ResourceLedger::Token charge;
   WorldVersion worldVersion;
   std::uint64_t tick{}, indexRevision{};
   QueryStatus status{QueryStatus::Invalid};
@@ -106,7 +106,7 @@ class SpatialSnapshot {
 public:
   SpatialSnapshot(WorldSnapshot, SpatialCoverage, std::uint64_t indexRevision,
                   std::span<const QueryPrimitive>,
-                  std::shared_ptr<rendering::ResourceLedger>,
+                  std::shared_ptr<runtime::ResourceLedger>,
                   SpatialSnapshotProps = {});
   const WorldSnapshot &world() const;
   SpatialCoverage coverage() const;

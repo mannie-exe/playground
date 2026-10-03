@@ -46,8 +46,8 @@ int main() {
         },
         "estimate overflow rejected");
     auto ledger = std::make_shared<ResourceLedger>();
-    auto allowance = ledger->reserve(MemoryClass::CPU,
-                                     ResourceKind::Preparation, 1024, "plan");
+    auto allowance = ledger->reserve(
+        MemoryClass::CPU, ResourceKind::Preparation, 1024, "plan", {7, 3, 2});
     auto payload =
         ledger->splitReservation(allowance, 512, ResourceKind::Asset);
     payload->setState(AllocationState::Owned);
@@ -59,12 +59,21 @@ int main() {
                   "reservation transferred without duplicate commitment");
     test::rejects([&] { ledger->splitReservation(allowance, 513); },
                   "oversized partition rejected atomically");
+    test::require(
+        payload->owner() == runtime::ResourceOwner{7, 3, 2} &&
+            ledger->snapshot().owners.at({7, 3, 2}).memory[0].bytes == 1024 &&
+            ledger->snapshot().owners.at({7, 3, 2}).memory[0].allocations ==
+                2 &&
+            ledger->snapshot().owners.at({7, 3, 2}).states[1] == 512,
+        "partition preserves attribution without double charging");
     allowance.reset();
     test::require(ledger->snapshot().memory[0].bytes == 512,
                   "unused planning allowance released independently");
     payload.reset();
     test::require(ledger->snapshot().memory[0].bytes == 0,
                   "transferred ownership retires");
+    test::require(ledger->snapshot().owners.empty(),
+                  "retired owner records do not accumulate indefinitely");
     QualityController controller;
     const auto domain = acquireResourceDomain();
     settings.automatic.enabled = true;

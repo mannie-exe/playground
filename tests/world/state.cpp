@@ -15,7 +15,7 @@ int main() {
     const WorldId id{17};
     const SpaceId a{id, 1}, b{id, 2};
     const EntityId actor{id, 1}, other{id, 2};
-    auto ledger = std::make_shared<rendering::ResourceLedger>();
+    auto ledger = std::make_shared<runtime::ResourceLedger>();
     World world(id, ledger);
     auto props = [&](SpaceId space, double x) {
       return EntityProps{
@@ -125,7 +125,7 @@ int main() {
     require(small.snapshot().version() == smallBefore.version(),
             "admission failures leave state unchanged");
     {
-      auto accounting = std::make_shared<rendering::ResourceLedger>();
+      auto accounting = std::make_shared<runtime::ResourceLedger>();
       World bounded(id, accounting,
                     {.maxStateBytes = smallBefore.reservedBytes()});
       bounded.apply(seed, bounded.snapshot().version(), 0);
@@ -157,7 +157,7 @@ int main() {
       tightBudgets.cpuBytes =
           accounting->snapshot().memory[0].bytes + finalBytes;
       accounting->setBudgets(tightBudgets);
-      test::rejects<rendering::ResourcePressure>(
+      test::rejects<runtime::ResourcePressure>(
           [&] { bounded.apply(growShrink, bounded.snapshot().version(), 3); },
           "temporary payload copying still obeys the shared memory budget");
       require(bounded.snapshot().tick() == 2 &&
@@ -191,7 +191,7 @@ int main() {
     auto budgets = ledger->snapshot().budgets;
     budgets.cpuBytes = ledger->snapshot().memory[0].bytes;
     ledger->setBudgets(budgets);
-    test::rejects<rendering::ResourcePressure>(
+    test::rejects<runtime::ResourcePressure>(
         [&] { world.apply({}, world.snapshot().version(), 3); },
         "pinned snapshot pressure refuses publication");
     require(world.snapshot().tick() == 2,

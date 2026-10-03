@@ -10,7 +10,7 @@
 namespace playground::world {
 namespace detail {
 struct WorldState {
-  rendering::ResourceLedger::Token charge;
+  runtime::ResourceLedger::Token charge;
   WorldId id;
   std::uint64_t epoch{}, revision{}, tick{};
   std::vector<SpaceDefinition> spaces;
@@ -97,20 +97,22 @@ void validProps(const detail::WorldState &state, const EntityProps &p,
 }
 
 auto candidate(const detail::WorldState &source,
-               std::shared_ptr<rendering::ResourceLedger> ledger,
+               std::shared_ptr<runtime::ResourceLedger> ledger,
                std::size_t bytes, std::size_t spaces, std::size_t entities,
-               const WorldProps &limits) {
+               const WorldProps &limits,
+               std::optional<std::uint64_t> epoch = {}) {
   if (spaces > limits.maxSpaces || entities > limits.maxEntities ||
       bytes > limits.maxStateBytes)
     throw std::length_error("World candidate exceeds state limits");
-  auto charge = ledger->reserve(rendering::MemoryClass::CPU,
-                                rendering::ResourceKind::Asset, bytes,
-                                "World snapshot candidate");
+  auto charge =
+      ledger->reserve(runtime::MemoryClass::CPU, runtime::ResourceKind::World,
+                      bytes, "World snapshot candidate",
+                      {source.id.value, epoch.value_or(source.epoch), 0});
   auto result = std::make_shared<detail::WorldState>();
   result->spaces.reserve(spaces);
   result->entities.reserve(entities);
   result->id = source.id;
-  result->epoch = source.epoch;
+  result->epoch = epoch.value_or(source.epoch);
   result->revision = source.revision;
   result->tick = source.tick;
   result->spaces = source.spaces;
@@ -176,7 +178,7 @@ const EntityRecord &WorldSnapshot::resolve(EntityHandle handle) const {
   return *result;
 }
 
-World::World(WorldId id, std::shared_ptr<rendering::ResourceLedger> ledger,
+World::World(WorldId id, std::shared_ptr<runtime::ResourceLedger> ledger,
              WorldProps props)
     : _props{props}, _ledger{std::move(ledger)} {
   props.validate();
@@ -187,7 +189,7 @@ World::World(WorldId id, std::shared_ptr<rendering::ResourceLedger> ledger,
   empty.id = id;
   empty.epoch = nextEpoch();
   auto state = candidate(empty, _ledger, sizeof(empty), 0, 0, _props);
-  state->charge->setState(rendering::AllocationState::Owned);
+  state->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(state);
 }
 
@@ -220,11 +222,11 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
 
   const auto sizingCharge =
       mutations.empty()
-          ? rendering::ResourceLedger::Token{}
-          : _ledger->reserve(rendering::MemoryClass::CPU,
-                             rendering::ResourceKind::Asset,
-                             arrayBytes(mutations.size(), sizeof(PayloadSize)),
-                             "World mutation sizing");
+          ? runtime::ResourceLedger::Token{}
+          : _ledger->reserve(
+                runtime::MemoryClass::CPU, runtime::ResourceKind::World,
+                arrayBytes(mutations.size(), sizeof(PayloadSize)),
+                "World mutation sizing", {_state->id.value, _state->epoch, 0});
   std::vector<PayloadSize> payloads;
   payloads.reserve(mutations.size());
   auto bytes = stateBytes(*_state);
@@ -289,10 +291,11 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
     throw std::length_error("World candidate exceeds state limits");
   const auto stagingCharge =
       peakBytes == bytes
-          ? rendering::ResourceLedger::Token{}
-          : _ledger->reserve(rendering::MemoryClass::CPU,
-                             rendering::ResourceKind::Asset, peakBytes - bytes,
-                             "World payload replacement staging");
+          ? runtime::ResourceLedger::Token{}
+          : _ledger->reserve(runtime::MemoryClass::CPU,
+                             runtime::ResourceKind::World, peakBytes - bytes,
+                             "World payload replacement staging",
+                             {_state->id.value, _state->epoch, 0});
   auto next = candidate(*_state, _ledger, bytes, spaces, entities, _props);
   next->revision = increment(_state->revision);
   next->tick = tick;
@@ -345,7 +348,7 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
           }
         },
         mutation);
-  next->charge->setState(rendering::AllocationState::Owned);
+  next->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(next);
   return _state->revision;
 }
@@ -355,11 +358,10 @@ void World::restore(const WorldSnapshot &source, WorldVersion expected) {
     throw std::invalid_argument("World restore identity/revision conflict");
   for (const auto &e : source.entities())
     validProps(*source._state, e.props, _props);
-  auto next =
-      candidate(*source._state, _ledger, stateBytes(*source._state),
-                source.spaces().size(), source.entities().size(), _props);
-  next->epoch = nextEpoch();
-  next->charge->setState(rendering::AllocationState::Owned);
+  auto next = candidate(*source._state, _ledger, stateBytes(*source._state),
+                        source.spaces().size(), source.entities().size(),
+                        _props, nextEpoch());
+  next->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(next);
 }
 
