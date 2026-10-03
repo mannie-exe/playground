@@ -127,3 +127,10 @@ host loop.
 UI motion separates clock advancement from presentation sampling. Active tracks
 request admitted frames; input dispatch does not sample the entire motion engine.
 See [MOTION.md](../ui/MOTION.md) for pause, deadlines and final-frame ownership.
+
+Camera follow damping, recentering and director hand-offs expose explicit activity
+demand until settled, then retire it. Suspending manual input discards pending
+look/zoom deltas and rebases presentation time; resuming never integrates the pause
+gap. Scripted camera demand is independent of manual ownership, while benchmark
+interruptions retain their explicit invalidation rules. See
+[CAMERAS.md](../render/CAMERAS.md#coordinates-and-clocks).

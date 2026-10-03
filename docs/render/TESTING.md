@@ -14,6 +14,33 @@ policy pressure, failure and device replacement preserve ownership/accounting.
 Impossible plans fail before native upload and cannot trigger an eviction loop.
 Opaque/blended variants retain alpha/color correctness through cache reuse.
 
+### Locomotion and camera acceptance
+
+| Area | Required cases |
+|---|---|
+| Steered | Camera-relative immediate travel versus body-relative curved travel; lateral/backward and diagonal input; preserved analog magnitude |
+| Strafe / Tank | Aim-facing lateral/reverse travel; explicit tank turning and reverse movement without camera-driven facing |
+| Response | Rate bounds, half-life response across time subdivisions, angular wrap, zero delta and rejected invalid settings |
+| Perspective | Threshold hysteresis, fractional wheel input, forced modes, reversal mid-transition, retained look and per-view self-hiding |
+| Director | A moving selected source does not restart a blend; moving-destination hand-offs complete; interruption starts from displayed pose |
+| Target lifetime | Removal, generation reuse, teleport reset and missing-target fallback |
+| Input | Coalesced versus separate mouse events yield the same turn; pointer delta applies once; stick rate is frame-rate independent |
+| Ownership | UI scroll does not zoom; engagement does not also activate gameplay; per-channel takeover, drift rejection and neutral rearming |
+| Settings | Transactional Apply/Save/Revert, independent inversion, dead-zone validation, requested/effective app restrictions |
+| Obstruction hook | Absent provider reports Unavailable and leaves unconstrained placement; no collision-safety claim |
+
+Compare equal-duration input traces across frame and fixed-tick schedules,
+including zero-tick and catch-up frames. Verify no stale movement after focus,
+Settings, device disconnect, ownership change or app exit. Contextual profile
+overrides preserve eligible input while changing its movement/facing policy. Preserve analog input
+below full deflection and avoid normalizing it to full speed. Camera motion,
+profile switches and view-local visibility must not cause unchanged mesh/texture
+uploads or layout remeasurement.
+
+Physics contact, swept-volume correctness and collision-index performance checks
+belong to the deferred obstruction/physics implementation, not these acceptance
+criteria. No new native command is implied by this matrix.
+
 ## Native workflows
 
 Exercise menu -> material/scene -> mouse lock -> movement -> unlock -> settings
@@ -22,6 +49,15 @@ scoped and never survives app/window teardown. Run timed and infinite Bistro
 benchmarks using the same app state machine and path used by the launcher.
 Finite runs complete only after measurement and bounded completion collection;
 cancellation and invalidation report an explicit outcome.
+
+Exercise mouse/keyboard, assigned gamepad and mixed-device navigation through the
+same app adapter. SDL virtual gamepads supply repeatable axes, buttons and device
+removal; native focus/cursor behavior still needs desktop verification. Test held
+stick/capture-button focus loss, explicit re-engagement, controller noise during
+mouse use, cinematic takeover/return and switching perspective while turning.
+Record source ownership, cancellation reason, requested/effective perspective and
+desired/actual headings alongside frame timing; a screenshot alone cannot establish
+correct input consumption or hand-off.
 
 ## Measurements
 

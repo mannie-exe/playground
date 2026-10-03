@@ -77,25 +77,32 @@ modal owns navigation. Removal/background cancellation must reach both InputMap
 and retained UI. Device removal currently cancels UI interactions conservatively;
 per-device UI keyboard ownership is not yet represented.
 
-`input::InputMap` owns named button/scalar/vector actions and ordered contexts.
+`input::InputMap` owns named button/scalar/vector and transient delta actions
+with ordered contexts.
 Contexts choose BeforeUI (shortcuts/modal overrides) or AfterUI (gameplay). Higher
 priority runs first; equal priority follows insertion order. Consumption blocks
 lower contexts and, for BeforeUI actions, UI routing. UI-consumed events cannot
 activate AfterUI bindings. Physical releases still clear earlier holds.
 
 The SDL adapter translates physical scancodes, mouse buttons, gamepad buttons and
-normalized gamepad axes. Text/IME and pointer hit testing stay with UI. Relative
-pointer motion remains a UI/controller input, not a persistent action axis.
-Bindings specify signed contribution/scale and dead zone. Context addition,
-removal, property changes and rebinding conservatively cancel all current holds
+normalized gamepad axes, relative pointer motion and fractional wheel deltas.
+Text/IME and pointer hit testing stay with UI. Motion/wheel values are transient
+displacement, never persistent held axes. Bindings declare signed scale and the
+appropriate button, rate or delta semantics. Paired sticks use radial dead zones
+and response curves; do not apply an additional per-axis dead zone first.
+Context addition, removal, property changes and rebinding cancel current holds
 in that map, suppressing already-held inputs until neutral. Repeat is not a new press.
-Multiple bindings aggregate, with scalar clamp and vector length limiting.
+Held bindings aggregate with scalar clamp and vector length limiting. Delta
+actions accumulate without unit-vector clamping and clear after consumption or
+cancellation. Normalize wheel direction once; one event cannot both scroll UI and
+zoom a viewport.
 
 Frame/event and fixed-tick snapshots latch edges independently. Taking a snapshot
 clears its edges, not held values. Thus zero-tick frames retain presses and catch-up
 ticks consume a press once. Cancellation is distinct from release, including
 focus loss, device removal, disabled contexts and app exit. Bindings are runtime
-values; persistence, binding-capture UI, gestures and response curves are deferred.
+values; arbitrary binding persistence, binding-capture UI and general gestures
+remain deferred. Shared control preferences configure stick response and sensitivity.
 Snapshots coalesce edges into booleans: multiple complete taps between ticks mean
 "at least one press/release", not an ordered event log. Event callbacks receive
 one frame snapshot after each SDL event; ticks have a separate latch. Removing a
@@ -107,6 +114,58 @@ UI is imposed; optional binding device IDs select an instance for the current ru
 Device IDs are not persistent hardware identities. Already-held controls are
 transferred as suppressed physical state when switching apps. Gamepad disconnect
 and keyboard/mouse removal cancel their matching actions.
+
+### Viewport control sessions
+
+`ViewControlSession` composes the existing InputMap, UI claims, activation token
+and WindowServices lease. It does not introduce a parallel event router. Bind it
+to one viewport, logical player and explicit runtime device assignment. Multiple
+viewports do not share a global active camera/player. SDL device instance IDs are
+runtime handles, not persistent player identities.
+
+| API / state | Contract |
+|---|---|
+| `engage` | Validate activation, window focus, viewport eligibility and device assignment; consume the initiating gesture |
+| `suspend(reason, channels)` | Cancel selected channels and transient input; release the mouse lease when mouse look is affected |
+| `release` | Revoke session ownership; old tokens cannot cancel a later engagement |
+| `state` | Inactive, Active or Suspended, with focus/UI/device/app/target/explicit reason |
+| `channels` | Movement, Look, Zoom and action ownership; per-channel device source and neutral/rearm state |
+
+Window focus, UI focus, viewport selection, device/channel ownership and camera
+presentation priority are separate. Hover alone grants no gameplay ownership.
+A gamepad can engage an explicitly selected viewport without mouse capture.
+A failed mouse acquisition leaves mouse look inactive with a reported reason;
+other already-authorized channels need not fail with it.
+
+Modal Settings and window/background loss suspend local control. Partial UI
+claims cancel only affected channels. Returning focus or closing Settings never
+synthesizes engagement, a press or a held stick. Buttons/sticks must return to
+neutral before rearming; a held capture button must be released before engaging
+again. Physical release bookkeeping continues while blocked. Clear app-cached
+intent and accumulated motion as well as InputMap holds. Device removal cancels
+that device's channels; another controller is not silently reassigned. Teardown
+and subject removal revoke the session.
+
+Assigned devices can cooperate, such as keyboard movement with gamepad look.
+Within a channel, meaningful intentional input may take over from another device;
+noise, repeats and synthetic cursor warps cannot. Radial activation/release
+thresholds provide hysteresis. A displaced stick that loses ownership must return
+to neutral before retaking it. Clear the departing source's unconsumed deltas;
+apply the winning source's new input once, preserving the current view pose.
+Last-used-device prompts do not change assignments, capture or channel ownership.
+Background controller input remains disabled for local gameplay.
+
+A delta stream has one declared frame or fixed-tick consumer. Untaken deltas
+survive zero-tick frames; consumption happens once, not once per catch-up tick.
+Inspection cannot consume input, and frame/event snapshots must not accidentally
+clear a tick-owned delta. Local look can update at presentation cadence and expose
+its intended heading for simulation to sample without integrating its deltas again.
+The delta contract is distinct from the independent button-edge latches.
+
+Cinematic control takeover cancels manual channels at an explicit boundary.
+Returning control follows the receiving rig's [hand-off policy](../render/CAMERAS.md#camera-selection-and-hand-off),
+with neutral rearming and explicit mouse re-engagement. Director priority alone
+neither captures input nor decides whether an app pauses simulation.
 
 ## Timing and ordering
 
@@ -180,6 +239,9 @@ values or CameraProps, without SDL, GPU objects or renderer submission. Movement
 is kinematic, not collision/physics. Orbit angles are radians; world units and +Y
 up match scene math. A pose history supports interpolation and teleport reset.
 Player input, AI and replay may all supply the same intent types.
+[Locomotion profiles](LOCOMOTION.md) define Steered, Strafe and Tank requests,
+turn responses and movement realization. [Camera rigs](../render/CAMERAS.md)
+consume subject samples independently of those profiles.
 `MovementController` limits direction magnitude to one, preserving analog input,
 and advances at units/second. It provides no gravity/contact solver.
 `OrbitController` clamps pitch away from the poles and distance to positive
@@ -199,7 +261,7 @@ constant-angular-speed slerp). Published and teleported poses are validated firs
 | `runtime/ActivationLifetime.hpp` | Owner activation; tokens are weak, generations are separate control-block identities |
 | `runtime/CompletionQueue.hpp` | Thread-safe posting, owner-thread draining; guarded `ActivationSink` |
 | `runtime/DeferredMutations.hpp` | Owner-thread `defer/remove/flush` at application-chosen safe boundaries |
-| `scene/Controllers.hpp` | Kinematic movement, orbit camera and previous/current pose history |
+| `scene/Controllers.hpp` | Kinematic movement, orbit/free cameras, camera director/path and pose history |
 
 For a simulated app, register digital/analog bindings in its constructor, return
 timing props, and advance an owned pose in `fixedUpdate`. For example, inside that

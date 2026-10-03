@@ -8,6 +8,7 @@ scope. Contract text is not a report of implementation or test status.
 |---|---|
 | Build, install and release | [Contributing](../CONTRIBUTING.md), [manifest generation](platform/MANIFESTS.md) |
 | Applications and models | [Applications](platform/APPLICATIONS.md), [runtime](platform/RUNTIME.md), [activity](platform/ACTIVITY.md) |
+| Locomotion and cameras | [Profiles and facing](platform/LOCOMOTION.md), [rigs and hand-off](render/CAMERAS.md), [verification](render/TESTING.md) |
 | Content | [Asset ownership](platform/ASSETS.md), [packs](platform/PACKAGES.md), [versions/manifests](platform/MANIFESTS.md) |
 | Audio | [Playback, synthesis, spatial state and accounting](audio/README.md) |
 | Networking | [Transport, shared sessions and hosting](platform/NETWORKING.md) |
@@ -21,7 +22,8 @@ scope. Contract text is not a report of implementation or test status.
 - [App authoring, executable bundles and dynamic loading](platform/DISTRIBUTED_APPS.md)
 - [Executable-app permissions and isolation](platform/SECURITY.md)
 - [Runtime UI documents and editor](ui/DOCUMENTS.md)
-- [Repeatable camera workloads](render/DEMOS.md#repeatable-camera-workloads-future)
+- [Camera obstruction](render/CAMERAS.md#future-camera-obstruction)
+- [Physics-backed movement and root motion](platform/LOCOMOTION.md#future-physics-and-root-motion)
 - Combobox and Autocomplete in [control contracts](ui/CONTROLS.md)
 
 [C++ notes](NOTES.md), the [historical migration guide](CATCH_UP.md), and

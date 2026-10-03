@@ -83,16 +83,38 @@ Right-click inside the viewport toggles relative mouse look; Escape first
 unlocks the mouse, then opens Settings on a subsequent press. Relative motion
 is angular displacement, not multiplied by frame time. Q/E changes exposure and
 L toggles direct light. Bistro starts at its source
-street camera; Chess starts framed around the board. Future camera selection and
-bookmarks are viewport-local; named shots contain pose and lens values, never
-projection matrices or borrowed scene pointers.
+street camera; Chess starts framed around the board. Camera selection is
+viewport-local; named shots contain pose and lens values, never projection
+matrices or borrowed scene pointers.
 
 Phantom Camera informs the separation of camera behavior, selection and final
 viewport output; Playground does not depend on Godot or the plugin. The broader
-rig/director and pointer-orbit design is in [CAMERAS.md](CAMERAS.md).
+rig/director and pointer ownership contract is in [CAMERAS.md](CAMERAS.md).
 Opening Settings, losing focus or leaving an app cancels held navigation intent.
 Exposure and light controls remain separate from movement. Reset restores the
 scene's authored inspection camera without rebuilding its resources.
+
+### Subject-following navigation
+
+Scene apps expose free navigation and subject-following navigation as distinct
+interaction choices. A following view uses an app-owned kinematic anchor and an
+optional simple avatar; importing Bistro or Chess does not imply a character,
+physics world or animation skeleton. Free navigation and authored reset framing
+remain available. Material Test remains an orbit inspection workload.
+
+Follow navigation exercises [Steered, Strafe and Tank](../platform/LOCOMOTION.md)
+with shared [control preferences](../platform/SETTINGS.md#shared-control-preferences).
+The default is gradual OutOfNowhere-style steering. Perspective is independent of
+locomotion; wheel/assigned zoom actions move through first/third-person thresholds
+in Automatic mode. The app supplies follow/eye anchors and per-view self-visibility.
+Manual control has explicit engagement, UI precedence and neutral rearming.
+
+No scene object blocks the camera or kinematic subject in this scope. Obstruction
+capability reports Unavailable. Do not add collision meshes, infer blockers from
+material opacity or silently describe free passage as grounded walking. Physics
+and [camera obstruction](CAMERAS.md#future-camera-obstruction) remain future work.
+The benchmark retains its authored camera path and disables manual navigation;
+interactive profile/perspective changes do not alter a measured workload.
 
 ## Bistro benchmark
 
