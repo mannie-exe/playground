@@ -248,9 +248,9 @@ not authorize loading beyond world budgets or moving the controlled subject.
 
 ## Future camera obstruction
 
-Camera obstruction, static collision baking and physics integration are future
-work. No collision backend, spatial index or automatic blocker classification is
-required by the follow-rig implementation. Without one, placement is unconstrained
+Camera obstruction is **future** even though baseline collision preparation and
+[Jolt physics](../platform/PHYSICS.md) are implementation requirements. A follow
+rig does not automatically enable obstruction or classify blockers. Without one, placement is unconstrained
 and reports obstruction capability as Unavailable rather than a tested clear path.
 
 The extension boundary is a `CameraObstructionQuery`: copied candidate placement,
@@ -268,8 +268,9 @@ foliage may not, and the observing subject is excluded. Query data is revisioned
 accounted and prepared once, not rebuilt with camera motion. A missing backend
 must not be substituted with bounds picking and described as collision safety.
 
-Character contacts, grounding, vehicle dynamics and root motion are separate
-future [movement realizations](../platform/LOCOMOTION.md#future-physics-and-root-motion).
+Character contacts and grounding belong to current [physics movement
+realization](../platform/LOCOMOTION.md#physics-movement-realization). Vehicle dynamics
+and root motion remain [future](../platform/LOCOMOTION.md#future-advanced-movement).
 Camera obstruction alone cannot prevent a subject moving through a wall.
 
 The backend uses [snapshot and coverage semantics](../platform/WORLDS.md#spatial-queries)

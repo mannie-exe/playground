@@ -3,7 +3,9 @@
 Tests separate world/model contracts, adapters and native presentation. A fake
 physics or network provider establishes ownership/error behavior only. Baseline
 world, streaming, procedural/voxel and navigation acceptance does not require a
-physics backend, editor, executable app loader or new rendering features.
+physics backend, editor, executable app loader or new rendering features for pure
+contract tests. Full integration acceptance additionally requires the real Jolt
+and native local-transport workloads in [spatial verification](SPATIAL_TESTING.md).
 
 ## Contract workloads
 
@@ -92,6 +94,6 @@ cost or imply one platform's native results establish portability.
 
 Acceptance requires bounded memory/work under pressure, preserved state on failure,
 correct far-origin behavior and no unbounded boundary retry loop. Numerical and
-latency thresholds belong to explicit fixture configuration. Deferred physics,
+latency thresholds belong to explicit fixture configuration. Advanced physics,
 planetary frames, seamless portals, prediction/rollback and crowd avoidance have
 no implied implementation coverage from these tests.

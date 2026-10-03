@@ -48,7 +48,7 @@ frame failures can trigger bounded renderer recreation after the frame is gone;
 validation and arbitrary app exceptions still propagate. Candidate activation
 and settings publication restore captured host state on failure. Arbitrary app
 side effects are not reversible; failed restoration is terminal. See
-[architecture](ARCHITECTURE.md) and [runtime behavior](GPU.md#runtime-contract).
+[architecture](ARCHITECTURE.md) and [runtime behavior](GPU.md#hostframe-ownership).
 
 ## Coordinates and constraints
 
@@ -78,7 +78,7 @@ storage layout, shader buffer layout and public values accidentally identical.
 | Kiwi layout relations | Linear relations inside ConstraintLayout only |
 | Scene hierarchy | Parent/local transforms derive world transforms; reject cycles |
 | Renderer limits | Validate target extent, formats and allocation policy before work |
-| Navigation / future physics adapter | Request motion and publish model results; workers never mutate UI or GPU resources |
+| Navigation / physics adapter | Request motion and publish model results; workers never mutate UI or GPU resources |
 
 These systems exchange values and handles, not a universal constraint solver.
 
