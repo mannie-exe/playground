@@ -56,7 +56,8 @@ int main() {
     props.attachment =
         attach(frames.snapshot().resolve(frame), props.pose, props.velocity,
                FrameVelocityPolicy::PreserveWorld);
-    const std::array<WorldMutation, 1> attachEntity{SetEntity{actor, props}};
+    const std::array<WorldMutation, 1> attachEntity{
+        SetEntity{actor, props, true}};
     world.apply(attachEntity, world.snapshot().version(), 8);
     frames.apply(world.snapshot(), {}, frames.snapshot().version());
     CheckpointMetadata metadata{

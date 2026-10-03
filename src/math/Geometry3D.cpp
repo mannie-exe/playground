@@ -131,4 +131,53 @@ Matrix4 lookAtLH(Vec3f eye, Vec3f target, Vec3f up) {
   return m;
 }
 
+Quaternion lookRotation(Vec3f forward, Vec3f up) {
+  const auto z = normalized(forward);
+  const auto x = normalized(cross(normalized(up), z));
+  const auto y = cross(z, x);
+  // Basis columns form the camera's world rotation, inverse of its view basis.
+  const float m[3][3]{{x.x, y.x, z.x}, {x.y, y.y, z.y}, {x.z, y.z, z.z}};
+  const float trace = m[0][0] + m[1][1] + m[2][2];
+  Quaternion q;
+  if (trace > 0) {
+    const float scale = 2 * std::sqrt(trace + 1);
+    q = {(m[2][1] - m[1][2]) / scale, (m[0][2] - m[2][0]) / scale,
+         (m[1][0] - m[0][1]) / scale, scale / 4};
+  } else {
+    int i = m[1][1] > m[0][0] ? 1 : 0;
+    if (m[2][2] > m[i][i])
+      i = 2;
+    const int j = (i + 1) % 3, k = (j + 1) % 3;
+    const float scale = 2 * std::sqrt(1 + m[i][i] - m[j][j] - m[k][k]);
+    float xyz[3]{};
+    xyz[i] = scale / 4;
+    xyz[j] = (m[j][i] + m[i][j]) / scale;
+    xyz[k] = (m[k][i] + m[i][k]) / scale;
+    q = {xyz[0], xyz[1], xyz[2], (m[k][j] - m[j][k]) / scale};
+  }
+  return normalizedRotation(q);
+}
+
+Quaternion slerp(Quaternion a, Quaternion b, double t) {
+  if (!std::isfinite(t) || t < 0 || t > 1)
+    throw std::invalid_argument("Invalid rotation interpolation weight");
+  a = normalizedRotation(a);
+  b = normalizedRotation(b);
+  double cosine = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  if (cosine < 0) {
+    b = {-b.x, -b.y, -b.z, -b.w};
+    cosine = -cosine;
+  }
+  double left = 1 - t, right = t;
+  if (cosine < 0.9995) {
+    const double angle = std::acos(std::clamp(cosine, 0.0, 1.0));
+    left = std::sin((1 - t) * angle) / std::sin(angle);
+    right = std::sin(t * angle) / std::sin(angle);
+  }
+  return normalizedRotation({static_cast<float>(a.x * left + b.x * right),
+                             static_cast<float>(a.y * left + b.y * right),
+                             static_cast<float>(a.z * left + b.z * right),
+                             static_cast<float>(a.w * left + b.w * right)});
+}
+
 } // namespace playground::math

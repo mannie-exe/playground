@@ -351,6 +351,17 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
                     !m.discontinuity)
                   throw std::invalid_argument(
                       "Space transfer requires a discontinuity");
+                const auto previousFrame =
+                    pos->props.attachment
+                        ? std::optional{pos->props.attachment->frame}
+                        : std::nullopt;
+                const auto nextFrame =
+                    m.props.attachment
+                        ? std::optional{m.props.attachment->frame}
+                        : std::nullopt;
+                if (previousFrame != nextFrame && !m.discontinuity)
+                  throw std::invalid_argument(
+                      "Frame attachment change requires a discontinuity");
                 auto props = m.props;
                 props.pose.orientation =
                     math::normalizedRotation(props.pose.orientation);

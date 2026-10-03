@@ -148,49 +148,7 @@ void validateCamera(const CameraProps &camera) {
 }
 
 math::Quaternion orientation(const CameraProps &camera) {
-  const auto z = math::normalized(camera.target - camera.eye);
-  const auto x = math::normalized(math::cross(math::normalized(camera.up), z));
-  const auto y = math::cross(z, x);
-  // Basis columns form the camera's world rotation, inverse of its view basis.
-  const float m[3][3]{{x.x, y.x, z.x}, {x.y, y.y, z.y}, {x.z, y.z, z.z}};
-  const float trace = m[0][0] + m[1][1] + m[2][2];
-  math::Quaternion q;
-  if (trace > 0) {
-    const float scale = 2 * std::sqrt(trace + 1);
-    q = {(m[2][1] - m[1][2]) / scale, (m[0][2] - m[2][0]) / scale,
-         (m[1][0] - m[0][1]) / scale, scale / 4};
-  } else {
-    int i = m[1][1] > m[0][0] ? 1 : 0;
-    if (m[2][2] > m[i][i])
-      i = 2;
-    const int j = (i + 1) % 3, k = (j + 1) % 3;
-    const float scale = 2 * std::sqrt(1 + m[i][i] - m[j][j] - m[k][k]);
-    float xyz[3]{};
-    xyz[i] = scale / 4;
-    xyz[j] = (m[j][i] + m[i][j]) / scale;
-    xyz[k] = (m[k][i] + m[i][k]) / scale;
-    q = {xyz[0], xyz[1], xyz[2], (m[k][j] - m[j][k]) / scale};
-  }
-  return math::normalizedRotation(q);
-}
-
-math::Quaternion slerp(math::Quaternion a, math::Quaternion b, double t) {
-  double cosine = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-  if (cosine < 0) {
-    b = {-b.x, -b.y, -b.z, -b.w};
-    cosine = -cosine;
-  }
-  double left = 1 - t, right = t;
-  if (cosine < 0.9995) {
-    const double angle = std::acos(std::clamp(cosine, 0.0, 1.0));
-    left = std::sin((1 - t) * angle) / std::sin(angle);
-    right = std::sin(t * angle) / std::sin(angle);
-  }
-  return math::normalizedRotation(
-      {static_cast<float>(a.x * left + b.x * right),
-       static_cast<float>(a.y * left + b.y * right),
-       static_cast<float>(a.z * left + b.z * right),
-       static_cast<float>(a.w * left + b.w * right)});
+  return math::lookRotation(camera.target - camera.eye, camera.up);
 }
 
 bool sameProjection(const CameraProps &a, const CameraProps &b) {
@@ -211,7 +169,7 @@ CameraProps blend(const CameraProps &a, const CameraProps &b, double alpha) {
   result.eye = {mix(a.eye.x, b.eye.x), mix(a.eye.y, b.eye.y),
                 mix(a.eye.z, b.eye.z)};
   const auto rotation =
-      math::rotation(slerp(orientation(a), orientation(b), t));
+      math::rotation(math::slerp(orientation(a), orientation(b), t));
   const auto forward = math::transformDirection(rotation, {0, 0, 1});
   auto distance = [](const CameraProps &c) {
     return std::hypot(static_cast<double>(c.target.x) - c.eye.x,

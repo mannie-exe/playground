@@ -33,6 +33,7 @@ playground_add_test(world_streaming SOURCE world/streaming.cpp MODULE world LABE
 playground_add_test(world_lifecycle SOURCE world/lifecycle.cpp MODULE world LABELS unit ownership identity budget failure LIBRARIES playground_world)
 playground_add_test(world_store SOURCE world/store.cpp MODULE world LABELS integration ownership identity budget failure LIBRARIES playground_storage)
 playground_add_test(world_navigation SOURCE world/navigation.cpp MODULE world LABELS unit async spatial budget failure LIBRARIES playground_world)
+playground_add_test(world_locomotion SOURCE world/locomotion.cpp MODULE world LABELS unit spatial simulation failure LIBRARIES playground_world)
 playground_add_test(world_spatial SOURCE world/spatial.cpp MODULE world LABELS unit arithmetic identity failure LIBRARIES playground_world)
 playground_add_test(world_frames SOURCE world/frames.cpp MODULE world LABELS unit spatial ownership failure LIBRARIES playground_world)
 playground_add_test(world_queries SOURCE world/queries.cpp MODULE world LABELS unit spatial budget failure LIBRARIES playground_world)
