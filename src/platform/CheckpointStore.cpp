@@ -87,6 +87,12 @@ void flush(int file) {
     if (errno != EINTR)
       throw std::system_error(errno, std::generic_category(),
                               "Checkpoint fsync");
+#ifdef __APPLE__
+  while (::fcntl(file, F_FULLFSYNC) != 0)
+    if (errno != EINTR)
+      throw std::system_error(errno, std::generic_category(),
+                              "Checkpoint full synchronization");
+#endif
 }
 #endif
 
@@ -203,11 +209,6 @@ void replaceFile(const std::filesystem::path &root,
     offset += static_cast<std::size_t>(written);
   }
   flush(file.value);
-#ifdef __APPLE__
-  if (::fcntl(file.value, F_FULLFSYNC) != 0)
-    throw std::system_error(errno, std::generic_category(),
-                            "Checkpoint full synchronization");
-#endif
   if (::rename(temporary.c_str(), path.c_str()) != 0)
     throw std::system_error(errno, std::generic_category(),
                             "Checkpoint publication");
@@ -216,11 +217,6 @@ void replaceFile(const std::filesystem::path &root,
   try {
     File directory{::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)};
     flush(directory.value);
-#ifdef __APPLE__
-    if (::fcntl(file.value, F_FULLFSYNC) != 0)
-      throw std::system_error(errno, std::generic_category(),
-                              "Checkpoint publication synchronization");
-#endif
   } catch (const std::exception &error) {
     throw world::CheckpointUncertain(error.what());
   }

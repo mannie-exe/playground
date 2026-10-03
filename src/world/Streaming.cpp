@@ -19,6 +19,7 @@ struct CellGeneration {
 
 namespace {
 using Clock = runtime::ActivityClock;
+constexpr auto retryDelay = std::chrono::milliseconds{10};
 
 void valid(Readiness value, bool allowEmpty = false) {
   if ((!allowEmpty && value == Readiness::None) || (unsigned(value) & ~31u))
@@ -102,7 +103,7 @@ struct WorldStreamer::Impl {
     std::uint64_t generation{}, contentGeneration{1};
     CellStatus status{CellStatus::Absent};
     std::string diagnostic;
-    Clock::time_point queued{}, retainedUntil{};
+    Clock::time_point queued{}, retainedUntil{}, retryAt{};
     std::shared_ptr<const detail::CellGeneration> current;
     std::shared_ptr<Slot> job;
   };
@@ -566,6 +567,7 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
       break;
     auto &e = s.entries.at(id);
     if ((e.job && !e.job->ticket->retired()) ||
+        (!e.job && e.requested != Readiness::None && now < e.retryAt) ||
         (!e.job &&
          ((e.requested != Readiness::None &&
            (s.usable(e, e.requested) || e.status == CellStatus::Failed)) ||
@@ -718,13 +720,22 @@ WorldStreamer::advanceImpl(Impl &s, Clock::time_point now,
           bytes);
       if (!ticket) {
         e.status = CellStatus::Queued;
+        e.retryAt = now + retryDelay;
+        e.diagnostic = "Cell worker capacity unavailable";
         continue;
       }
       slot->ticket = std::move(ticket);
       e.job = std::move(slot);
       e.status = CellStatus::Preparing;
+      e.diagnostic.clear();
       work.bytes += sizeof(CellDefinition) + e.definition.content.size();
       ++jobs;
+    } catch (const runtime::ResourcePressure &error) {
+      // Admission pressure can disappear without changing source demand.
+      // Provider/content failures remain terminal until explicitly retried.
+      e.status = CellStatus::Queued;
+      e.retryAt = now + retryDelay;
+      e.diagnostic = error.what();
     } catch (const std::exception &error) {
       e.status = CellStatus::Failed;
       e.diagnostic = error.what();
@@ -756,9 +767,9 @@ runtime::ServiceDemand WorldStreamer::demandImpl(const Impl &s) {
   for (const auto &[id, e] : s.entries) {
     if (e.job) {
       demand.pending = demand.pending || e.job->ticket->retired();
-      deadline(s.now + std::chrono::milliseconds{10});
+      deadline(s.now + retryDelay);
     } else if (e.status == CellStatus::Queued)
-      deadline(s.now + std::chrono::milliseconds{10});
+      deadline(e.retryAt > s.now ? e.retryAt : s.now + retryDelay);
     if (e.requested == Readiness::None && e.current)
       deadline(e.retainedUntil);
   }

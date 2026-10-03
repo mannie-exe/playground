@@ -295,7 +295,8 @@ little-endian, length-bounded and versioned; runtime pointers/caches are exclude
 of SDL, and uses an existing local directory. Per-world file locks serialize
 cooperating writers. A checksummed envelope detects accidental corruption; it is
 not authentication. Publication flushes a temporary file and replaces the current
-checkpoint. POSIX also flushes the parent directory; macOS requests `F_FULLFSYNC`.
+checkpoint. POSIX also flushes the parent directory; macOS requests `F_FULLFSYNC`
+on each flushed descriptor, including the directory after replacement.
 Windows uses `FlushFileBuffers` and replacement with `MOVEFILE_WRITE_THROUGH`.
 An abandoned candidate is ignored on reopen. `CheckpointUncertain` means the new
 checkpoint may be visible but durable acknowledgement failed: re-read and reconcile
@@ -305,6 +306,7 @@ and hostile concurrent filesystem writers are outside this storage contract.
 
 Native synchronization references: [POSIX/Linux fsync](https://www.man7.org/linux/man-pages/man2/fsync.2.html),
 [Apple fsync](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fsync.2.html),
+[Apple fcntl](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html),
 [Windows FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)
 and [MoveFileEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
 
