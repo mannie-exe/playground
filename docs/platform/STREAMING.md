@@ -34,6 +34,10 @@ readiness; unsupported dimensions fail explicitly. Package and generator domains
 supply their providers rather than triggering implicit acquisition.
 
 Control calls validate bounded source/request/manifest inputs synchronously.
+Temporary ledger/executor admission pressure keeps demand Queued with a diagnostic
+and a bounded service retry deadline. Stationary sources recover when capacity
+returns; explicit readiness deadlines still expire. Provider/content failures
+remain Failed until an explicit request or replacement retries them.
 `advance` grants count cell operations, copied metadata bytes and published worker
 messages; provider work has separate scratch/output bounds. These are cooperative
 work limits, not thread preemption or allocator-enforced resident-memory limits.

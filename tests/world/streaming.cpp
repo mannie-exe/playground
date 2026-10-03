@@ -120,6 +120,11 @@ int main() {
             "failed replacement retains explicit stale previous generation");
     require(!stream.lease(b, Readiness::Data, 2),
             "stale generation cannot satisfy current readiness");
+    const auto failedCalls = provider->calls.load();
+    stream.advance(now);
+    require(provider->calls == failedCalls &&
+                stream.state(b).status == CellStatus::Failed,
+            "content errors do not trigger automatic retry loops");
     cb.revision = 3;
     cb.content = "local";
     stream.replace(cb);
@@ -173,6 +178,51 @@ int main() {
     stream.close();
     require(!stream.demand().pending && !stream.demand().wakeAt && leaseC,
             "closed streamer releases demand while leases remain usable");
+    {
+      auto account = std::make_shared<runtime::ResourceLedger>();
+      auto source = std::make_shared<Provider>();
+      WorldStreamer pressured{{space.world, 1, "", {ca, cb}, {{space, {}}}},
+                              12,
+                              source,
+                              executor,
+                              account,
+                              {.productBytes = 1024, .scratchBytes = 1024}};
+      auto held = account->reserve(runtime::MemoryClass::CPU,
+                                   runtime::ResourceKind::Preparation,
+                                   account->snapshot().budgets.preparationBytes,
+                                   "Fixture preparation pressure");
+      pressured.setSources(1, first);
+      const auto expiring =
+          pressured.request({b, 12, cb.revision, 0, Readiness::Data, 0,
+                             now + std::chrono::milliseconds{5}});
+      pressured.advance(now);
+      require(pressured.state(a).status == CellStatus::Queued &&
+                  !pressured.state(a).diagnostic.empty() && !source->calls,
+              "temporary admission pressure retains queued source demand");
+      require(pressured.demand().wakeAt && *pressured.demand().wakeAt > now,
+              "pressure schedules a bounded retry without a busy wake");
+      const auto refusals = account->snapshot().refusals;
+      held.reset();
+      pressured.advance(now);
+      require(account->snapshot().refusals == refusals && !source->calls,
+              "pressure retry waits for its service deadline");
+      pressured.advance(now + std::chrono::milliseconds{5});
+      require(
+          pressured.requestState(expiring).status == CellStatus::Failed &&
+              pressured.state(a).status == CellStatus::Queued && !source->calls,
+          "explicit deadlines expire while source demand waits for capacity");
+      auto retryAt = *pressured.demand().wakeAt;
+      const auto timeout =
+          std::chrono::steady_clock::now() + std::chrono::seconds{5};
+      while (pressured.state(a).status != CellStatus::Ready &&
+             std::chrono::steady_clock::now() < timeout) {
+        pressured.advance(retryAt);
+        std::this_thread::yield();
+      }
+      require(pressured.state(a).status == CellStatus::Ready &&
+                  source->calls == 1 && pressured.state(a).diagnostic.empty(),
+              "stationary source recovers when preparation capacity returns");
+    }
     {
       runtime::ServicePump pump;
       auto scope = pump.scope();
