@@ -285,6 +285,14 @@ FrameVersion ReferenceFrames::apply(WorldSnapshot world,
   };
   for (std::size_t i = 0; i < candidate->records.size(); ++i)
     sample(sample, i, 1);
+  for (const auto &entity : candidate->world.entities()) {
+    if (entity.destroyed || !entity.props.attachment)
+      continue;
+    const auto id = entity.props.attachment->frame;
+    const auto frame = lookup(candidate->records, id);
+    if (frame == candidate->records.end() || frame->id != id || frame->removed)
+      throw std::invalid_argument("Live entity requires an attached frame");
+  }
   candidate->charge->setState(runtime::AllocationState::Owned);
   _state = std::move(candidate);
   return snapshot().version();

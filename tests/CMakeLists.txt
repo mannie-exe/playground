@@ -29,6 +29,8 @@ function(playground_add_test name)
 endfunction()
 
 playground_add_test(ui_motion SOURCE ui/motion.cpp MODULE ui LABELS unit animation async ownership failure LIBRARIES playground_ui_core playground_runtime)
+playground_add_test(world_streaming SOURCE world/streaming.cpp MODULE world LABELS unit async budget failure LIBRARIES playground_world Threads::Threads)
+playground_add_test(world_lifecycle SOURCE world/lifecycle.cpp MODULE world LABELS unit ownership identity budget failure LIBRARIES playground_world)
 playground_add_test(world_spatial SOURCE world/spatial.cpp MODULE world LABELS unit arithmetic identity failure LIBRARIES playground_world)
 playground_add_test(world_frames SOURCE world/frames.cpp MODULE world LABELS unit spatial ownership failure LIBRARIES playground_world)
 playground_add_test(world_queries SOURCE world/queries.cpp MODULE world LABELS unit spatial budget failure LIBRARIES playground_world)

@@ -18,6 +18,20 @@ struct Executor::Impl {
     Job run;
     std::stop_source stop;
     std::size_t bytes;
+    std::shared_ptr<std::atomic<bool>> retired;
+
+    Task(Job job, std::size_t size)
+        : run{std::move(job)}, bytes{size},
+          retired{std::make_shared<std::atomic<bool>>(false)} {}
+
+    Task(Task &&) noexcept = default;
+    Task &operator=(Task &&) = delete;
+
+    ~Task() {
+      run = nullptr;
+      if (retired)
+        retired->store(true, std::memory_order_release);
+    }
   };
 
   ExecutorProps props;
@@ -73,18 +87,19 @@ std::optional<TaskTicket> Executor::submit(Job job, std::size_t bytes) {
     throw std::invalid_argument("Executor requires a job");
   // Stage captures before locking: rejected admission/allocation failure must
   // not destroy caller-owned captures while holding the executor mutex.
-  Impl::Task task{std::move(job), std::stop_source{}, bytes};
+  Impl::Task task{std::move(job), bytes};
   std::lock_guard lock{_impl->mutex};
   if (_impl->closed ||
       _impl->stats.outstanding >= _impl->props.maxOutstanding ||
       bytes > _impl->props.maxReservedBytes - _impl->stats.reservedBytes)
     return {};
   const auto stop = task.stop;
+  const auto retired = task.retired;
   _impl->pending.push_back(std::move(task));
   ++_impl->stats.outstanding;
   _impl->stats.reservedBytes += bytes;
   _impl->ready.notify_one();
-  return TaskTicket{stop};
+  return TaskTicket{stop, retired};
 }
 
 ExecutorStats Executor::stats() const {

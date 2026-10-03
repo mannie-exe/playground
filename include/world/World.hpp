@@ -29,6 +29,7 @@ struct EntityProps {
   // App-defined versioned bytes; the domain validates interpretation before
   // apply.
   std::vector<std::byte> data;
+  std::optional<FrameAttachment> attachment;
 };
 
 struct EntityRecord {
@@ -97,6 +98,14 @@ struct DestroyEntity {
   EntityId id;
 };
 
+struct ActivationRequest {
+  EntityHandle entity;
+  Activation mode{Activation::Full};
+  Activation authorityMinimum{Activation::Dormant};
+  // Domain owner establishes required data/authority before publication.
+  bool ready{};
+};
+
 using WorldMutation =
     std::variant<CreateSpace, SpawnEntity, SetEntity, DestroyEntity>;
 
@@ -124,6 +133,8 @@ public:
                       std::uint64_t tick);
   // Restore an immutable admitted snapshot into a fresh runtime incarnation.
   void restore(const WorldSnapshot &, WorldVersion expected);
+  std::uint64_t setActivation(ActivationRequest, WorldVersion expected,
+                              std::uint64_t tick);
 };
 
 } // namespace playground::world

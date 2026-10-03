@@ -18,7 +18,9 @@ playground_add_module(playground_runtime
     src/runtime/SimulationClock.cpp
     src/runtime/Services.cpp
     src/input/InputMap.cpp)
-playground_add_module(playground_world src/world/Spatial.cpp src/world/World.cpp src/world/Queries.cpp src/world/Frames.cpp)
+playground_add_module(playground_world
+    src/world/Spatial.cpp src/world/World.cpp src/world/Queries.cpp
+    src/world/Frames.cpp src/world/Streaming.cpp src/world/Lifecycle.cpp)
 target_link_libraries(playground_world PUBLIC playground_math playground_runtime)
 playground_add_module(playground_rendering
     src/rendering/RendererTypes.cpp
