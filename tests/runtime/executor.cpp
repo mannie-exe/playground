@@ -23,27 +23,37 @@ int main() {
           gate->wait(stop);
         },
         16);
-    test::require(first.has_value(), "first task admitted");
+    test::require(first.ticket.has_value(), "first task admitted");
     started.get();
     std::atomic<int> executions{};
     auto second =
         executor.submit([&](std::stop_token) noexcept { ++executions; }, 16);
-    test::require(second.has_value(), "queued task admitted");
+    test::require(second.ticket.has_value(), "queued task admitted");
     test::require(executor.stats().outstanding == 2 &&
                       executor.stats().reservedBytes == 32 &&
                       executor.stats().maxReservedBytes == 32 &&
                       !executor.stats().closed,
                   "reservations include active and pending jobs");
-    test::require(!executor.submit([](std::stop_token) noexcept {}, 1),
-                  "count/budget backpressure");
-    second->cancel();
+    test::require(
+        executor.submit([](std::stop_token) noexcept {}, 1).admission ==
+            runtime::TaskAdmission::Busy,
+        "count/budget backpressure");
+    test::require(
+        executor.submit([](std::stop_token) noexcept {}, 33).admission ==
+            runtime::TaskAdmission::TooLarge,
+        "oversized work is permanent even while capacity is busy");
+    second.ticket->cancel();
+    test::require(executor.stats().reservedBytes == 32,
+                  "cancellation retains admission until worker retirement");
     executor.close();
-    test::require(first->isCanceled() && second->isCanceled(),
+    test::require(first.ticket->isCanceled() && second.ticket->isCanceled(),
                   "close cancels active and queued work");
-    test::require(second->retired(),
+    test::require(second.ticket->retired(),
                   "discarded queued work reports retirement");
-    test::require(!executor.submit([](std::stop_token) noexcept {}, 0),
-                  "closed rejects publication");
+    test::require(
+        executor.submit([](std::stop_token) noexcept {}, 0).admission ==
+            runtime::TaskAdmission::Closed,
+        "closed rejects publication");
     test::require(executor.stats().closed,
                   "shutdown is observable separately from capacity pressure");
     test::require(executions == 0, "canceled queued task never runs");
@@ -82,7 +92,7 @@ int main() {
         0);
     readyA.get();
     readyB.get();
-    test::require(a && b && concurrent.stats().outstanding == 2,
+    test::require(a.ticket && b.ticket && concurrent.stats().outstanding == 2,
                   "two independent jobs can execute concurrently");
     concurrentGate->open();
   });

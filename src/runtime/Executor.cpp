@@ -8,6 +8,20 @@
 #include <runtime/Executor.hpp>
 
 namespace playground::runtime {
+std::string_view describe(TaskAdmission value) noexcept {
+  switch (value) {
+  case TaskAdmission::Accepted:
+    return "Executor task accepted";
+  case TaskAdmission::Busy:
+    return "Executor capacity temporarily unavailable";
+  case TaskAdmission::TooLarge:
+    return "Task reservation exceeds executor byte cap";
+  case TaskAdmission::Closed:
+    return "Executor is closed";
+  }
+  return "Invalid executor admission";
+}
+
 void ExecutorProps::validate() const {
   if (!workers || workers > 64 || !maxOutstanding || !maxReservedBytes)
     throw std::invalid_argument("Invalid executor limits");
@@ -82,24 +96,27 @@ Executor::Executor(ExecutorProps props) {
 
 Executor::~Executor() { close(); }
 
-std::optional<TaskTicket> Executor::submit(Job job, std::size_t bytes) {
+TaskSubmission Executor::submit(Job job, std::size_t bytes) {
   if (!job)
     throw std::invalid_argument("Executor requires a job");
   // Stage captures before locking: rejected admission/allocation failure must
   // not destroy caller-owned captures while holding the executor mutex.
   Impl::Task task{std::move(job), bytes};
   std::lock_guard lock{_impl->mutex};
-  if (_impl->closed ||
-      _impl->stats.outstanding >= _impl->props.maxOutstanding ||
+  if (_impl->closed)
+    return {TaskAdmission::Closed, {}};
+  if (bytes > _impl->props.maxReservedBytes)
+    return {TaskAdmission::TooLarge, {}};
+  if (_impl->stats.outstanding >= _impl->props.maxOutstanding ||
       bytes > _impl->props.maxReservedBytes - _impl->stats.reservedBytes)
-    return {};
+    return {TaskAdmission::Busy, {}};
   const auto stop = task.stop;
   const auto retired = task.retired;
   _impl->pending.push_back(std::move(task));
   ++_impl->stats.outstanding;
   _impl->stats.reservedBytes += bytes;
   _impl->ready.notify_one();
-  return TaskTicket{stop, retired};
+  return {TaskAdmission::Accepted, TaskTicket{stop, retired}};
 }
 
 ExecutorStats Executor::stats() const {

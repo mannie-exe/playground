@@ -90,11 +90,11 @@ bool ModelPreparation::start(
         }
       },
       reservation);
-  if (!ticket)
+  if (!ticket.ticket)
     return false;
   cancel();
   ++_generation;
-  _ticket = std::move(ticket);
+  _ticket = std::move(ticket.ticket);
   _future = std::move(future);
   _asset = std::move(asset);
   _definitionKey = std::move(definitionKey);

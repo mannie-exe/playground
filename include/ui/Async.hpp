@@ -50,7 +50,7 @@ public:
     _request = request;
     ++_generation;
     try {
-      _ticket = executor.submit(
+      auto submission = executor.submit(
           [request, loader = std::move(loader),
            wake = std::move(wake)](std::stop_token stop) mutable noexcept {
             try {
@@ -90,15 +90,16 @@ public:
               }
           },
           reservedBytes);
+      _ticket = std::move(submission.ticket);
+      if (!_ticket) {
+        std::lock_guard lock{request->mutex};
+        request->status = AsyncStatus::Error;
+        request->error = runtime::describe(submission.admission);
+      }
     } catch (...) {
       std::lock_guard lock{request->mutex};
       request->status = AsyncStatus::Error;
       throw;
-    }
-    if (!_ticket) {
-      std::lock_guard lock{request->mutex};
-      request->status = AsyncStatus::Error;
-      request->error = "Executor admission refused";
     }
   }
 

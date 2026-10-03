@@ -27,3 +27,12 @@ While pending, the view polls the durable slot every 16 ms through the UI schedu
 settled views stop polling. An optional worker-safe wake callback can notify the
 host, but never owns the result. Disposal disconnects observation without
 cancelling a resource shared by other views.
+
+## Worker admission
+
+`Executor::submit` returns `TaskSubmission`: `admission` is `Accepted`, `Busy`,
+`TooLarge`, or `Closed`; only acceptance carries a `TaskTicket`. Busy is temporary
+capacity pressure. Oversized work and closed executors require a changed request
+or executor, not automatic retry. Cancellation retains capacity until work retires.
+Services own retry deadlines and result channels; executor admission is atomic and
+does not require a preceding statistics check.
