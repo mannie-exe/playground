@@ -238,6 +238,12 @@ NavigationService::advanceImpl(Impl &s, runtime::ActivityClock::time_point now,
       continue;
     ++work.operations;
     try {
+      const auto worker = s.executor.stats();
+      if (worker.closed)
+        throw std::logic_error("Navigation executor is closed");
+      if (sizeof(Impl::Slot) + sizeof(NavigationRequest) >
+          worker.maxReservedBytes)
+        throw std::length_error("Navigation request exceeds executor byte cap");
       auto charge = s.ledger->reserve(
           runtime::MemoryClass::CPU, runtime::ResourceKind::Navigation,
           sizeof(Impl::Slot) + sizeof(NavigationRequest) + 128,

@@ -222,6 +222,48 @@ int main() {
       require(pressured.state(a).status == CellStatus::Ready &&
                   source->calls == 1 && pressured.state(a).diagnostic.empty(),
               "stationary source recovers when preparation capacity returns");
+      const auto extra = pressured.request({a, 12, 1, 0, Readiness::Query});
+      pressured.advance(retryAt);
+      require(
+          pressured.requestState(extra).status == CellStatus::Failed &&
+              pressured.state(a).status == CellStatus::Ready &&
+              pressured.state(a).requested == Readiness::Data &&
+              bool(pressured.lease(a, Readiness::Data, 1)),
+          "failed extra readiness releases demand without stranding a source");
+    }
+    enum class Unavailable { Ledger, ExecutorCapacity, ExecutorClosed };
+    for (auto reason : {Unavailable::Ledger, Unavailable::ExecutorCapacity,
+                        Unavailable::ExecutorClosed}) {
+      auto account = std::make_shared<runtime::ResourceLedger>();
+      if (reason == Unavailable::Ledger) {
+        auto limits = account->snapshot().budgets;
+        limits.preparationBytes = 1024;
+        account->setBudgets(limits);
+      }
+      runtime::Executor worker{
+          {.maxReservedBytes =
+               reason == Unavailable::ExecutorCapacity ? 1024u : 1024u * 1024}};
+      if (reason == Unavailable::ExecutorClosed)
+        worker.close();
+      auto source = std::make_shared<Provider>();
+      WorldStreamer impossible{{space.world, 1, "", {ca}, {{space, {}}}},
+                               13,
+                               source,
+                               worker,
+                               account,
+                               {.productBytes = 1024, .scratchBytes = 1024}};
+      impossible.setSources(1, first);
+      impossible.advance(now);
+      require(
+          impossible.state(a).status == CellStatus::Failed &&
+              !impossible.state(a).diagnostic.empty() &&
+              !impossible.demand().pending && !impossible.demand().wakeAt,
+          "impossible reservations and closed workers fail without retries");
+      const auto failures = impossible.stats().failures;
+      impossible.advance(now + std::chrono::seconds{1});
+      require(
+          impossible.stats().failures == failures && !source->calls,
+          "terminal admission failure does not spin or invoke the provider");
     }
     {
       runtime::ServicePump pump;

@@ -41,6 +41,8 @@ public:
 
 struct ExecutorStats {
   std::size_t outstanding{}, reservedBytes{};
+  std::size_t maxReservedBytes{};
+  bool closed{};
 };
 
 // Jobs must contain their own error/result channel. Destruction stops

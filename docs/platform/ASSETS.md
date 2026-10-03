@@ -69,6 +69,9 @@ UI tree, SDL font or GPU device. Owner-thread polling accepts only the current
 request generation. Cancellation suppresses publication and is cooperative, not
 forced interruption of a parser. Failure is retained as an exception result.
 Executor destruction requests stop and joins workers before dependent services die.
+`Executor::stats()` exposes its byte cap and closed state alongside current usage.
+Services distinguish temporary admission pressure from impossible reservations or
+shutdown; a refused `submit` remains advisory and does not reserve capacity.
 
 Parallel layout, general task graphs, native plugin loading, automatic reload and
 arbitrary callback serialization are outside the asset preparation boundary.
