@@ -51,6 +51,23 @@ Missing authored target nodes are invalid; links to absent tiles explicitly mean
 missing data. An unavailable link is a data-readiness gap, while a blocked route
 is removed or denied by its declared profile/permission constraints.
 
+## Spatial-data preparation
+
+`NavigationRecipe` consumes declared occupancy/traversal channels and a versioned
+interpretation plus NavigationProfile. It produces immutable ground-grid tiles
+with source/halo/profile stamps, complete coverage and conservative clearance.
+Ground support, headroom, slope/step and area costs are domain rules; render opacity
+or mesh visibility cannot substitute for them. Baseline support uses a declared
+walkable layer/plane and bounded neighboring samples; unsupported stacked/flying
+interpretations fail explicitly rather than collapsing floors together.
+
+Publication validates current dependencies before admitting tiles to a
+NavigationSnapshot. Seams become traversable only when neighboring coverage and
+profile revisions agree. Channel/range edits invalidate affected tiles/corridors;
+a color-only change does not. Missing required data returns NeedsData. Existing
+planners/followers consume the resulting tiles without a second pathfinding stack.
+See [spatial products](SPATIAL_PRODUCTS.md) and [verification](SPATIAL_TESTING.md).
+
 ## Planning and missing data
 
 Result status is Complete, Partial, NoPath, NeedsData, Unsupported, BudgetExceeded,

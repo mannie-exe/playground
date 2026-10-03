@@ -145,6 +145,28 @@ Interpolation buffers are bounded; stale observations freeze/report age rather t
 silently extrapolate without limit. A local client waiting for visual assets does
 not stop authority ticks or make missing collision coverage safe.
 
+## Dataset authority adapters
+
+`DatasetBaseline` carries dataset/schema/source identities, epoch, root revision,
+admitted coverage and exact required profile/content references. `DatasetDelta`
+identifies its baseline, command/commit sequence and bounded typed RegionPatches or
+verified payload references. Encode validated values, never raw C++ storage.
+Authority validates permissions, sizes, address bounds and expected revisions before
+using the same EditService as local tools. Dedup watermarks/receipts survive retries;
+received, committed and durable acknowledgements are distinct.
+
+Missing baselines, sequence gaps or incompatible interpretation trigger explicit
+resynchronization/refusal. Interest exit releases demand but does not delete saved
+samples/overrides. Compatible reproducible sources can regenerate baselines;
+otherwise transmit bounded authoritative data through authorized content acquisition.
+Clients do not submit trusted collision meshes or navigation readiness claims.
+Live visualization streams may negotiate Latest samples; authoritative edits and
+simulation retain ordered semantics. Clock domains and sample age remain visible.
+
+In-memory fault transport adapters verify these domain contracts before native
+transport integration. They do not establish authenticated internet support.
+See [spatial tests](SPATIAL_TESTING.md) and [simulation](SIMULATION.md).
+
 ## Future session capabilities
 
 Client prediction/reconciliation, rollback, deterministic lockstep, distributed

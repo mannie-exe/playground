@@ -32,6 +32,19 @@ write callback. Coordinate fixtures compare world-space quantities before float
 projection as well as local output; increasing tolerance to hide lost precision
 is not an acceptable far-origin test.
 
+## Dataset integration
+
+[Spatial verification](SPATIAL_TESTING.md) defines dataset/source schemas,
+transactional multi-chunk edits, product freshness, simulation ordering and bounded
+live streams. World workflows bind exact dataset/frame snapshots, save checkpoint
+references and restore fresh epochs. Verify that editing a standalone dataset does
+not require a world, while world-bound edits cannot bypass its model coordinator.
+
+RequireProducts failure preserves old bindings. Source generation and surface,
+selection, collision and navigation preparation have independent capability and
+revision assertions. Shared fixtures exercise unloaded boundaries, stale workers,
+failed saves and accounting retirement instead of counting nominal API calls.
+
 ## Focused commands
 
 ```sh

@@ -83,6 +83,23 @@ reports admission failure instead of evicting live state. Origin changes, camera
 movement and cell membership alone do not recreate immutable resources. Managed
 estimates remain distinct from measured process/device residency.
 
+## Spatial storage and product accounting
+
+Dataset and product services use the same ledger through explicit injection.
+Charge owned source/channel groups, directory/root pages, decoded candidates,
+private simulation buffers, edit/undo preimages, dependency metadata and save
+staging. Shared immutable pages retain one token. Retained reader snapshots and
+old/new product overlap stay charged until all leases and submitted uses retire.
+
+Per-request output/scratch reservations and Executor admission estimates are
+separate limits over the same work, not duplicate physical allocations. Transfer
+or split reservations when adopting framework-managed output; do not release then
+reacquire between preparation and publication. Byte views distinguish logical
+sample size, encoded storage, managed allocations and uncontrolled library scratch.
+GPU upload/native realization has independent resource/frame admission. Neither a
+voxel count nor a declared chunk limit substitutes for worst-case geometry bytes.
+See [product scheduling](../platform/SPATIAL_PRODUCTS.md).
+
 ## Admission and pacing
 
 Activity determines whether rendering is needed. Scheduling determines when a

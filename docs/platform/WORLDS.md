@@ -6,7 +6,7 @@ presentation are separate contracts. A small app can use one space, an always
 resident cell and kinematic movement without creating unused services.
 
 These contracts include moving frames, transfers, persistence and spatial queries.
-[Streaming](STREAMING.md), [procedural/voxel content](PROCEDURAL.md),
+[Streaming](STREAMING.md), [spatial datasets](SPATIAL_DATA.md), [voxel content](VOXELS.md),
 [navigation](NAVIGATION.md) and spatial [networking](NETWORKING.md#spatial-authority-and-interest)
 are implementation requirements. [Physics integration](PHYSICS.md#future-implementation)
 remains future; its adapter boundary is specified here and in PHYSICS.md.
@@ -316,6 +316,35 @@ Native synchronization references: [POSIX/Linux fsync](https://www.man7.org/linu
 [Apple fcntl](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html),
 [Windows FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers)
 and [MoveFileEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+
+## Dataset bindings
+
+Worlds reference [spatial datasets](SPATIAL_DATA.md) without owning their codecs,
+source algorithms or per-sample entities. A dataset can also exist without a world.
+
+| Value/API | Contract |
+|---|---|
+| `DatasetBinding` | Binding ID, DatasetId/epoch, captured root revision, SpaceId/frame placement, placement revision and authority owner |
+| `WorldDatasetView` | WorldVersion/tick, consistent FrameSnapshot, bindings and retained DatasetSnapshots |
+| `WorldDatasetBindings::stage / publish` | Validate bounded candidate bindings and product barriers; publish one coherent view at the world model boundary |
+| `WorldDatasetBindings::snapshot` | Retain the complete view; no independent lookup of each dataset's latest root |
+| `DatasetCheckpointRef` | Dataset identity/schema, exact immutable checkpoint/root digest and captured revision |
+
+The app's world owner coordinates mutations and binding publication. World, frame
+and dataset candidates validate before activation; readers consume the published
+WorldDatasetView, not intermediate mutable owner state. Bound datasets have one
+mutation authority or an explicit handoff; standalone editors cannot concurrently
+bypass the world coordinator. Dataset-only apps publish at their owner boundary.
+Placement changes do not change sample revisions. Unsupported mapping/units fail
+before physics/navigation bindings activate.
+
+WorldStore metadata references bounded immutable dataset checkpoint roots and
+exact content locks. Save flushes selected roots/blobs before publishing one world
+checkpoint; restore opens those exact roots, not whichever dataset head is newest.
+Large voxel payloads are not copied into entity bytes or opaque metadata records.
+Dataset admission/migration failure preserves the old active world bundle.
+Unknown domain records/references remain preserved without claiming readiness.
+See [dataset persistence](VOXELS.md#persistence-api-and-encoding).
 
 ## Scene instance bindings
 

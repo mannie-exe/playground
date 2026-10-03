@@ -131,3 +131,14 @@ Keep old handles usable after unmount and replace a renderer without changing
 content identity. Measure cold startup, peak preparation bytes and repeated reads;
 packing is not assumed faster than loose files. Verify generated packs through
 the build/install contracts in [MANIFESTS.md](MANIFESTS.md).
+
+## Spatial payloads
+
+[Dataset manifests](MANIFESTS.md#spatial-dataset-manifests) reference bounded
+independently decodable channel groups/index pages with encoded and decoded limits.
+Pack boundaries do not define world cells or voxel chunks. The writer preserves
+exact schemas/source identities and can include derived products keyed by their
+recipes/targets. Mounted packages remain immutable; [dataset checkpoints](VOXELS.md)
+store runtime edits separately. Source adapters consume verified AssetReader data
+without hidden extraction or network acquisition. Missing providers preserve
+manifest/payload identity while refusing unsupported preparation.

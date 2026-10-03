@@ -95,6 +95,30 @@ an active baseline; navigation/mesh caches can be regenerated without rewriting
 authoritative edits. See [world persistence](WORLDS.md#state-activation-and-persistence)
 and [generation contracts](PROCEDURAL.md).
 
+## Spatial dataset manifests
+
+`DatasetManifest` records schema version, definition identity, bounded grids and
+mappings, channel schemas/groups, interpretation references, source mode and exact
+source locks, directory/index references, codecs and payload sizes/digests. It also
+names allowed product recipes/profiles and required capabilities; it cannot grant
+network/filesystem permission or execute a provider. Grid addresses and revisions
+use canonical lossless integer encodings. Sample layout and transfer byte order are
+explicit; runtime object layouts are never the wire/disk format.
+
+Immutable sources pin content. Reproducible sources pin provider/build
+compatibility, seed encoding, parameters and dependencies. Live bindings name their
+protocol/schema, while runtime samples carry session/epoch/sequence and clock domain.
+A captured sample is a new immutable payload, not a reconnect instruction.
+Dataset/schema, source recipe, domain interpretation and product cooker versions
+are independent. Runtime epoch/revision guards are not persistent content digests.
+
+Build/authoring exporters and runtime readers share one validated definition model.
+Cooked meshes/collision/navigation/slices are replaceable products keyed by exact
+inputs and target encoding. Dataset checkpoints pin baseline identity and edits
+separately; changing only a derived recipe never rewrites authoritative samples.
+Unknown providers preserve content while refusing unsupported interpretation.
+See [datasets](SPATIAL_DATA.md) and [checkpoints](VOXELS.md).
+
 ## Local authoring, build, install and CPack
 
 ```text
