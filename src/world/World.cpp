@@ -209,6 +209,24 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
     throw std::length_error("World command batch exceeds limit");
   if (mutations.empty() && tick == _state->tick)
     return _state->revision;
+
+  // Payload sizes follow command order; repeated replacements must not charge
+  // obsolete payloads to the final snapshot. Account the bounded sizing table
+  // separately, before allocating it.
+  struct PayloadSize {
+    EntityId id;
+    std::size_t bytes{};
+  };
+
+  const auto sizingCharge =
+      mutations.empty()
+          ? rendering::ResourceLedger::Token{}
+          : _ledger->reserve(rendering::MemoryClass::CPU,
+                             rendering::ResourceKind::Asset,
+                             arrayBytes(mutations.size(), sizeof(PayloadSize)),
+                             "World mutation sizing");
+  std::vector<PayloadSize> payloads;
+  payloads.reserve(mutations.size());
   auto bytes = stateBytes(*_state);
   auto spaces = _state->spaces.size(), entities = _state->entities.size();
   for (const auto &mutation : mutations)
@@ -218,10 +236,12 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
           if constexpr (std::is_same_v<T, CreateSpace>) {
             spaces = add(spaces, 1);
             bytes = add(bytes, sizeof(SpaceDefinition));
-          } else if constexpr (!std::is_same_v<T, DestroyEntity>) {
-            if (m.props.data.size() > _props.maxEntityBytes)
-              throw std::length_error("Entity domain data exceeds limit");
-            bytes = add(bytes, m.props.data.size());
+          } else {
+            payloads.push_back({m.id});
+            if constexpr (!std::is_same_v<T, DestroyEntity>) {
+              if (m.props.data.size() > _props.maxEntityBytes)
+                throw std::length_error("Entity domain data exceeds limit");
+            }
             if constexpr (std::is_same_v<T, SpawnEntity>) {
               entities = add(entities, 1);
               bytes = add(bytes, sizeof(EntityRecord));
@@ -229,6 +249,50 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
           }
         },
         mutation);
+  std::sort(payloads.begin(), payloads.end(),
+            [](const auto &a, const auto &b) { return a.id < b.id; });
+  payloads.erase(
+      std::unique(payloads.begin(), payloads.end(),
+                  [](const auto &a, const auto &b) { return a.id == b.id; }),
+      payloads.end());
+  for (auto &payload : payloads) {
+    const auto found = lookup(_state->entities, payload.id);
+    if (found != _state->entities.end() && found->id == payload.id)
+      payload.bytes = found->props.data.size();
+  }
+  // Structural capacity is reserved up front. Replacement copies temporarily
+  // coexist with the candidate's preceding payload; immutable readers retain
+  // their own independent charges throughout publication.
+  auto peakBytes = bytes;
+  for (const auto &mutation : mutations)
+    std::visit(
+        [&](const auto &m) {
+          using T = std::decay_t<decltype(m)>;
+          if constexpr (!std::is_same_v<T, CreateSpace>) {
+            auto &previous = lookup(payloads, m.id)->bytes;
+            if constexpr (std::is_same_v<T, DestroyEntity>) {
+              bytes -= previous;
+              previous = 0;
+            } else {
+              const auto replacement = m.props.data.size();
+              peakBytes = std::max(peakBytes, add(bytes, replacement));
+              if constexpr (std::is_same_v<T, SetEntity>)
+                bytes -= previous;
+              bytes = add(bytes, replacement);
+              previous = replacement;
+            }
+          }
+        },
+        mutation);
+  if (spaces > _props.maxSpaces || entities > _props.maxEntities ||
+      bytes > _props.maxStateBytes)
+    throw std::length_error("World candidate exceeds state limits");
+  const auto stagingCharge =
+      peakBytes == bytes
+          ? rendering::ResourceLedger::Token{}
+          : _ledger->reserve(rendering::MemoryClass::CPU,
+                             rendering::ResourceKind::Asset, peakBytes - bytes,
+                             "World payload replacement staging");
   auto next = candidate(*_state, _ledger, bytes, spaces, entities, _props);
   next->revision = increment(_state->revision);
   next->tick = tick;
@@ -260,7 +324,7 @@ std::uint64_t World::apply(std::span<const WorldMutation> mutations,
                 throw std::invalid_argument("Entity is not live");
               if constexpr (std::is_same_v<T, DestroyEntity>) {
                 pos->destroyed = true;
-                pos->props.data.clear();
+                std::vector<std::byte>{}.swap(pos->props.data);
                 pos->discontinuity = increment(pos->discontinuity);
               } else {
                 validProps(*next, m.props, _props);

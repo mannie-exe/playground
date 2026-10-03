@@ -124,6 +124,70 @@ int main() {
         "domain data bound enforced");
     require(small.snapshot().version() == smallBefore.version(),
             "admission failures leave state unchanged");
+    {
+      auto accounting = std::make_shared<rendering::ResourceLedger>();
+      World bounded(id, accounting,
+                    {.maxStateBytes = smallBefore.reservedBytes()});
+      bounded.apply(seed, bounded.snapshot().version(), 0);
+      const auto pinned = bounded.snapshot();
+      const auto finalBytes = pinned.reservedBytes();
+      auto replacement = props(a, 9);
+      replacement.data = {std::byte{7}};
+      const std::array<WorldMutation, 2> replaceTwice{
+          SetEntity{actor, props(a, 8)}, SetEntity{actor, replacement}};
+      bounded.apply(replaceTwice, bounded.snapshot().version(), 1);
+      require(
+          bounded.snapshot().reservedBytes() == finalBytes &&
+              bounded.snapshot().find(actor)->props.data == replacement.data &&
+              pinned.find(actor)->props.data == props(a, 0).data,
+          "same-size replacements fit exact state cap and preserve readers");
+      require(accounting->snapshot().memory[0].bytes == 2 * finalBytes,
+              "published snapshots retain only final state charges");
+      auto bigger = replacement;
+      bigger.data.resize(64);
+      const std::array<WorldMutation, 2> growShrink{
+          SetEntity{actor, bigger}, SetEntity{actor, replacement}};
+      bounded.apply(growShrink, bounded.snapshot().version(), 2);
+      require(
+          bounded.snapshot().reservedBytes() == finalBytes &&
+              accounting->snapshot().memory[0].bytes == 2 * finalBytes,
+          "intermediate payloads are staged without inflating published state");
+      const auto originalBudgets = accounting->snapshot().budgets;
+      auto tightBudgets = originalBudgets;
+      tightBudgets.cpuBytes =
+          accounting->snapshot().memory[0].bytes + finalBytes;
+      accounting->setBudgets(tightBudgets);
+      test::rejects<rendering::ResourcePressure>(
+          [&] { bounded.apply(growShrink, bounded.snapshot().version(), 3); },
+          "temporary payload copying still obeys the shared memory budget");
+      require(bounded.snapshot().tick() == 2 &&
+                  accounting->snapshot().memory[0].bytes == 2 * finalBytes,
+              "staging refusal releases reservations without publishing");
+      accounting->setBudgets(originalBudgets);
+      const auto version = bounded.snapshot().version();
+      const std::array<WorldMutation, 1> tooLarge{SetEntity{actor, bigger}};
+      test::rejects<std::length_error>(
+          [&] { bounded.apply(tooLarge, version, 3); },
+          "oversized final payload still exceeds state cap");
+      require(
+          bounded.snapshot().version() == version &&
+              accounting->snapshot().memory[0].bytes == 2 * finalBytes,
+          "failed sizing releases staging and leaves publication unchanged");
+      const std::array<WorldMutation, 1> destroy{DestroyEntity{actor}};
+      bounded.apply(destroy, version, 3);
+      require(bounded.snapshot().reservedBytes() == finalBytes - 1 &&
+                  accounting->snapshot().memory[0].bytes == 2 * finalBytes - 1,
+              "destroy releases payload storage while retaining its tombstone");
+      World spawned(id, accounting, {.maxStateBytes = finalBytes});
+      const std::array<WorldMutation, 3> spawnReplace{
+          CreateSpace{{a, {}}}, SpawnEntity{actor, bigger},
+          SetEntity{actor, replacement}};
+      spawned.apply(spawnReplace, spawned.snapshot().version(), 1);
+      require(spawned.snapshot().reservedBytes() == finalBytes &&
+                  spawned.snapshot().find(actor)->props.data ==
+                      replacement.data,
+              "spawn and replacement share command-ordered payload sizing");
+    }
     auto budgets = ledger->snapshot().budgets;
     budgets.cpuBytes = ledger->snapshot().memory[0].bytes;
     ledger->setBudgets(budgets);

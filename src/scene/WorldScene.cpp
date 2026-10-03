@@ -103,7 +103,6 @@ SceneProjection::extract(world::WorldSnapshot state, const WorldCamera &camera,
   result->_origin = origin;
   result->_limits = space->limits;
   result->_camera = camera;
-  result->_resourceOwner = _resourceOwner;
   result->_draws.reserve(_visuals.size());
   result->_entities.reserve(_visuals.size());
   for (const auto &visual : _visuals) {

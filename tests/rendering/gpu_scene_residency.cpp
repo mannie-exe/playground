@@ -125,8 +125,9 @@ int main() {
           world::SpawnEntity{near, {{{space, {0, 0, 2}}, {}}, {space}}},
           world::SpawnEntity{far, {{{space, {1e6, 0, 2}}, {}}, {space}}}};
       state.apply(seed, state.snapshot().version(), 0);
+      const auto farMesh = scene::makeMesh(mesh->data());
       scene::SceneProjection projection(
-          {{near, {mesh, {}, {}}}, {far, {mesh, {}, {}}}}, ledger);
+          {{near, {mesh, {}, {}}}, {far, {farMesh, {}, {}}}}, ledger);
       const scene::WorldCamera nearCamera{.pose = {{space, {}}, {}}},
           farCamera{.pose = {{space, {1e6, 0, 0}}, {}}};
       const std::array views{projection.extract(state.snapshot(), nearCamera,
@@ -153,6 +154,22 @@ int main() {
             pixels == reference && pixels[16 * 32 + 16][0] > .9f,
             "simultaneously retained GPU views do not share a mutable origin");
       }
+      renderer.takeWork();
+      renderer.trimUnused();
+      for (const auto &extracted : views) {
+        scene::SceneRenderProps projected{
+            .camera = extracted->camera().view(extracted->origin(),
+                                               extracted->limits(), 1),
+            .pixelSize = {32, 32},
+            .resourceOwner = extracted->resourceOwner()};
+        const auto image = std::dynamic_pointer_cast<const GPUImage>(
+            renderer.render(projected, extracted->draws()));
+        test::readPixels(device, *image);
+      }
+      const auto stable = renderer.takeWork();
+      test::require(
+          !stable.uploads && !stable.evictions && stable.meshHits,
+          "distinct extracted views preserve disjoint resident meshes");
     }
     renderer.trimUnused();
     const auto snapshot = ledger->snapshot();

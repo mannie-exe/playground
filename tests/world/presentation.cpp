@@ -106,6 +106,14 @@ int main() {
       require(rendered == reference,
               "full rendered image matches near-origin reference");
       const auto beforeOwner = renderer.owner;
+      ui::UIRoot secondRoot;
+      secondRoot.setContent(std::make_unique<ui::SceneView>(ui::SceneViewProps{
+          .preferredSize = {64, 64}, .worldScene = extracted}));
+      secondRoot.flushLayout(math::Size2{64, 64});
+      CountingScene secondRenderer;
+      secondRoot.prepare({.scenes = &secondRenderer});
+      require(secondRenderer.owner != beforeOwner,
+              "views sharing an extraction own independent resource plans");
       const auto viewport = *node->viewport();
       const auto ray = viewport.worldRayAt({32, 32});
       require(ray && ray->origin.space == space &&

@@ -52,6 +52,14 @@ Read-only snapshots expose only their retained coverage, not the entire persiste
 world by implication. Retention pressure refuses new work or ends a consumer's
 contract explicitly; it never invalidates memory behind a live lease.
 
+`WorldProps::maxStateBytes` bounds the final logical snapshot, including domain
+payloads and tombstones. Replacements subtract the preceding payload in command
+order; destroyed entities release payload storage. Sizing scratch and peak copy
+storage are separately admitted by the resource ledger and released before the
+mutation call returns. Retained readers keep their own snapshot charges. A batch
+may stage larger intermediate payloads if the shared budget admits them; invalid
+commands, state-limit failures or staging pressure leave publication unchanged.
+
 ## Coordinates and numerical bounds
 
 World coordinates use meters, seconds and radians, +Y up and camera forward +Z.
