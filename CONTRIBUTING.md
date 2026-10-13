@@ -5,6 +5,25 @@ check over a new framework that obscures the thing being studied.
 The [documentation index](docs/README.md) links target contracts and explicitly
 future capabilities.
 
+## Architecture and documentation
+
+[Runtime architecture](docs/platform/ARCHITECTURE.md) defines the target shape:
+`playground_lib` aggregates reusable modules, `playground_demo` owns the launcher
+and fixtures, and `playground_voxel` owns terrain/material experiments. Preserve
+direct module linkage and isolate native dependency adapters. Core contracts must
+not depend on demo registrations, game protocols, voxel terrain rules or an ECS.
+Optional Jolt, FMOD and networking adapters have explicit build and runtime
+capabilities. FMOD uses a supplied, version-checked SDK; a disabled adapter must
+not fetch or link it. Keep SDK credentials and binaries outside source control.
+
+Design docs specify intended behavior, not a backlog disguised as an API reference.
+Mark optional module scope and future contracts where they are introduced. Keep
+implementation evidence in PR validation and focused tests. Prefer existing IDs,
+scopes, completion, resource and persistence boundaries before adding APIs.
+[Host verification](docs/platform/HOST_TESTING.md) covers app isolation, composition,
+service ordering and dependency-disabled builds. Application fixtures belong in
+[demo docs](docs/render/DEMOS.md), not in the host lifecycle contract.
+
 ## Build and source boundaries
 
 Use C++23 and the checked-in CMake presets. CMake 4.4 or later and Ninja are

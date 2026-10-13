@@ -1,6 +1,6 @@
 # Application activity and full-frame presentation
 
-World streaming, generation, navigation and save services publish pending work and
+Selected streaming, generation, audio, networking and save services publish pending work and
 wake deadlines through the [runtime service pump](RUNTIME.md#service-processing).
 Workers retain results before waking the owner. Clean views do not suppress service
 progress; pending disk/network work does not force continuous redraw. Accepted
@@ -15,14 +15,17 @@ The host processes events, ready services and completions, runs requested/due up
 settles UI work, and renders a complete frame only when demanded. It waits for an
 SDL event or the earliest deadline when no immediate work remains. Timer deadlines
 use monotonic time; UI scheduler delays are translated at the session boundary.
-Simulation keeps its independent bounded catch-up/pause contract.
+Local interactive simulation keeps its bounded catch-up/pause contract. Ordered
+model runners and native service execution domains keep separate clocks. FMOD
+update deadlines and network control dispatch remain service demands even with
+no visible view; they do not require rendering frames.
 
 ## Public seams
 
 | Contract | Responsibility |
 |---|---|
 | `runtime::ActivityProps` | Independent `continuousUpdate` and `continuousPaint`, both true by default |
-| `IApp::activityProps()` | Opt-in cadence; Menu, Demo 2D and Minesweeper use on-demand UI cadence |
+| `IApp::activityProps()` | Instance-selected cadence; inspection/UI apps can use on-demand updates |
 | `runtime::ActivityDemand` / `IApp::activityDemand()` | Current update/paint demand and optional absolute steady-clock `wakeAt` |
 | `AppContext::requestUpdate/requestRepaint` | Owner-thread model work or window presentation invalidation |
 | `runtime::ServicePump` / `ServiceDemand` | Bounded service processing and deadlines independent of local simulation or painting |
@@ -126,8 +129,9 @@ remain pending until submission; no redraw cooldown keeps a settled UI awake.
 
 Native OS resize/move can block SDL_PollEvent or SDL_WaitEventTimeout.
 Continuous rendering within that modal loop requires SDL main callbacks or an
-owner-thread, reentrancy-safe exposed-event callback; the current host does not
-provide that path. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
+owner-thread, reentrancy-safe exposed-event callback. Such modal-loop rendering
+is future work; ordinary service deadlines cannot guarantee progress while the
+OS blocks the host thread. See [SDL's resize guidance](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
 Programmatic window transitions and ordinary queued resize events use the normal
 host loop.
 
@@ -142,7 +146,9 @@ gap. Scripted camera demand is independent of manual ownership, while benchmark
 interruptions retain their explicit invalidation rules. See
 [CAMERAS.md](../render/CAMERAS.md#coordinates-and-clocks).
 
-## 3D application demand
+## Demo application demand
+
+These policies belong to `playground_demo`; they are not host defaults.
 
 Material Test and Chess inspection declare no fixed simulation. Camera input and
 UI activity request updates; Material Test requests continuous work only while

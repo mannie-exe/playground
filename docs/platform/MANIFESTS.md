@@ -2,7 +2,9 @@
 
 Manifests describe immutable content, compatibility and dependency resolution.
 Host build-info.json, asset-pack manifests and executable-app manifests are
-separate artifacts. Executable-app authoring/loading and its browser are
+separate artifacts. Native AppDefinition registration, exact content locks and
+[saved composition](COMPOSITION.md) do not require executable bundles.
+Executable-app authoring/loading and its browser are
 [future capabilities](DISTRIBUTED_APPS.md).
 
 ## Version domains
@@ -26,8 +28,8 @@ Use [SemVer](https://semver.org/spec/v2.0.0.html) for released app/pack
 contracts: exported asset IDs, kinds and documented interpretation form the pack's
 public interface. Removing/changing that interface is breaking; additions are
 compatible only if existing consumers retain their behavior. A content correction
-can be a patch, but changing gameplay-affecting data still requires multiplayer
-content compatibility checks. Version labels alone never authorize mixing worlds.
+can be a patch, but changing shared model interpretation still requires session
+compatibility checks. Version labels alone never authorize mixing content.
 
 Pre-release and major-zero versions are explicitly unstable. Build metadata does
 not order releases and cannot select a newer artifact. Local unpublished bundles
@@ -119,6 +121,22 @@ separately; changing only a derived recipe never rewrites authoritative samples.
 Unknown providers preserve content while refusing unsupported interpretation.
 See [datasets](SPATIAL_DATA.md) and [checkpoints](VOXELS.md).
 
+## Composition and audio metadata
+
+Composition definitions declare their schema, exact content lock, stable local
+object IDs, parent/frame references and versioned module attachments. Registered
+behavior names select compiled implementations; they are not executable payloads.
+Required unknown attachments reject activation; optional unknown records survive
+round trips without claiming readiness. Checkpoints reference the definition and
+store model state separately from native realizations.
+
+FMOD bank sets declare master/strings/event dependencies, bank content digests,
+build platform and the supported Studio/Core SDK compatibility. The supplied SDK's
+exact version and build variant belong in host build metadata. Studio-authored
+banks and clip source formats remain distinct. A bank update stages a complete
+compatible set and retires old leases; it does not rewrite active event instances
+or silently remap event identifiers. See [FMOD integration](../audio/README.md).
+
 ## Physics and network compatibility
 
 Physics profiles pin domain shape/filter/material interpretation separately from
@@ -129,8 +147,10 @@ body/entity definitions, poses and revisions, not Jolt BodyID or opaque solver
 snapshots. Save/load rebuilds solver state with an explicit discontinuity unless a
 separately supported exact restoration contract is selected.
 
-Session negotiation includes protocol/features, dataset schemas, content baselines
-and relevant domain interpretations. Local loopback and native clients use the
+Session negotiation includes protocol/features and the selected domain schema
+and content requirements. A shared-document session does not require a world or
+dataset schema. The future spatial replication adapter negotiates dataset schemas,
+content baselines and relevant spatial interpretations. Local loopback and native clients use the
 same schema/version checks. Server-authoritative clients need not share a solver
 build merely to interpolate poses; deterministic prediction/rollback compatibility
 is not implied. Native transport build identity is separate from domain wire format.

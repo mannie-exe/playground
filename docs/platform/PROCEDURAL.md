@@ -1,5 +1,10 @@
 # Procedural spatial providers
 
+This optional provider boundary supports application-owned generation. Terrain
+rules, infinite-world feature placement and concrete terrain algorithms are
+prototype work in playground_voxel. Bounded discovery/source interchange remains
+a spatial module requirement.
+
 Procedural generation is one [spatial data source](SPATIAL_DATA.md), alongside
 loaded and live data. The framework defines requests, identity, bounds and
 publication. Applications implement terrain, scalar fields, visual effects or other
@@ -14,7 +19,7 @@ generation algorithms. [Voxel storage/editing](VOXELS.md) and
 | `GenerationKey` | Provider/build compatibility, seed encoding where applicable, configuration/content digests, address/channels and output kind |
 | `GenerationRequest` | DataRequest plus GenerationKey and bounded immutable neighbor inputs |
 | `GenerationResult` | PrepareResult with generated source identity, dependency stamps, measurements and terminal outcome |
-| `GeneratedEntityKey` | Stable domain feature identity mapped explicitly to persistent EntityId without scheduling-order dependence |
+| `GeneratedEntityKey` | Optional world-adapter value mapping application feature identity to EntityId; scalar/label sources do not require it |
 | `CellGenerator` | Application adapter implementing SpatialDataSource for generated regions; no second scheduler or mutable-world API |
 
 Providers are trusted compiled implementations selected by an allowlisted ID.

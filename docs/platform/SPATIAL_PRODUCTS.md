@@ -1,6 +1,6 @@
 # Spatial products and scheduling
 
-Derived products consume immutable [dataset](SPATIAL_DATA.md) snapshots. Meshes,
+This optional module prepares derived products from immutable [dataset](SPATIAL_DATA.md) snapshots. Meshes,
 selection indexes, collision data and navigation tiles have independent readiness
 and lifetime. Product preparation uses the shared Executor, ServiceScope and
 ResourceLedger; it does not install a second worker pool or GPU scheduler.
@@ -9,7 +9,7 @@ ResourceLedger; it does not install a second worker pool or GPU scheduler.
 
 | Value/API | Shape and contract |
 |---|---|
-| `ProductKind` | Registered typed output identity; baseline kinds are SurfaceMesh, VolumePresentation, Selection, Collision and Navigation |
+| `ProductKind` | Registered typed output identity; baseline kinds are SurfaceMesh, VolumePresentation and Selection; enabled physics/navigation adapters register their kinds |
 | `RecipeRef` | Registered recipe ID, schema/build compatibility and exact configuration digest |
 | `DependencyStamp` | Dataset/epoch, grid/address, channels, region, source/content revisions and coverage state; also exact external profile/content identities |
 | `DependencySet` | Bounded canonical ordered stamps, including absent-neighbor availability |

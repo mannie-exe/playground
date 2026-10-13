@@ -1,5 +1,10 @@
 # Navigation and autonomous movement
 
+Navigation is an optional application utility. Its grid/mesh adapters and physical
+character integration are outside baseline host, dataset and Jolt acceptance.
+The contracts below apply when the utility is selected; they do not prescribe an
+application's entities, movement rules or simulation scheduler.
+
 Navigation plans routes and follows them toward app-selected goals. Goal selection,
 behavior trees and game rules remain app concerns. Path planning, local avoidance,
 [locomotion](LOCOMOTION.md) and [physical movement](PHYSICS.md) are separate stages.

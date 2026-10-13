@@ -1,5 +1,8 @@
 # Locomotion profiles and facing
 
+These are optional application-control utilities, not runtime-core requirements.
+Character motors and physical navigation integration are future work.
+
 Locomotion consumes intent and produces requested movement and facing. Camera
 placement, device routing and movement realization are separate responsibilities.
 Apps own the controlled subject; profiles require neither a character mesh nor a
@@ -67,9 +70,9 @@ Steered has two built-in recipes:
 | Responsive exploration | View heading | Desired world travel direction | Travel changes immediately; visible facing can still turn gradually |
 | OutOfNowhere-style | Actual body heading | View heading while moving | Travel curves as the body catches up; lateral/backward inputs remain body-relative |
 
-The default for a new subject-following demo is OutOfNowhere-style with gradual
-turning. This is a control preference, not a physical-accuracy guarantee. Material
-inspection and free flight retain their own controllers.
+Applications select their own recipes. OutOfNowhere-style is an example control
+preference, not a host default or physical-accuracy guarantee. Material inspection
+and free flight may use independent controllers.
 
 Movement-basis and facing choices are validated together. A travel-facing target
 must come from a stable desired world direction, not repeatedly from the body's
@@ -140,6 +143,8 @@ available to visual turning and animation selection. Teleports reset history and
 turn/follow damping. Smoothed visual transforms never feed back into movement.
 
 ## Physics movement realization
+
+**Future optional adapter.** The following contract does not gate baseline Jolt.
 
 `CharacterMotorProfile` defines capsule dimensions, up direction, speed/acceleration,
 gravity, maximum slope/step, support-motion inheritance, overlap recovery limits and

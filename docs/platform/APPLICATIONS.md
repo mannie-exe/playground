@@ -1,217 +1,160 @@
 # Application composition
 
-Games and collaborative applications share the same host/service boundaries.
-[Distributed app authoring/loading](DISTRIBUTED_APPS.md) and executable-app
-[permissions/isolation](SECURITY.md) remain explicitly future capabilities.
+AppHost supplies platform lifetime and execution boundaries. Each application owns
+its model, behavior and presentation composition through explicit scoped services.
 
 ## Ownership and composition
 
 | Owner | Responsibility |
 |---|---|
-| AppHost | Platform services, one foreground compiled IApp, settings and presentation |
-| IApp | App model, action map, activation lifetime and local simulation policy |
-| Domain model | Stable entities, validated commands, rules, revisions and durable state |
-| World | Spaces, entity identity, frame relationships, snapshots and durable changes; see [world contracts](WORLDS.md) |
-| Session authority | Participants, command validation, shared state and private views |
-| UIRoot / scene | UI behavior or render descriptions; neither owns gameplay authority |
-| Asset catalog/mount | Immutable definitions, dependency closure and retained source lifetimes |
-| Service scope | App-owned audio, network and asynchronous work independent of local presentation pause |
+| Distribution/bootstrap | Factories, content resolution, initial entrypoint and shell policy |
+| AppHost | Native platform/session, service pump, shared resource policy and transitions |
+| App instance | Durable model, command validation, selected services and instance lifetime |
+| Presentation attachment | UI/scene views, input assignment and view-local transient state |
+| Optional modules | Typed content, worlds, datasets, physics, audio or sessions requested by the app |
+| Native adapters | Solver/device/transport state and completion/retirement guarantees |
 
-Models accept domain commands and publish state/events without owning SDL events,
-windows, UI nodes or GPU resources. Local input and network adapters translate to
-the same domain operations; presentation projects accepted state into UI, scenes
-and sound cues. Rebuilding a view or replacing a renderer preserves the model.
-Persistent model IDs, session IDs, asset IDs and transient NodeHandles remain
-separate. Never serialize pointers, callbacks, variant indexes or cache keys.
+Models accept domain commands without depending on SDL events or UI nodes. Views
+project model state and invoke permitted actions. Rebuilding a view or replacing
+a renderer preserves the model. Render parenting does not imply physics ownership.
+Applications choose collections and update order; an ECS is not required.
 
-One app can mount several packs; many apps can share immutable pack storage.
-Mounting data does not create an app instance or grant code execution. Each
-service defines admission, cancellation, deadlines and terminal outcomes; the
-completion mailbox does not replace its byte/voice/connection limits.
+## Definitions, instances and entrypoints
 
-Durable model snapshots carry an app identity and schema version. Validate and
-migrate a candidate before atomic replacement; failure preserves the old state.
-Save data belongs to app storage, separate from shared settings and immutable
-packs. Domain commands with durable external effects record their result with
-the state transition before acknowledging success. UI state is persisted only
-through an explicit app view-state policy.
+| Value/API | Contract |
+|---|---|
+| `AppDefinition` | Owned namespaced AppId, owned display metadata, supported entrypoints, requirements and content references |
+| `AppInstanceId` | Fresh identity for a model lifetime; distinct from definition, content, window and activation generations |
+| `AppLaunchProps` | Selected entrypoint, bounded versioned arguments, resolved content lock and optional restore reference |
+| `AppRegistry::add / create` | Validate unique IDs, non-null compiled factories and requirements; construct a candidate without activating it |
+| `AppHostProps` | Registry/content providers, initial launch, directories, optional services and shell/exit policy |
+| `InstanceServices` | Explicit scoped access to selected facilities; no ambient application lookup |
+| `IApp / AppContext` | Trusted native desktop adapter and owner-thread requests; not a serialized or binary guest ABI |
 
-Gameplay worlds use owned model collections and explicit controller/system order.
-Render parenting does not imply physics ownership. Kinematic controllers,
-collision/physics, navigation and character pose production remain separate
-interfaces; a universal ECS or behavior tree is not required by this boundary.
+Reuse AppInfo and AppRegistry with owned stable metadata. Preserve prior persisted
+app keys through a mapping at the settings boundary. App-specific launch settings,
+including benchmarks, belong to the entrypoint's validated arguments. Registry
+construction and content registration happen outside AppHost.
+
+App IDs, entrypoint names, asset IDs and storage paths occupy different namespaces.
+Resolve package-relative content against its retained mount/root, never the process
+working directory. Private saves use an explicit application namespace and save ID;
+multiple instances cannot silently become concurrent writers to the same save.
+Session credentials and device handles are never launch-document content.
+
+A single app can own multiple screens, worlds or workflows. These are not separate
+host instances unless the author requests independent lifetime. The host does not
+infer app boundaries from directories, views or scene hierarchy. A launcher is an
+ordinary supplied application; mono-app startup selects its entrypoint directly.
+Host return/exit behavior is distribution policy, not a hardcoded Menu identity.
+
+## Instance and presentation lifetime
+
+The baseline admits one resident native instance and one foreground presentation.
+A staged replacement can coexist during preparation without running its behavior.
+Concurrent background instances and multiple windows are future capabilities.
+
+| Transition | Required behavior |
+|---|---|
+| Prepare | Resolve definitions/content, validate requirements and construct hidden candidate state within budget |
+| Activate | Revalidate candidate; attach services/input/presentation at the owner boundary |
+| Suspend | Cancel assigned input and pause declared model work; retain model and instance identity |
+| Resume | Rebase local elapsed time, rearm input and resume declared work without replaying paused wall time |
+| Detach presentation | Retire view subscriptions/resources without destroying the model |
+| Dispose | Close admission/publication, stop scoped work and retire resources before releasing owners |
+
+Instance scope survives presentation suspension. Presentation scope owns gestures,
+view subscriptions and view-specific jobs. Separate ActivationLifetime tokens express
+these lifetimes; an activation token is not a permission grant. Service policies
+declare whether work continues while suspended. Networking receipt and audio control
+can continue even when local simulation and rendering stop.
+
+Replacement prepares all fallible app/content/presentation state possible before
+revoking the old instance. Preparation failure leaves it active. Commit exchanges
+validated bindings; reversible failures restore prior state. A failure after an
+irreversible native action reports a fault/recovery state rather than claiming a
+rollback. External effects during preparation require an explicit policy and cannot
+be disguised as reversible construction. Only the selected instance receives input.
+
+Disposal suppresses new/late model publication immediately. Native workers retain
+captured inputs until retirement; closing a scope does not unload executing code or
+undo completed external effects. Host teardown joins remaining native work outside
+ordinary update/render callbacks. Actual dynamic code unload remains future.
+
+## Service access and state
+
+AppContext delegates to explicit instance services and the presentation attachment.
+Retain typed assets/resources, workers, services, completions, activity and window
+requests where applicable. Headless models consume module APIs directly without
+AppContext or SDL. Shared device settings remain host policy; app-local controls
+cannot mutate another instance's resources or implicitly select global defaults.
+Native code remains trusted despite these ownership conventions.
+
+Immutable catalog content, saved composition, mutable checkpoints and executable
+behavior are different artifacts. [Composition documents](COMPOSITION.md) wrap
+asset references and selected module definitions. App state is versioned and migrated
+before replacement. A scene save is not automatically a complete app checkpoint.
+UI focus/capture and other transient state persist only through an explicit policy.
 
 ## Spatial-data applications
 
-Apps may own DatasetStore, source/product/edit services and optional simulation
-without creating a World. A world app attaches datasets through explicit bindings;
-neither storage chunks nor samples automatically become entities. Generators,
-material interpretations, update rules and multimedia meaning belong to app/domain
-providers. Core services own bounds, lifetime, admission and publication.
+DatasetStore and its source/product/edit services work without a World. World apps
+attach snapshots through DatasetBinding and coordinate authoritative publication.
+Generators, interpretation and simulation rules remain registered application
+providers. An optional network adapter validates commands before using the same
+local mutation API; local storage does not require a session protocol.
 
-UI input, automation and network adapters submit the same validated SpatialEdit
-commands. Views select current versus displayed-generation queries explicitly.
-Apps choose live ReadOnly/Captured/Overlay editing, undo retention, durability and
-required-product barriers. There is no implicit universal game material or ECS.
-See [datasets](SPATIAL_DATA.md), [edits](VOXELS.md) and [simulation](SIMULATION.md).
-
-## Minesweeper screen contract
-
-Minesweeper owns its difficulty draft, active board, and pending screen intent.
-The difficulty screen and game screen are alternative retained views inside one
-IApp, not entries in AppRegistry. Launcher navigation still uses AppContext.
-Callbacks record intent; the app applies it after routing/update, never while a
-tree is being traversed. Candidate model/view construction precedes replacement;
-the old model outlives destruction of every view that borrows it.
-
-Difficulty uses exact bomb counts. Presets and bounded custom rows/columns/bombs
-feed the same validated board props. New Game resets the selected board; changing
-difficulty constructs a new model. Returning to difficulty preserves the draft.
-Bomb placement does not yet guarantee a safe first click.
-
-Easy is 9 x 9 with 10 bombs; Hard is 16 x 16 with 40. Custom dimensions are
-2..30 per axis and bombs are 1..(cell count - 1); shrinking a draft clamps its
-bomb count. New Game rerolls the selected count, and Difficulty discards the old
-board only after its replacement menu is attached. Selection persists for the
-lifetime of this IApp instance, not across launcher reactivation or process exit.
-
-Tab/Shift+Tab navigate controls; Enter/Space activate ordinary buttons on release.
-Steppers also accept arrows. The game grid has one tab stop, arrows select adjacent
-cells, Enter/Space reveal and Shift+Enter/Space flag. Focus follows the selected
-cell and keyboard navigation scrolls only enough to reveal it. The Difficulty
-button returns from game to difficulty; the Launcher button leaves difficulty.
-Unhandled Escape opens shared settings; Ctrl/Cmd+Shift+M returns to the launcher.
-Mouse cells retain primary reveal/secondary flag on press. Focus is assigned after layout, not during
-construction, because root focus eligibility requires arranged nodes.
-
-The window fits natural content up to the display work area, including the host's
-decoration and density conversion. Scrolling is a fallback for actual overflow,
-not an arbitrary grid-size breakpoint. Footer width is independent of board width.
-
-## Scene/game runtime boundaries
-
-Scene3D owns render-object hierarchy, transforms, visibility and immutable
-resource references. It is not a general gameplay SceneTree. The retained UI tree
-has different layout, event-routing and lifecycle responsibilities. Do not merge
-them merely because both have parents and children.
-
-AppHost owns activation, presentation and frame boundaries. An application should
-own its gameplay world and choose its simulation policy. The host routes input,
-accepts guarded CPU completions, runs optional bounded fixed steps, then performs
-frame update and presentation. See [runtime contracts](RUNTIME.md) for APIs,
-input snapshots, pause policy and controller usage. Hierarchy changes and destruction occur at safe
-boundaries; render parents need not imply ownership of physics or gameplay actors.
-Add controllers/components when an actual app exercises that contract, rather
-than giving every render object update hooks and all possible services.
-
-Worlds use [space-aware positions and stable identities](WORLDS.md); SceneProjection
-creates local render representations without transferring authority to Scene3D.
-[Streaming](STREAMING.md) and activation preserve durable entities when views/cells
-retire. [Procedural data](PROCEDURAL.md) shares that lifecycle. [Navigation](NAVIGATION.md)
-supplies autonomous movement requests; the app arbitrates player, path-following
-and scripted control explicitly. The [Jolt adapter](PHYSICS.md) realizes physical
-movement; an owned world or explicitly kinematic navigation can still omit it. Headless apps can use all
-model/service boundaries without constructing rendering or UI services.
-
-Procedural character work should separate desired motion, motor/controller output,
-physical constraints/contact resolution, and rendered pose. Muscle/neuron models
-are optional simulation models, not prerequisites for a camera or scene graph.
-Define units, timestep, authority and interpolation before introducing parallel
-simulation. Workers produce owned results; they do not mutate the live scene.
+[Physics](PHYSICS.md), [audio](../audio/README.md) and [sessions](NETWORKING.md) consume
+owned values at declared boundaries. Contact callbacks do not directly create scene
+nodes, play sound or transmit application messages. The app converts accepted
+results into later commands. Missing capabilities fail explicitly.
 
 ## Input integration
 
-Launcher numeric selection and Q-to-quit use named BeforeUI actions.
-Ctrl/Cmd+Shift+M is a host shortcut; unhandled Escape opens/closes shared settings
-after app/UI routing, preserving local popup/edit cancellation. Minesweeper's
-focused cell navigation, reveal/flag operations and button activation remain
-routed UI behavior: these actions depend on focus/hit testing,
-not an independent second gameplay dispatch. UI text/IME remains separate.
-Apps can add AfterUI gameplay contexts and rebind them through `IApp::input()`.
-Binding persistence, capture UI, gestures and response curves remain future work.
+AppHost routes host policy, application shortcuts, UI and after-UI actions through
+InputMap. Each presentation declares claims and device assignments. ViewControlSession
+owns relative-pointer engagement without owning a camera or physical subject.
+Loss of focus/suspension cancels held actions; resume does not synthesize presses.
+UI text/IME remains separate from action routing. See [runtime input](RUNTIME.md#input).
+
+## Scene/game runtime boundaries
+
+Scene2D/Scene3D contain presentation objects and resource references. World owns
+spatial identity/state where selected; the app owns domain behavior. UI layout,
+render hierarchy and physical attachment remain distinct. Local fixedUpdate is
+optional. Ordered simulation may instead use a module runner serviced independently
+of presentation. See [ordering](RUNTIME.md#timing-and-ordering).
 
 ## Launcher and demo organization
 
-The launcher groups UI Test, Material Test, Bistro/Chess scenes and study games.
-[Rendering demos](../render/DEMOS.md) define entries, asset ownership, compatibility
-fallbacks and controls. Menu configuration is the single ordered list for groups,
-labels and numeric bindings. Group labels are not focus stops; the content scrolls
-when the available window cannot contain all entries.
-
-Q quits from the launcher. Unhandled Escape opens settings; Ctrl/Cmd+Shift+M
-returns from an app. Button callbacks queue an app identity, and AppHost switches
-at a safe boundary. Failures remain visible in the launcher or scene loading view.
-Persisted keys demo and material-lab retain existing UI/material preferences.
-Rock Paper Scissors and Snake remain study stubs.
+`playground_demo` registers existing demonstrations and focused verification views.
+`playground_voxel` registers experimental world behavior. Shared viewers may consume
+reusable volume/scene APIs but their controls and workflows are application code.
+See [demo scope](../render/DEMOS.md); named game screen contracts are not host rules.
 
 ## Accessibility boundary
 
-Controls expose names, values, enabled state, keyboard operations and visible
-focus through the implemented AccessKit bridge. WindowServices publishes validated
-semantic identities and routes native actions on the owner thread. Native reader,
-IME and cross-platform acceptance remain distinct from unit/build coverage; see
-[accessibility contracts](../ui/ACCESSIBILITY.md). Do not expose hidden Minesweeper
-bomb state in semantics. UI-backed apps expose session input claims through IApp;
-modal/editor ownership blocks AfterUI actions even for otherwise unhandled keys.
-
-## Manual Minesweeper acceptance
-
-Launch `dist/debug/bin/playground` (`playground.exe` on Windows), select
-Minesweeper, and try both presets and custom 2 x 2 / 30 x 30 boards. Verify the exact flag allowance, New Game reset,
-Difficulty return, Escape settings, and Ctrl/Cmd+Shift+M launcher navigation.
-Exercise mouse reveal/flag, Tab/Shift+Tab, arrow navigation and Shift+Enter flagging. At small sizes the footer
-may be wider than the board; at large sizes the window should fill only as much
-of the usable display as needed, then permit overflow scrolling. Keyboard focus
-must remain visible when traversing an overflowing board. Repeat across display
-scale/monitor changes when those environments are available.
-
-Focused module tests cover NumberStepper, Button focus painting and Content scroll
-measurement; they do not substitute for this desktop interaction review.
-
-## Future browser target: platform port, not just a renderer
-
-Web/WASM is an exploratory target, not a supported build. SDL itself supports
-Emscripten, but [SDL_GPU currently excludes the web](https://wiki.libsdl.org/SDL3/FAQDevelopment).
-A GPU browser renderer would therefore implement the existing rendering contracts
-through a separate API, potentially [Emscripten's WebGPU port](https://emscripten.org/docs/porting/multimedia_and_graphics/WebGPU-support.html).
-The native SDL command-buffer/custom-pipeline and timestamp extensions are not
-portable browser interfaces. Shader production, resource bindings, limits,
-compression support and glyph realization need backend-specific validation.
-
-The current host's blocking desktop loop needs a nonblocking frame-pump adapter
-that returns control to the browser. Asset acquisition and persistent settings
-need browser storage/fetch implementations rather than native paths; the native
-AccessKit window bridge needs a browser accessibility/input adapter, potentially
-projecting the same semantics into DOM elements. Fullscreen, pointer capture,
-clipboard and IME must follow browser policy rather than desktop assumptions.
-
-Dependency builds (including Unicode/font/asset libraries) require a WASM
-toolchain audit. [Emscripten pthreads](https://emscripten.org/docs/porting/pthreads.html)
-require cross-origin isolation for shared memory; a threadless target would need
-an explicitly cooperative execution policy, not blocking waits on the UI thread.
-[Browser networking](https://emscripten.org/docs/porting/networking.html) also needs
-transport adapters instead of assuming ordinary native sockets. Keep shared
-application models, UI semantics and renderer contracts independent of these
-adapters; no browser implementation or new platform dependency is introduced now.
-
-## Benchmark activation
-
-The Bistro benchmark is one app identity with a launch duration (5 seconds,
-15 seconds or unbounded). Launcher buttons share its implementation and looping
-camera path. Launch configuration is activation-local, not a persisted graphics
-setting. Settings remain shared across apps; benchmark results record the actual
-settings and invalidate on changes during measurement.
+The native presentation supplies UI semantics, focus and platform accessibility
+through the UI adapter. App models expose meaningful values/actions; native scene
+objects do not automatically become accessible controls. Headless tools do not
+initialize accessibility or video services.
 
 ## Host integrations and interruption
 
-`AppHost::hostCompletions()` is a weak, bounded owner-thread delivery endpoint for
-host integrations and automation that must survive app switches. It is not an
-app permission surface. App work uses activation-scoped `completions()` instead.
-Both queues wake the normal scheduler and close with their owner; callbacks run
-at the update boundary, never on producer threads.
+Host-owned integrations have explicit host scopes. Instance operations use instance
+scopes; view operations use presentation scopes. No operation silently outlives its
+owner. Interruptions report reason and affected channels so apps can invalidate
+measurements or gestures without resetting durable state.
 
-`IApp::onActivityInterrupted` carries an `AppInterruption` reason and is a
-nonthrowing notification for Settings and focus
-loss. Exclusive interaction and uninterrupted measurements release/invalidate
-there. Scene benchmarks use activation-local `AppLaunchProps::benchmarkSeconds`:
-zero is infinite, absence selects the app default. Ordinary apps reject it.
+## Future browser target: platform port, not just a renderer
+
+Browser deployment, isolated executable apps, concurrent resident apps and multiple
+windows require separate platform/service implementations and acceptance. Native
+SDL/Jolt/FMOD/transport availability does not establish browser support. The future
+[loader](DISTRIBUTED_APPS.md) projects its instances through a host-owned adapter;
+it does not export AppContext, C++ ABI or native pointers.
+
+## Verification
+
+[Host workloads](HOST_TESTING.md) cover launch, failure, suspension, ownership,
+ordering and teardown with fake services and concrete native adapters.

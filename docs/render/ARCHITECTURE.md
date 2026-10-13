@@ -1,12 +1,14 @@
 # Rendering architecture
 
-This document explains dependency direction, ownership and runtime sequencing.
+This document explains rendering dependency direction, ownership and sequencing.
+The [runtime architecture](../platform/ARCHITECTURE.md) places rendering in an
+optional module; headless model, data and network consumers do not require it.
 [GPU.md](GPU.md), [2D.md](2D.md) and [3D.md](3D.md) define the detailed APIs and
 limitations; [CONTRACTS.md](CONTRACTS.md) fixes coordinate and color conventions.
 
-The current scope includes model importing, reflected custom pipelines and
+The rendering module scope includes model importing, reflected custom pipelines and
 reload, bounded residency/streaming, conservative target reuse, batching and
-direct vector paths, metallic–roughness PBR, directional/environment lighting and
+direct vector paths, metallic-roughness PBR, directional/environment lighting and
 rigid transform animation. Shadows, skinning and VAT remain separate extensions.
 GPU timestamps use a pinned, reproducible Vulkan-only SDL extension, exposed
 through a versioned device-property table. Bounded asynchronous queries share the
@@ -89,7 +91,7 @@ are not measurements of free VRAM, and the live-pool cap is not a whole-device c
 WorldCamera defines a precise space-identified observer; the view's RenderOrigin
 produces local CameraProps (eye, target, up and perspective/orthographic projection).
 SceneProjection derives local draws from the same world snapshot and origin without
-mutating shared assets. A viewport maps a UI content rectangle—not its border/padding—to
+mutating shared assets. A viewport maps a UI content rectangle, not its border/padding, to
 normalized camera coordinates and a physical render extent. It supplies:
 
 - camera view/projection at logical aspect;

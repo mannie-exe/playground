@@ -1,8 +1,9 @@
 # Runtime input, simulation and lifetime contracts
 
-Applications remain C++ authored. These facilities do not introduce a gameplay
-scene tree, renderer-owned behavior, automatic parallel simulation or serialized
-applications. AppHost supplies boundaries; each app owns its model and controllers.
+Trusted native applications use explicit models and controllers. Runtime core
+contracts govern lifetime, work and publication; optional modules supply facilities.
+[Application composition](APPLICATIONS.md) separates instance and presentation
+lifetime. No ECS, universal behavior scheduler or serialized native ABI is required.
 
 Update and presentation cadence are independent of simulation timing. See
 [ACTIVITY.md](ACTIVITY.md) for explicit app demand, UI deadlines, completion wakes,
@@ -12,27 +13,27 @@ independently of local presentation pause.
 
 ## Service processing
 
-AppHost owns a runtime ServicePump. App activation creates a ServiceScope for
+AppHost owns a runtime ServicePump. An app instance owns a ServiceScope for
 content acquisition, audio control and network/session work. Services publish
 immutable results from workers and mutate owned state only at their declared
 owner boundary. Device audio mixing and socket I/O do not execute in UI update.
 
 | API | Contract |
 |---|---|
-| ServiceScope | Activation-owned registrations and cancellation; destruction removes demand and rejects late publication |
+| ServiceScope | Instance- or presentation-owned registrations and cancellation; destruction removes demand and rejects late publication |
 | ServiceHandle | Retained terminal status/error and individual cancellation; does not retain callbacks after closure |
 | ServiceDemand | Pending work and absolute monotonic wake deadline; no deadline invented by a query |
 | ServiceWorkBudget | Per-pump work/byte/message limits; exhaustion preserves pending demand |
 | ServicePump::demand | Combine service deadlines with application, window and rendering demand |
 | ServicePumpProps | Bounded registrations, visits and shared work allowance; each registration can lower its own allowance |
 | ServicePump::advance | Process ready bounded work before simulation/presentation, including while Settings is open |
-| AppContext::services | Borrow active scope for owner-thread registration; workers retain only safe posting endpoints |
+| AppContext::services | Borrow the explicitly selected owner scope for registration; workers retain only safe posting endpoints |
 
 Registration specifies a handler, demand source and work limits; a service cannot
 recursively pump or mutate registration during traversal. Changes publish at a
 safe boundary. Fair rotation prevents one busy service from starving another.
 Completion notifications do not own the only result copy; saturation preserves
-durable outcomes. Terminal failures are delivered once with service/instance
+retained outcomes. Terminal failures are delivered once with service/instance
 identity. Closing a scope cancels pending work and invalidates publication before
 resource destruction; it does not forcibly interrupt a native decoder.
 `ServiceScope::wakeCallback` is safe to copy to workers and becomes inert when
@@ -49,8 +50,8 @@ bytes/messages; an overreported allowance fails that registration.
 Keep local simulation, authority/session ticks, UI monotonic time, audio sample
 time and presentation time distinct. Settings/focus pause local app input and
 simulation according to local policy; network authority and service processing
-continue. An online model advances through its AuthorityRunner, not the paused
-local SimulationClock. Headless hosting uses the same service/domain contracts
+continue. An ordered model advances through its own runner, not the paused
+local SimulationClock. AuthorityRunner is the optional session adapter to that policy. Headless hosting uses the same service/domain contracts
 without the desktop IApp/SDL window adapter.
 
 ## Spatial work and clocks
@@ -130,8 +131,8 @@ binding may clear pending edges of that same action, but not unrelated actions.
 
 Sequential navigation reserves Tab only when focus exists/can be obtained or a
 modal owns navigation. Removal/background cancellation must reach both InputMap
-and retained UI. Device removal currently cancels UI interactions conservatively;
-per-device UI keyboard ownership is not yet represented.
+and retained UI. Device removal cancels UI interactions conservatively;
+per-device UI keyboard ownership is a future extension.
 
 `input::InputMap` owns named button/scalar/vector and transient delta actions
 with ordered contexts.
@@ -163,7 +164,7 @@ Snapshots coalesce edges into booleans: multiple complete taps between ticks mea
 "at least one press/release", not an ordered event log. Event callbacks receive
 one frame snapshot after each SDL event; ticks have a separate latch. Removing a
 device clears its held controls and pending edges for its bound actions. There are
-no arbitrary modifier/chord expressions yet; UI modifiers retain existing behavior.
+arbitrary modifier/chord expressions are future; UI modifiers retain existing behavior.
 
 AppHost initializes and owns SDL gamepads through removal. No per-device selection
 UI is imposed; optional binding device IDs select an instance for the current run.
@@ -237,7 +238,8 @@ bounded local fixed ticks, updates frame-based UI, then renders. Commands and ap
 callbacks return. A fixed tick receives tick number, fixed delta and input snapshot.
 UIRoot retains its own completion/timer delivery during UI update. Model work that
 must publish before simulation should use the app activation sink, not a UI queue.
-Use `IApp::fixedUpdate` for simulation and `IRuntimeObject::update` for frame work.
+Use `IApp::fixedUpdate` for local interactive simulation and `IRuntimeObject::update`
+for frame work. Required ordered stepping uses the independent runner contract below.
 `AppContext::simulationState()` exposes tick, interpolation alpha, cumulative
 dropped seconds and effective pause; it is empty for frame-only apps.
 `setSimulationPaused` is app pause combined with focus pause, not renderer pause.
@@ -257,14 +259,45 @@ pose; renderer state is never the simulation authority. Spawn/teleport sets both
 poses to the same value. Controllers have explicit call order, not an implicit
 registration-order scheduler. Fixed steps alone do not guarantee determinism.
 
+## Ordered model advancement
+
+Reuse SimulationStep values and ServiceScope processing for an application-owned
+ordered runner. It is usable without networking or a World. Define fixed delta,
+committed/target tick, maximum backlog, one outstanding native step where required,
+and explicit Waiting/Running/Overloaded/Faulted states. The session AuthorityRunner
+and regional SimulationService adapt this boundary; neither owns desktop frame time.
+
+Admit inputs and commands for the next tick, submit required work, then publish only
+its complete result. Completion does not retroactively modify the input snapshot.
+A refused operation changes no committed state; a compromised native operation
+requires explicit recovery. Backlog limits report lag, slow domain time or refuse
+new work according to domain policy. Required ticks are never silently discarded.
+
+## Cross-system publication
+
+| Owner | Input | Publication and retirement |
+|---|---|---|
+| Content/spatial workers | Immutable versioned requests and retained dependencies | Owner validates candidate, exchanges binding and retires superseded leases |
+| Physics execution domain | One ordered step with commands and collision coverage | Completed valid poses/events publish at the model boundary; collision swaps occur between steps |
+| Network service | Owned received messages with connection/session generation | Domain validates/applies at its mutation boundary; receipt is not commit |
+| Audio control service | Scoped playback/parameter commands and spatial values | Native loading/playback/release states observed independently of presentation |
+| Renderer | Published descriptions and resource leases | Submission is distinct from GPU completion; resources survive in-flight use |
+
+Native callbacks stage bounded owned records and wake their service. They do not
+recursively invoke application systems. The app translates accepted events into
+subsequent typed commands, with explicit ordering where causality requires it.
+Optional systems do not share an implicit global transaction or universal clock.
+A host pump visit bounds its own work; it cannot preempt a blocking vendor call.
+Dependency-specific execution domains keep that work off ordinary UI callbacks.
+
 ## World simulation boundary
 
 One world owner applies model changes. On each simulation tick: accept validated
-domain commands and prepared generations, resolve frame samples, evaluate autonomous
-or player movement intent, realize motion through the selected kinematic/physics
-adapter, evaluate post-movement queries/zone events, then publish WorldSnapshot.
-Navigation plans against an identified snapshot; late plans cannot mutate the tick
-that requested them. Physics-generated events become bounded domain work at the
+domain commands and prepared generations, resolve frame samples, advance the
+selected model/physics systems, evaluate requested queries/zone events, then publish
+WorldSnapshot. A movement application may insert intent arbitration before motion.
+Optional navigation plans against an identified snapshot; late plans cannot mutate
+the tick that requested them. Physics-generated events become bounded domain work at the
 next declared mutation boundary, not recursive scene edits from solver callbacks.
 An app's explicit dependency order can refine these stages without making service
 registration order authoritative. See [worlds](WORLDS.md), [navigation](NAVIGATION.md)
@@ -290,9 +323,12 @@ entity sets with queries or replication.
 
 ## Lifetime and background publication
 
-`ActivationLifetime` owns an activation; weak `ActivationToken`s do not extend it.
-Deactivate invalidates tokens immediately; reactivation produces a new identity.
-AppHost activates before onEnter and invalidates before onExit. A failed candidate
+`ActivationLifetime` owns a scope; weak `ActivationToken`s do not extend it.
+Use separate instances for app-instance and presentation lifetimes. Closing either
+invalidates its tokens immediately; recreating it produces a new identity. Native
+`onEnter`/`onExit` delimit instance activation/disposal. Presentation detachment or
+Settings suspension does not implicitly call onExit or close instance services.
+AppHost activates the instance token before onEnter and invalidates it before onExit. A failed candidate
 is invalidated; a previous app retained by rollback keeps its original activation
 and queued work because it never exited. Guarded completion posts check validity again at delivery.
 Cancellation saves work; token validation prevents stale publication.
@@ -311,8 +347,10 @@ exceptions remain application errors and are not silently replayed.
 Token checks are not locks: activation/destruction and callback execution must
 share the owner thread. Existing node/object generational handles remain the
 mechanism for identifying individual UI/scene objects.
-AppContext's `completions()` returns an `ActivationSink` safe to copy to a worker;
-`activationToken()` can also guard other owner-thread publication paths. Do not
+AppContext's `completions()` returns the instance `ActivationSink`, safe to copy
+to a worker; `activationToken()` guards the same instance lifetime. View-specific
+work uses an explicitly supplied presentation sink/token so replacing a view rejects
+its stale results without canceling model work. Do not
 capture AppContext itself: it is a transient borrowed facade. App exit receives
 the exiting app's token/sink, not those of the newly activated replacement.
 
@@ -325,6 +363,9 @@ not automatically replayed. Existing UI deferred mutations are retained rather
 than replaced by a second world-wide queue.
 
 ## Controllers
+
+These optional utilities serve application control schemes. Character behavior and
+navigation integration are not prerequisites for runtime or physical-body acceptance.
 
 Concrete movement and orbit-camera controllers consume intent and write model
 values or WorldCamera, without SDL, GPU objects or renderer submission. World
@@ -353,15 +394,16 @@ changes reset history; an origin-only change does not.
 |---|---|
 | `input/InputMap.hpp` | IApp owns a map; `addContext`, `contextProps/setContextProps`, `bindings/rebind`, `setEnabled/removeContext` |
 | `platform/sdl/SDLActionInput.hpp` | SDL physical event translation and cancellation; host calls `routeInputEvent` around UI |
-| `runtime/Services.hpp` | Host-owned pump; activation-owned scopes, demand, bounded advancement and cancellation |
+| `runtime/Services.hpp` | Host-owned pump; explicit instance/presentation scopes, demand, bounded advancement and cancellation |
 | `runtime/SimulationClock.hpp` | Optional per-app clock; `beginFrame/nextStep`, `setPaused`, `state/reset` |
 | `runtime/ActivationLifetime.hpp` | Owner activation; tokens are weak, generations are separate control-block identities |
 | `runtime/CompletionQueue.hpp` | Thread-safe posting, owner-thread draining; guarded `ActivationSink` |
 | `runtime/DeferredMutations.hpp` | Owner-thread `defer/remove/flush` at application-chosen safe boundaries |
 | `scene/Controllers.hpp` | Kinematic movement, orbit/free cameras, camera director/path and pose history |
 
-For a simulated app, register digital/analog bindings, return timing props and
-publish actual world state in `fixedUpdate`. `LocomotionRequest` expresses desired
+For a locally simulated movement app, register digital/analog bindings, return
+timing props and publish actual world state in `fixedUpdate`. An ordered native
+physics runner uses its asynchronous completed-step boundary instead. `LocomotionRequest` expresses desired
 movement; the selected motor returns the realized `EntitySample`. Publish that
 result through `World::apply`, then pass the snapshot sample to `PoseHistory`.
 Before rendering, sample history with `ctx.simulationState()->alpha` and pass the
