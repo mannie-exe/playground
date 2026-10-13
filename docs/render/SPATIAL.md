@@ -1,5 +1,8 @@
 # Spatial presentation and selection
 
+This optional adapter connects sampled-data products to rendering. Mesh-only scenes
+and nonvisual dataset consumers do not depend on it.
+
 [Spatial products](../platform/SPATIAL_PRODUCTS.md) prepare immutable CPU products;
 renderers realize them through existing mesh/texture ownership and frame admission.
 Dataset content, semantic interpretation, placement and native resource identity

@@ -359,7 +359,7 @@ ctx.requestRenderRuntime({.pacing = pacing});
 ```
 
 A pacing value validates one to three outstanding application frames and an
-optional 1–1000 Hz cap. SDL's native presentation allowance remains independent
+optional 1 to 1000 Hz cap. SDL's native presentation allowance remains independent
 (default two); changing host admission does not flush the device queue. Budgets
 can be lowered below existing commitments without revoking resources; new growth
 is refused until usage permits it. See [RESOURCES.md](../render/RESOURCES.md).
@@ -379,7 +379,7 @@ raster quality and image reconstruction. General exposes:
 | `color_scheme` | system/light/dark; system | UI palette |
 | `contrast` | system/normal/high; system | UI contrast, independently of color scheme |
 | `motion` | system/full/reduced/none; system | Live UI playback, not simulation or timers |
-| `text_scale` | 50–300%; 100 | Theme text size, independent of raster resolution and OS display scale |
+| `text_scale` | 50 to 300%; 100 | Theme text size, independent of raster resolution and OS display scale |
 
 These controls use the existing draft Apply/Save/Revert transaction. Apply affects
 all app and settings UIs for this run; Save also persists it. OS settings are never
@@ -408,9 +408,9 @@ that behavior and migrate only on explicit save. Session files contain no audio.
 
 | Key in `[audio]` | Values / default | Meaning |
 |---|---|---|
-| `master_volume`, `ui_volume`, `effects_volume`, `music_volume` | Integer 0–100; 100 | Linear bus gain percentages, composed with Master |
+| `master_volume`, `ui_volume`, `effects_volume`, `music_volume` | Integer 0 to 100; 100 | Linear route gain percentages, composed with Master |
 | `master_muted`, `ui_muted`, `effects_muted`, `music_muted` | Boolean; false | Silence output without erasing the stored gain |
-| `output_device` | `system` or adapter preference key; `system` | Resolve a device at runtime; never serialize an SDL device ID |
+| `output_device` | `system` or adapter preference key; `system` | Resolve a device at runtime; never serialize a native device index |
 | `background` | `continue` / `mute` / `pause`; `continue` | App-owned audio policy when unfocused; host UI cues remain independent |
 
 `SettingsStore::audio()` returns requested preferences. `AppContext::requestAudio`
@@ -418,15 +418,24 @@ queues a validated replacement with the same runtime-only/persist choice as
 shared graphics. `audioState()` exposes requested/effective device and recovery
 status. A missing preferred device falls back to the system device with a visible
 status while retaining the preference; no device means silent Unavailable state.
-An explicit failed device switch preserves the previous working device and
-published settings. Native recovery does not rewrite user preferences.
+An explicit failed device switch retains the requested applied preferences and
+restores the previous route when the backend permits it. Native device loss or
+reinitialization may leave effective output unavailable; report that state rather
+than claiming rollback preserved a physical device. Native recovery does not
+rewrite user preferences. FMOD drivers and Studio routing are resolved by the
+[optional audio adapter](../audio/README.md); category names do not require every
+Studio project to author identically named buses.
 
 The shared Settings view has an Audio tab. Volume/mute draft edits preview with
 ramps; Revert or closing an unapplied draft restores applied values. Device and
-background policy changes wait for Apply. Save applies and persists atomically;
-failed validation, switching or persistence preserves the applied preferences.
-Background mute keeps voice clocks advancing; pause retains bounded stream data
-and suspends decode until resume. Neither changes online session time. Scoped
+background policy changes wait for Apply. Validate and stage a request before
+publishing applied preferences. Save uses atomic file replacement, with a failure
+reported separately from native route recovery; no transaction spans the filesystem
+and FMOD device state. A persistence failure retains the last persisted document
+and reports any effective runtime change.
+Background mute keeps playback time advancing. Pause issues the declared scoped
+pause/stop policy; it does not promise every native decoder or Studio timeline has
+stopped. Neither policy changes online session time. Scoped
 pause policy while Settings is open follows the [audio contract](../audio/README.md).
 
 ## Shared control preferences

@@ -9,8 +9,9 @@ work and remain distinct from asset packs.
 
 An asset pack contains immutable data, typed definitions, dependencies and
 provenance. It has no executable entry point, install hook or permission grant.
-UI/theme documents are data members; their [loader/editor](../ui/DOCUMENTS.md)
-is future work. Mounting a document does not execute logic or instantiate a UI.
+[Saved compositions](COMPOSITION.md) are versioned data members interpreted by
+registered native modules. UI/theme documents may also be data members; their
+[loader/editor](../ui/DOCUMENTS.md) is future work. Mounting a document does not execute logic or instantiate a UI.
 
 A package has a stable namespaced ID, release version and exact content digest.
 Schema version, package version, host API compatibility and asset revision are
@@ -19,8 +20,8 @@ index or AssetCatalog's process-local cache key. A resolved asset reference is
 package identity + local typed asset ID; an app's lock selects the exact version
 and digest. Existing compiled IDs remain valid through an explicit adapter.
 
-Authoring manifests use TOML, matching current settings and the existing
-parser. UI trees use [JSON documents](../ui/DOCUMENTS.md). Both become validated
+Authoring manifests use TOML, sharing the settings parser. Saved composition uses
+JSON; future UI trees use [JSON documents](../ui/DOCUMENTS.md). Both become validated
 value definitions; neither format is parsed every frame. A manifest contains:
 
 | Field | Contract |
@@ -45,6 +46,10 @@ Use a directory form for development and a restricted ZIP container for portable
 packs. Use stored entries for already compressed media and seekable audio, and
 bounded deflate for suitable small entries.
 The package API must support indexed entry access without unpacking everything.
+FMOD streaming assets use seekable stored entries or explicitly staged verified
+files. Compressed archive members cannot pretend to provide constant-cost random
+access. Native asynchronous readers retain their source lease until every read
+and native resource using it has retired. See [audio loading](../audio/README.md).
 ZIP64 is an explicit container capability with the same application limits, not
 permission for unbounded files. Reject encryption, multipart/self-extracting
 archives, links, devices, unsupported compression and implicit nested mounts.

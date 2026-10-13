@@ -1,15 +1,18 @@
 # Worlds, spaces and spatial state
 
-An application owns its world; an authority can own the same model without a
-window or renderer. World identity, coordinate frames, residency, simulation and
+The optional world module provides persistent spatial identity and coordinates.
+An application that selects it owns its world; a model owner can run the same
+contracts without a window, renderer or network session. World identity, coordinate frames, residency, simulation and
 presentation are separate contracts. A small app can use one space, an always
 resident cell and kinematic movement without creating unused services.
 
 These contracts include moving frames, transfers, persistence and spatial queries.
-[Streaming](STREAMING.md), [spatial datasets](SPATIAL_DATA.md), [voxel content](VOXELS.md),
-[navigation](NAVIGATION.md), spatial [networking](NETWORKING.md#spatial-authority-and-interest)
-and bounded [Jolt physics](PHYSICS.md) are implementation requirements. Advanced
-physics features retain their explicitly marked scope in PHYSICS.md.
+[Streaming](STREAMING.md), [spatial datasets](SPATIAL_DATA.md), [voxel content](VOXELS.md)
+and bounded [Jolt physics](PHYSICS.md) are separately selected modules with explicit
+binding/readiness rules. [Navigation](NAVIGATION.md) is an optional utility; spatial
+[network replication](NETWORKING.md#spatial-authority-and-interest) is future work.
+[Composition](COMPOSITION.md) creates world bindings from saved definitions without
+requiring an ECS or assigning world identities to every render/UI object.
 
 ## Identity and ownership
 
@@ -361,9 +364,10 @@ Planetary/astronomical coordinate hierarchies, non-Euclidean or seamlessly rende
 portals, distributed authority migration, and cross-world atomic transfers are
 future. Ordinary separate spaces, rigid moving frames and prepared local transfers
 do not require them. Advanced physics, camera obstruction and root motion retain
-their explicit future status; baseline Jolt bodies/queries and character movement
-are implementation requirements. No universal ECS or serialized executable behavior
-is required; app authoring/loading and UI editing remain future capabilities.
+their explicit future status; the optional Jolt module requires bodies, queries and
+safe shape replacement. Character motors remain future work. Native saved
+composition is required; executable app loading and UI document editing are future
+capabilities. No universal ECS or serialized executable behavior is required.
 
 See [world verification](WORLD_TESTING.md). Design references:
 [camera-relative rendering](https://dev.epicgames.com/documentation/en-us/unreal-engine/large-world-coordinates-rendering-in-unreal-engine-5)

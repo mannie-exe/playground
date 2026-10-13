@@ -1,6 +1,6 @@
 # Voxel storage, edits and checkpoints
 
-The voxel module specializes [spatial datasets](SPATIAL_DATA.md) for bounded
+The optional voxel module specializes [spatial datasets](SPATIAL_DATA.md) for bounded
 regular grids. It supplies addressing, chunk storage, editing and adapters without
 requiring terrain generation, game materials, cellular physics or one entity per
 sample. [Products](SPATIAL_PRODUCTS.md) consume declared interpretations.
@@ -33,11 +33,11 @@ capability, not a requirement to quantize arbitrary scalar data.
 
 | API/value | Fields and contract |
 |---|---|
-| `CommandId` | Issuer/session epoch plus monotonic sequence, scoped to an explicit authority |
+| `CommandId` | Opaque owner-scoped edit identity for correlation; optional session adapters map their own command IDs |
 | `ExpectedRevisions` | Dataset epoch, schema/source identities and bounded address/revision expectations; directory revision for absent/default regions |
 | `RegionPatch` | Address/channel, checked local bounds, operation and typed bounded payload or mask |
 | `PatchOperation` | SetValues, Fill or RevertToBaseline; no arbitrary executable callback in a serialized edit |
-| `SpatialEdit` | CommandId, DatasetId, ExpectedRevisions, patches, authority context, limits and CommitPolicy |
+| `SpatialEdit` | CommandId, DatasetId, ExpectedRevisions, patches, optional application validation context, limits and CommitPolicy |
 | `EditLimits` | Chunks, samples, payload bytes, scratch, candidate bytes and preparation work |
 | `CommitPolicy` | ModelBoundary or RequireProducts with an exact product/readiness barrier |
 | `EditCandidate` | Owned replacements and change summary tied to captured inputs; unobservable until publication |
@@ -47,10 +47,11 @@ capability, not a requirement to quantize arbitrary scalar data.
 | `EditService::submit / cancel / poll / forget` | Bounded asynchronous preparation with retained outcomes |
 | `DatasetStore::commit` | Owner-boundary expected-revision validation and atomic root replacement |
 
-Trusted application code supplies the authority validator. Permission, schema,
-values, ranges and bounds are checked before work and relevant authority/revision
-conditions again before commit. Offline tools can use an explicit local authority;
-remote commands never inherit its privilege. No creator-code isolation is implied.
+The dataset owner validates schema, values, ranges, limits and expected revisions
+before work and again where needed before commit. An application may add a validator
+for its command policy. Local editing does not require participant identity or a
+network session. A remote adapter authenticates/authorizes before invoking this
+API; trusted native validation is not executable-app isolation.
 
 Patch overlap order is the submitted order within one transaction. Payload sizes
 must exactly match encoding and checked bounds. Commands requiring unloaded data
@@ -74,12 +75,13 @@ Durability can advance after Applied through Pending to Durable/Failed/Uncertain
 that update does not apply the edit again. EditService retains command outcomes
 while DatasetPersistence owns bounded save demand and storage acknowledgements.
 
-A bounded issuer receipt table provides deduplication. Retained command IDs return
-the original outcome; compacted IDs at/below the accepted sequence watermark are
-rejected as already retired, never executed again. Issuers send ordered commands;
-a gap requires retry/resynchronization rather than skipping unseen authority work.
-Persist watermarks with durable commands; scope replacement issues a new epoch.
-`forget` releases caller result retention, not authority deduplication guarantees.
+The edit service retains results until forgotten under explicit result limits.
+An edit identity is not an exactly-once delivery protocol. Repeated local submissions
+are distinct requests unless the caller supplies an explicit deduplicating adapter.
+[Session receipts and sequence watermarks](NETWORKING.md#authority-and-replica-state)
+belong to that optional module and its durable domain metadata, not every voxel
+checkpoint. A caller losing a receipt reconciles against the committed revision;
+it must not blindly replay a possibly applied edit.
 
 ## Publication and derived readiness
 
@@ -111,7 +113,7 @@ exact dataset roots rather than claiming a distributed transaction.
 
 ## Physical edit policy
 
-World-bound collision edits name a BodyIntersectionPolicy: RejectOverlap,
+**Optional physics integration.** Edits requiring a physical binding name a BodyIntersectionPolicy: RejectOverlap,
 AllowSolverResolution or RelocateByApp. Validate against candidate geometry and
 body poses at the actual activation boundary, including changes while cooking ran.
 Removing support can legitimately cause a later fall; inserting geometry through a
@@ -122,7 +124,7 @@ RequireProducts retains old authoritative bindings until staged native collision
 can activate between steps with external queries excluded. Native update failure
 is distinct from edit preparation failure: a Compromised solver faults the region
 rather than rolling back dataset state or replaying the tick automatically. See
-[physics activation/recovery](PHYSICS.md). Receipts and replicated snapshots identify
+[physics activation/recovery](PHYSICS.md). Receipts and any domain snapshots identify
 which data and collision revisions committed.
 
 ## Live data and undo
@@ -143,7 +145,7 @@ before publication or explicitly declared non-undoable by the caller.
 
 | API/value | Shape and contract |
 |---|---|
-| `DatasetCheckpoint` | Schema/version, dataset/grid definitions, exact baseline/source locks, root index, overrides, dedup watermarks and domain metadata |
+| `DatasetCheckpoint` | Schema/version, dataset/grid definitions, exact baseline/source locks, root index, overrides and versioned optional domain metadata |
 | `ChunkBlobRef` | Exact digest, codec/schema, bounded encoded/decoded sizes and payload location |
 | `CheckpointRoot` | Dataset revision, immutable index/blob references and parent store revision |
 | `DatasetStorage::putBlob / readBlob` | Bounded immutable payload storage; verify digest/schema before adoption |

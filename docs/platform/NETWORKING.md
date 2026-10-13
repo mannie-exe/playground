@@ -1,8 +1,27 @@
 # Networking and shared sessions
 
-Games and collaborative applications are equal consumers of the transport,
-session and authority interfaces. Dedicated/self-hosted, player-hosted/LAN and managed hosting share the
-same authority protocol; deployment changes endpoints and service provision.
+Networking consists of optional transport and session modules. The runtime core
+supplies scopes, scheduling, bounded handoff and publication; it does not depend on
+sockets, a game protocol or replicated worlds. Collaborative tools and real-time
+applications use the same networking primitives.
+
+## Module boundary
+
+| Module | Required implementation when enabled | Does not require |
+|---|---|---|
+| Transport | GameNetworkingSockets adapter, bounded messages, lifecycle, capabilities, diagnostics and native loopback tests | Session authority, World, voxels, UI or physics |
+| Sessions | Version negotiation, authority/replica lifecycle, ordered commands/receipts, filtered baselines/deltas and a small reference domain | Game rules, spatial interest, production identity/hosting services |
+| Domain adapters | App-defined codecs, validation, visibility and state transitions | A universal scene or ECS schema |
+
+The session module is an optional higher-level library, not future work. Its
+baseline reference domain is a revisioned shared document with transient presence.
+A real-time value stream exercises sequencing and bounded interpolation separately.
+Spatial world/voxel/body replication sections below are future adapter designs;
+they do not gate baseline transport, sessions, storage or Jolt acceptance.
+
+The APIs below retain existing request, revision, snapshot and service conventions.
+Applications can use transport directly for another protocol. They may omit both
+modules without changing host, rendering or persistence semantics.
 
 ## Meaning of multiplayer
 
@@ -25,7 +44,7 @@ models a shared camera or document. Do not replicate Node trees or pointers.
 |---|---|---|
 | Transport | ConnectionHandle, TransportCapabilities, send, receive, close, stats | I/O service owns sockets and bounded buffers |
 | Protocol | ProtocolVersion, MessageType, bounded encode/decode, channel policy | No UI or renderer dependency |
-| Session | SessionId, ParticipantId, authenticate/join/leave/resume, SessionEpoch | Authority owns admission and player visibility |
+| Session | SessionId, ParticipantId, authenticate/join/leave/resume, SessionEpoch | Authority owns admission and participant visibility |
 | Domain | CommandId, expected revision/tick, validate/apply, public/private views | App model owns rules and durable state |
 | Client presentation | Snapshot buffer, interpolation, command results, presence | Owner thread projects accepted state into UI/scenes |
 | Hosting | AuthorityRunner, embedded or dedicated; deployment configuration | Host owns service lifetime and server pacing |
@@ -50,7 +69,7 @@ is explicit; callbacks cannot retain borrowed I/O memory past delivery.
 | `AuthoritySession::enqueue / advance / close` | Validate queued commands at model boundaries; no direct privileged client mutation |
 | `CommandEnvelope` | Protocol/session epoch, authenticated issuer, command sequence/ID, expected domain revisions/tick and typed bounded payload |
 | `CommandReceipt` | Command identity, validation outcome, applied commit/tick, result payload and separate durability acknowledgement |
-| `ReplicationBaseline` | Baseline/interest identity, captured world/dataset revisions, filtered entities, coverage and exact content/schema compatibility |
+| `ReplicationBaseline` | Baseline/interest identity, captured domain revision, filtered records, coverage and exact content/schema compatibility |
 | `ReplicationDelta` | Baseline/interest identity, sequence, source/target revisions, tick and bounded updates |
 | `ClientReplica` | Session epoch, applied baseline/revisions, retained interpolation state, missing dependencies and resync status |
 | `ClientReplica::accept / snapshot / reset` | Validate/decode/stage owned messages, publish coherent state and reject obsolete epochs |
@@ -100,11 +119,11 @@ short-lived scoped credentials, not connection handles or persisted plaintext lo
 I/O waits occur off the UI/model thread. Bound queued bytes/messages, connections,
 per-peer/category rates, decode work and per-service drain work. A reliable queue
 that cannot progress has an explicit timeout/disconnect policy; it cannot block
-unrelated participants indefinitely. Wake after publishing a durable result;
-owner-thread delivery checks both connection generation and activation lifetime.
+unrelated participants indefinitely. Wake after retaining an owned result;
+owner-thread delivery checks both connection generation and instance lifetime.
 CompletionQueue is a notification path, not the only copy of a received command.
 
-AppHost pumps scoped services independently of local app updates, fixed simulation
+AppHost pumps instance-scoped services independently of local app updates, fixed simulation
 and presentation. Network receipt, heartbeats, authority processing and
 resynchronization continue during Settings, focus loss or local presentation
 pause. Cancel held local input and send neutral intent as needed; opening Settings
@@ -129,6 +148,8 @@ independent capabilities. LAN is not automatically trusted; public internet use
 requires authenticated peer/server identity, not merely encrypted packets.
 
 ## Spatial authority and interest
+
+**Future adapter.** These rules apply when a domain exposes shared spatial state.
 
 Spatial sessions use [WorldId, WorldEpoch, EntityId and SpaceId](WORLDS.md), not
 scene handles, render origins or client cell residency. SessionEpoch and WorldEpoch
@@ -176,6 +197,8 @@ not stop authority ticks or make missing collision coverage safe.
 
 ## Dataset authority adapters
 
+**Future adapter.** Local DatasetStore/EditService do not require a session.
+
 `DatasetBaseline` carries dataset/schema/source identities, epoch, root revision,
 admitted coverage and exact required profile/content references. `DatasetDelta`
 identifies its baseline, command/commit sequence and bounded typed RegionPatches or
@@ -197,6 +220,8 @@ transport integration. They do not establish authenticated internet support.
 See [spatial tests](SPATIAL_TESTING.md) and [simulation](SIMULATION.md).
 
 ## Physics authority and presentation
+
+**Future adapter.** Baseline physics exposes results without imposing replication.
 
 The authority runs [Jolt physics](PHYSICS.md) and publishes completed valid body
 states with tick, entity identity, discontinuity and active collision/dataset
@@ -222,14 +247,17 @@ server-authoritative interpolation.
 
 ## Future session capabilities
 
-Client prediction/reconciliation, rollback, deterministic lockstep, distributed
-authority migration, peer authority, host migration and offline CRDT merging are
-future. Baseline spatial replication, interest, interpolation, procedural content
-compatibility and authoritative movement/edit commands are implementation contracts.
-Physics snapshot/replay and cross-platform determinism are not promised by fixed
-ticks or by selecting the Jolt adapter. User-facing multiplayer demos/applications
-are **future** and have no approved scene, menu entry or gameplay design. This does
-not defer protocol, authority, transport or multi-process verification workloads.
+Spatial interest and voxel/body replication, client prediction/reconciliation,
+rollback, deterministic lockstep, distributed/peer authority, host migration and
+offline CRDT merging are future. Domain-specific multiplayer experiences, discovery,
+matchmaking, relay provisioning and managed hosting are future applications/services.
+Baseline sessions require reconnect, revision conflicts, receipt deduplication,
+filtered baselines and bounded replica publication for the reference domain.
+
+A network connection does not define the application's collaboration model. The
+reference authority serializes accepted changes; it does not claim offline merge
+or exactly-once external side effects. Persistence of a committed command/result is
+an explicit domain/storage integration, independent of transport reliability.
 
 ## Transport choice
 
@@ -248,45 +276,52 @@ and reject malformed or oversized input before domain publication.
 
 ## Bounded native integration
 
-The current integration includes the queued embedded authority path, deterministic
-in-memory fault transport and a separate-process local client/server path backed by
-GameNetworkingSockets. Shared protocol/domain code runs in all three; test transport
-behavior cannot replace native socket verification. Native I/O has bounded buffers,
-explicit shutdown and owner-safe delivery. The physics execution domain, content
-workers and network service do not independently allocate unbounded worker pools.
+Pin GameNetworkingSockets source/build options through the dependency module. Native
+handles remain private. The adapter maps connect/listen/accept/close and receive
+poll groups to generation-checked Playground connections. RunCallbacks dispatches
+connection events; receive messages have explicit Release ownership. A designated
+I/O/control service performs native dispatch and stages owned records for the model
+owner. Native callback batches are not assumed preemptible by ServiceWorkBudget.
+Bound admitted connections/native buffering, keep callbacks short and measure their
+cost. [Native interface](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/include/steam/isteamnetworkingsockets.h).
 
-CMake pins the native dependency and required build options through existing reusable
-modules. Keep library handles behind the transport adapter. Test process endpoints,
-ports, timeouts, credentials and storage roots are injected; readiness handshakes
-replace sleeps. Tests restrict listeners to loopback and terminate/reap owned child
-processes. A local test identity provider is explicitly test-only; it does not satisfy
-production peer authentication or authorize broader listening interfaces.
+Transport send acceptance, remote receipt and model commit remain distinct. Configure
+reliable/unreliable delivery and per-lane priorities explicitly. Separate channels
+provide no global order. Do not implement custom reliable UDP or cryptography.
+Connection encryption does not select an account identity or authorization provider.
 
-Authentication, discovery, signaling, relays and managed deployment are separate
-capabilities. A missing identity/service provider reports unavailable and cannot
-silently enable unauthenticated public hosting. Concrete internet use must meet
-all security contracts above. Native loopback tests establish transport/domain
-integration, not NAT traversal, service operations or production identity coverage.
+Use a deterministic fault adapter and separate-process loopback tests for transport.
+The optional session module reuses the same protocol/domain fixture with queued
+embedded authority, fault transport and native loopback. No private pool per
+connection or unbounded receive-drain work is allowed. Shutdown closes admission,
+retires callbacks/messages and then releases native runtime ownership.
+
+Inject ephemeral endpoints, timeouts and storage roots. Readiness handshakes replace
+sleep-based synchronization; tests terminate/reap owned child processes. Loopback
+identity is test-only. Public endpoints require an explicitly supplied authenticated
+identity policy; missing providers report unavailable. Native loopback establishes
+neither internet identity nor signaling/relay/deployment coverage.
 
 ## Verification
 
-[World workloads](WORLD_TESTING.md) cover two observers, world replacement,
-interest churn, delayed baselines, transfers, generated content and persistent edits.
-Use the fault transport to reorder/delay/drop snapshots independently of command
-delivery, including local rendering pause and missing client assets.
+Transport tests cover reliable delivery, unreliable loss/reordering, queue pressure,
+connection failure, native message release, callback retirement and late generations.
+Network peers remain untrusted independently of executable-app isolation. Decode
+limits and authentication/authorization policy apply before domain publication.
 
-Network peers are untrusted even before creator-app isolation exists. Protocol
-validation, authentication, rate limits and bounded native decode work belong to
-every internet-capable session, independent of the future executable-app sandbox.
+Session tests use at least two clients editing a small shared document, plus transient
+presence and an independently sequenced value stream. Test duplicate commands,
+revision conflicts, reconnect, baseline replacement, permission-filtered fields,
+expired dedup history and slow consumers. A command sequence gap rejects/resynchronizes
+rather than silently skipping required work. Retained receipts have explicit bounds;
+retired sequences are never accidentally executed again.
 
-Use fake time and an in-memory fault transport for delay, loss, duplication,
-reordering, disconnect, queue pressure and reconnect tests. Verify command
-idempotency, revision conflicts, stale-session rejection and per-player filtering.
-Use headless synthetic domain fixtures for multiple clients, revisioned edits and
-moving-body snapshots. These are integration workloads, not approved multiplayer
-demos. Exercise embedded and separate-process local server configurations with the
-same protocol and application-free domain adapter. Deployment/provider validation
-is separate; a local socket pass cannot claim managed identity/lobby/relay coverage.
+A baseline and subsequent deltas share a captured revision boundary. Missing history
+requests a new baseline. Presentation pause must not interrupt connection progress;
+model publication follows the domain owner's declared boundary. Use fake time and
+controlled completion order, then native separate-process transport. These workloads
+do not prescribe a user-facing collaborative or game application.
+
 
 Measure RTT/jitter, useful bytes by category, backlog age, snapshot age, decode
 cost and authority tick tails. Test settings/focus/minimize without losing session

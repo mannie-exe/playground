@@ -1,10 +1,11 @@
 # Spatial datasets and sources
 
-Spatial datasets own revisioned sampled data independently of scenes and worlds.
+The optional spatial-data module owns revisioned sampled data independently of
+scenes and worlds. It is not a prerequisite for a UI, mesh scene or network app.
 The runtime supplies scheduling, accounting, publication and persistence; the
 application supplies meaning. [Voxel storage and edits](VOXELS.md),
 [derived products](SPATIAL_PRODUCTS.md) and [simulation](SIMULATION.md) use this
-boundary. These are implementation contracts, not a status report.
+boundary. These are implementation contracts for the enabled module, not a status report.
 
 ## Ownership and identities
 
@@ -187,6 +188,39 @@ Grid-backed directories compute checked descriptors; indexed datasets use bounde
 pages. WorldStreamer adapts spatial demand to these descriptors while finite
 WorldManifest cells remain supported. Dataset chunk, world cell, physics region,
 navigation tile and package boundaries need not coincide.
+
+## Import adapters
+
+Importers convert source formats into the same typed channel and mapping contracts.
+They retain source identity and metadata needed for export, diagnostics and explicit
+migration. Imported file records are not automatically runtime chunk boundaries.
+
+| Adapter | Baseline accepted content | Explicit bounds |
+|---|---|---|
+| MagicaVoxel `.vox` | Occupied labels/palette and composed model transforms; import/export authored snapshots | Models, scene nodes, transforms, occupied records and palette/material metadata |
+| NRRD `.nrrd` / `.nhdr` | Three-dimensional scalar or label arrays; raw/gzip payloads; selected integer/float types | Header/dimensions, checked decoded bytes, numeric type, endian, origin/directions and source files |
+
+The VOX importer resolves groups, model pivots, layers and coordinate conventions;
+unsupported animation/material extensions report diagnostics rather than silently
+changing geometry. Palette indices map to stable imported labels; physical meaning
+is supplied separately. Export is an authored snapshot, not incremental durability.
+[VOX format](https://github.com/ephtracy/voxel-model/blob/master/MagicaVoxel-file-format-vox.txt),
+[scene extensions](https://github.com/ephtracy/voxel-model/blob/master/MagicaVoxel-file-format-vox-extension.txt).
+
+NRRD numeric values remain source data. Window/level and transfer functions are
+presentation profiles; segmentation is a separate label channel/dataset. Preserve
+anisotropic spacing, origin and declared units. Missing units require explicit
+import configuration before physical world use. GridMapping accepts orthonormal
+axes with spacing; unsupported shear/nonorthogonal mappings require explicit
+resampling with recorded provenance or refusal. Do not silently discard transforms.
+Labels use nearest sampling. Detached source paths follow AssetReader confinement.
+[NRRD format](https://teem.sourceforge.net/nrrd/format.html).
+
+Whole compressed volumes decode within declared limits or are cooked into indexed
+independently readable chunks before runtime traversal. `.vox` and NRRD are source
+interchange, not mandatory internal storage layouts. NIfTI, direct DICOM, PLY point
+clouds, OpenVDB/NanoVDB and other scan adapters remain future until a consumer defines
+the supported subset. Mesh scan conversion to glTF can remain an offline tool.
 
 ## Verification
 

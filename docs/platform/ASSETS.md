@@ -19,7 +19,11 @@ the catalog. Native realization caches remain renderer-owned. Build dependencies
 (HLSL includes), resource dependencies (model images), and execution dependencies
 (producer passes before consumers) are separate relationships.
 
-Catalog registration freezes before consumption. CatalogBuilder imports validated
+Each instance receives an immutable catalog view resolved from its explicit content
+lock. Shared immutable definitions can reuse storage across instances; mounts and
+mutable models retain their own owners. Adding optional content builds and validates
+a replacement view before owner-thread publication. Existing leases keep their
+original definitions and mount alive. Catalog registration freezes before consumption. CatalogBuilder imports validated
 pack records; C++ registration uses the same typed definitions. File locations
 are relative to a supplied content root. Mounted entries, owned byte sources and
 procedural meshes do not require an extracted filesystem path. Definition revisions are explicit, not automatic
@@ -30,11 +34,36 @@ Dependencies are validated, cycle-checked and traversed once per identity when
 collecting a closure. They describe preparation, not permanent residency. A failed
 load publishes no resource. Existing handles survive cache eviction.
 
+## Source formats and composition
+
+glTF 2.0 (`.gltf` and `.glb`) is the primary mesh/model interchange format. Imports
+preserve declared material/texture roles, transforms and supported rigid animation;
+unsupported required extensions fail explicitly. A GLB container is not a saved
+application, physics scene or editable voxel dataset.
+
+Optional data adapters accept MagicaVoxel `.vox` for bounded indexed voxel models
+and NRRD for bounded scalar/label volumes. Their [import rules](SPATIAL_DATA.md#import-adapters)
+define coordinate, channel and unsupported-feature handling. Editing and streaming
+use DatasetStore/checkpoints; they do not rewrite imported files in place. Mesh
+extraction is a derived product. PLY/point clouds, DICOM/NIfTI and sparse-volume
+interchange remain future adapters, driven by actual consumers.
+
+Reuse BinaryAsset and typed definition readers for versioned composition, dataset
+and module metadata. Avoid adding a core AssetDefinition alternative for every
+application schema. [Composition](COMPOSITION.md) binds assets to instances and
+registered behavior. Modules validate attachments they own; the catalog does not
+construct a world or instantiate behavior.
+
+FMOD banks and clips are immutable content with explicit dependency metadata.
+Event references name a bank set plus a stable event identifier. The
+[audio module](../audio/README.md) owns native realization, sample residency and
+playback leases independently of catalog/mount lifetime.
+
 ## World content and products
 
 World definitions, cell records, dataset/channel schemas, generator recipes,
-voxel interpretations and navigation sources are typed immutable catalog content
-under the same explicit definition registry. [WorldManifest and cell identity](STREAMING.md) describe
+voxel interpretations and navigation sources are typed immutable content read
+through registered module schemas over the catalog/source boundary. [WorldManifest and cell identity](STREAMING.md) describe
 residency, not package identity. Human-inspectable world/cell records use versioned
 JSON with finite numeric and size limits; pack metadata remains TOML. Large block,
 mesh and navigation products use bounded indexed binary payloads with explicit
@@ -63,7 +92,7 @@ Shared source/channel storage keeps one ledger charge despite multiple consumers
 
 App-owned models outlive their view trees. C++ view construction receives explicit
 props, resource bundles and model access. Nodes own hover/capture/layout state;
-models own durable game state. Rebuilding a view does not preserve transient input
+models own durable application state. Rebuilding a view does not preserve transient input
 state unless an application explicitly supplies a view-state policy. Runtime node
 IDs are never persistent model identities. Subscriptions belong to view instances.
 
@@ -203,14 +232,14 @@ their original ledger charges until the last owner releases them.
 
 ## Asynchronous requests
 
-`AppContext::workers` creates the executor lazily. UI Test and Minesweeper do not
-start workers merely to display their controls. Demo3D uses the grouped
+`AppContext::workers` creates the executor lazily. Displaying static controls does
+not start workers. Model consumers use the grouped
 [prepared asset request](#prepared-asset-requests) path, then explicitly
-instantiates published models at an owner-thread scene boundary.
+instantiate published models at an owner-thread scene boundary.
 
-Results are published before the optional wake callback runs. Demo3D posts an
-activation-scoped notification so completion wakes an idle host without retaining
-a view or app. Busy admission schedules a 50 ms retry deadline; pending worker
+Results are published before the optional wake callback runs. Consumers post a
+notification to their instance or presentation scope so completion wakes an idle
+host without retaining a view or app. Busy admission schedules a 50 ms retry deadline; pending worker
 execution does not request continuous updates or painting. Cancellation discards
 the slot and requests cooperative stop. Blocking parser/decoder/read operations
 are not forcibly interrupted. Superseded jobs retain capacity until retirement.
@@ -220,24 +249,6 @@ admission and cancels queued/running jobs; destruction additionally joins. Never
 destroy the executor from its own job. A queued job discarded by shutdown can
 yield a broken-promise error if its consumer has not canceled.
 
-## Built-in application reconstruction
-
-Demo owns ViewProps and handles and constructs a candidate via makeDemo2DUI.
-MinesweeperApp owns MinesweeperModel; UI/Grid/Cell borrow it and display its
-revision. Board state no longer lives in nodes or pointer-bearing SDL user events.
-Rebuilding a view preserves the model; new game explicitly resets it. A board's
-dimensions remain immutable; different settings require a new matching model/UI.
-Minesweeper's app-local difficulty screen owns no board: it edits the app's draft,
-and Start stages a matching model/view before replacing the menu. See
-[application composition](APPLICATIONS.md) for input and sizing contracts.
-
-The new-game button retains its view-owned connection. Cells invoke typed model
-actions; visual synchronization follows routing and runs during update. Clear
-operations stage a board copy and iterative flood queue before committing. This
-prioritizes consistent failure over optimizing a small study board. Visual sync
-can fail independently and retry while revisions differ. Tree reconstruction
-intentionally resets hover/capture/node IDs, not durable model state.
-
 ## Verification and extensions
 
 ### Content organization
@@ -245,10 +256,8 @@ intentionally resets hover/capture/node IDs, not durable model state.
 Keep engine shaders under `shaders/`, shader-test fixtures under `tests/shaders/`,
 and installed content under `assets/`. CMake owns shader compilation and packaging;
 catalog IDs own application-facing identity. A file move should only require
-updating its registration, not changing UI nodes or logical IDs. Demo 2D and
-Minesweeper register their assets in their respective `Assets.hpp` files;
-Demo 3D registers its scene assets alongside its app implementation.
-`app/Assets.hpp` owns the font families shared by the launcher and demos.
+updating its registration, not changing UI nodes or logical IDs. Application bootstrap owns catalog registration and shared fixture definitions.
+Library and AppHost initialization do not select concrete demo content.
 
 Do not move or remove unreferenced study assets just because current catalog
 registrations do not load them. Before distributing content, record its source,

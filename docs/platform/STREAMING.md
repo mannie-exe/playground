@@ -1,6 +1,6 @@
 # World streaming and activation
 
-Streaming maintains bounded working sets for a [world](WORLDS.md), independent of
+The optional streaming module maintains bounded working sets for a [world](WORLDS.md), independent of
 whether content is authored or [generated](PROCEDURAL.md). Package acquisition,
 CPU preparation, simulation activation and GPU realization have separate owners.
 Cell membership is not entity identity, visibility or authority.
@@ -10,7 +10,7 @@ Cell membership is not entity identity, visibility or authority.
 | API | Contract |
 |---|---|
 | `CellDefinition` | Stable ID, space/bounds, content references, revisions and declared dependencies |
-| `WorldManifest` | Versioned space/cell index, exact content lock and optional generator recipes |
+| `WorldManifest` | Versioned spaces, finite cell table or registered directory reference, exact content lock and optional source recipes |
 | `StreamingSource` | Space/position, priority, purpose, radii, prediction bounds and required readiness |
 | `CellRequest` | World epoch, cell/revision, generation, readiness, priority and deadline |
 | `CellLease` | Retains admitted data for a declared consumer/purpose until released |
@@ -55,10 +55,32 @@ Zones may cross cells. Membership of large objects is indexed in all necessary
 query regions while a declared owner retains the object only once. Moving an
 entity across a boundary changes residency bookkeeping without respawning it.
 
+## Finite and open-ended discovery
+
+A finite manifest supplies explicit cells. An indexed or procedural cell directory
+supplies bounded region queries with revision-bound continuation, declared coverage
+and maximum entries/bytes. Both feed the same WorldStreamer admission and lease
+model. Discovery never enumerates an entire open-ended domain at startup.
+
+Cell directories reuse the query/page/cursor and ownership rules of
+[dataset directories](SPATIAL_DATA.md#bounded-directory-and-demand), with SpaceId,
+world bounds and CellDefinition descriptors instead of grid/channel descriptors.
+A world directory can describe ordinary mesh scenery without constructing a voxel
+dataset. The dataset adapter converts world bounds into checked index ranges.
+Reject stale cursors, duplicate/inconsistent cell identities and descriptors outside
+the requested/declared bounds. Unknown coverage is distinct from an empty region.
+
+"Infinite" means new valid addresses can be discovered on demand within declared
+numeric limits. Every query, dependency expansion, resident index and active request
+set remains bounded. Regeneration uses pinned source identity; edits/deletions use
+persistent overrides. Empty, removed and not-yet-generated cells remain distinct.
+Provider revision changes invalidate cursors and affected demand at an owner boundary;
+finite-manifest topology replacement follows the same generation rule.
+
 ## Dataset directories and product demand
 
-[DatasetDirectory](SPATIAL_DATA.md#bounded-directory-and-demand) extends finite
-WorldManifest enumeration with bounded region queries and revision-bound pages.
+[DatasetDirectory](SPATIAL_DATA.md#bounded-directory-and-demand) uses the same bounded discovery rules as
+world-cell directories with bounded region queries and revision-bound pages.
 WorldStreamer adapts world sources to dataset index ranges through validated grid
 mapping. A directory descriptor does not imply CPU data, geometry or navigation is
 ready. Directory pages and retained metadata share service/ledger bounds; replacing
@@ -134,8 +156,8 @@ only through an explicit policy that does not claim collision safety.
 
 ## Physics residency demand
 
-PhysicsService supplies demand from active bodies/character motors independently
-of view sources. Bound prediction by motion/sweep extent, required channels and
+PhysicsService supplies demand from active bodies independently of view sources.
+Future character adapters use the same explicit demand boundary. Bound prediction by motion/sweep extent, required channels and
 region policy. Retain CollisionAsset/source leases until solver removal and event/
 query retirement acknowledge release. Offscreen support remains resident while
 required. A pinned working set above budget is observable admission failure.

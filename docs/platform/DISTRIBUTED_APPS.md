@@ -22,7 +22,7 @@ private callbacks that a code author cannot express.
 Project/app manifests use TOML for identity, version, host API range,
 logic ABI, client/server entry points, content lock, declared capabilities and
 resource requests. The schema is versioned independently from the package release
-and game protocol. App requested limits are requests; host policy determines
+and domain protocol. App requested limits are requests; host policy determines
 actual grants. Editor metadata is separate from runtime definitions and secrets.
 
 Authoring resolves dependencies and compiles/cooks sources. Publishing emits
@@ -37,7 +37,7 @@ app loader; a hosted build farm needs its own isolation contract.
 
 Recommend evaluating WebAssembly with a narrow host API for untrusted logic.
 C++ could remain one source language compiled for this restricted target, without
-exporting the current native IApp ABI. A VM runtime and SDK/toolchain choice need
+exporting the native IApp ABI. A VM runtime and SDK/toolchain choice need
 a measured prototype on supported CPUs. A scripting language can target or sit
 inside a suitable sandbox later; it is not selected by this proposal.
 
@@ -49,7 +49,7 @@ an app-supplied native code cache as a validated Wasm module.
 [WIT](https://component-model.bytecodealliance.org/design/wit.html) is a candidate
 interface-description/generation mechanism, not the app authoring language.
 
-A host-owned IApp adapter can project an isolated instance into the current
+A host-owned IApp adapter can project an isolated instance into the native
 desktop lifecycle; it must not pass AppContext through to the guest. Headless
 server instances use the same domain contract without desktop presentation.
 Native plugins remain trusted developer extensions and cannot claim the
@@ -57,29 +57,22 @@ permission guarantees of isolated creator apps.
 
 ## Lifecycle and service surface
 
-| Primitive | Responsibility |
-|---|---|
-| AppDefinition | Stable string identity, display metadata, requirements, logic and pack references |
-| AppFactory/loader adapter | Construct a native trusted app or an isolated instance explicitly |
-| AppInstanceId | Fresh runtime identity distinct from package/version/account |
-| InstanceServices | Scoped content, storage, input, presentation, audio, jobs and sessions |
-| InstanceLifecycle | Prepare, activate, suspend/resume, deactivate, dispose; failures have one terminal result |
-| CapabilityGrantSet | Host-owned opaque authority, checked on every service use |
+[Applications](APPLICATIONS.md) defines the required native AppDefinition,
+AppInstanceId, registry, launch ordering and InstanceServices. These contracts
+already use owned stable IDs and explicit scoped dependencies. The future loader
+implements that boundary; it does not replace it with a second lifecycle.
 
-Prepare candidate content/runtime before changing the foreground app. Activation
-commits at an owner-thread boundary. Failure disposes the candidate and retains
-the previous app when rollback is possible. Deactivation revokes grants, prevents
-late publication, stops scoped voices/jobs and closes or explicitly transfers
-sessions before retirement. Suspension does not implicitly erase persistent
-state or revoke session authority; each service has an explicit background policy.
+A guest adapter adds versioned marshaling, capability grants, quotas and fault
+isolation. Prepare content and runtime before activation, reject unsupported
+requirements, and publish at an owner boundary. Instance disposal revokes grants,
+prevents late publication and drains or retires resources under their service
+contracts. Presentation detachment alone does not revoke instance-owned services.
+Suspension has explicit per-service policy and never erases persistent state.
 
-AppRegistry's current enum IDs and AppInfo's borrowed name strings are unsuitable
-for arbitrary installed definitions. Introduce owned stable namespaced IDs and
-owned metadata, preserving existing persisted app keys through an adapter.
-Validate duplicate identities, null factories and incompatible requirements.
-Avoid a broad registry rewrite until a definition loader exercises this path.
-One foreground app remains the initial host policy; multiple windows/apps or
-background instances require explicit quotas and input/audio ownership.
+One resident foreground app is the baseline. Simultaneous background instances,
+multiple windows, guest/native shared services and live executable replacement
+require additional scheduling, routing and trust contracts. Different content
+versions must remain isolated even when immutable bytes can be shared.
 
 ## Compatibility and updates
 

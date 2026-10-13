@@ -2,8 +2,8 @@
 
 Playground owns physics identity, commands, scheduling, accounting and world
 publication. The Jolt adapter owns solver objects and native execution. Baseline
-rigid-body physics, collision queries, voxel collision replacement and a bounded
-character motor are implementation requirements. Applications can omit physics;
+rigid-body physics, collision queries and staged collision replacement are
+implementation requirements of this optional module. Character motors are future. Applications can omit physics;
 required missing capabilities return Unsupported, never successful empty results.
 
 ## Ownership and state
@@ -49,8 +49,9 @@ Mass/inertia calculation versus explicit values is a validated body policy.
 | `PhysicsService::query` | Queue a bounded ray/overlap/sweep against a required tick or explicit latest-completed policy |
 | `PhysicsAdapter::shiftOrigin` | Change numerical representation at a safe boundary, preserving world state |
 
-Baseline native shapes include spheres, boxes and capsules for dynamic/kinematic
-bodies and bounded static voxel compounds. Shape cooking validates positive finite
+Baseline native shapes include spheres, boxes, capsules and convex hulls for
+dynamic/kinematic bodies, static triangle meshes and bounded compounds. Static
+voxel collision is a recipe supplied by the optional spatial module. Shape cooking validates positive finite
 dimensions, scale, convex radii and output size. Collision layers/filters and
 friction/restitution are explicit. Known-empty collision is different from missing
 coverage. Unsupported geometry/motion combinations fail before body activation.
@@ -117,12 +118,10 @@ geometry when available. Removed-contact mapping remains retained long enough to
 resolve identity. Owner delivery happens after step validity is known. Buffer
 exhaustion cannot silently discard authoritative events and call the step Complete.
 
-A bounded character motor consumes LocomotionRequest, capsule/profile configuration
-and current collision coverage; it returns achieved pose/velocity, grounding and
-blocked status. Player and navigation intents share this path. Slope, step height,
-support motion, overlap recovery and motion limits are explicit profile values.
-No camera smoothing or desired velocity overwrites the achieved result. See
-[locomotion](LOCOMOTION.md#physics-movement-realization).
+Applications consume completed body/query results without a mandatory locomotion
+controller. Contact events may become later application commands for sound, edits
+or networking. A [character motor](LOCOMOTION.md#physics-movement-realization) is a
+future optional movement adapter, not a condition for body/query acceptance.
 
 ## Collision preparation, editing and residency
 
@@ -192,23 +191,45 @@ per-world accounting cannot be implemented by replacing global hooks per host.
 Allocation failure after admission remains possible. Track pending retirement and
 keep native resources alive until execution-domain acknowledgement.
 
+## Shapes and asset preparation
+
+Static scene collision consumes bounded validated triangle geometry with explicit
+units and transforms. Use convex/compound approximations for baseline moving
+objects; preserve the authored visual mesh independently. A compound's child shapes
+need not correspond to render submeshes. Mass/inertia and center-of-mass updates are
+explicit on replacement, including the policy for preserving velocity/momentum.
+Reject unsupported nonuniform/sheared transforms before native activation.
+
+Jolt supports mesh shapes with restrictions; baseline moving-fragment recipes use
+convex pieces rather than promising arbitrary dynamic mesh collision. Native cooked
+shape serialization is a compatibility-keyed cache, not the authoritative asset or
+portable checkpoint. Preserve source geometry/recipe references so cache changes can
+recook. [Jolt shapes and serialization](https://github.com/jrouwe/JoltPhysics/blob/master/Docs/Architecture.md#shapes).
+
+The adapter converts Playground's coordinate conventions explicitly, including
+handedness, winding, normals and angular quantities. Global doubles and a bounded
+solver frame do not imply cross-region collision. Configure/test the selected
+precision profile; query base offsets and origin shifts follow the pinned Jolt API.
+[Large worlds](https://github.com/jrouwe/JoltPhysics/blob/master/Docs/Architecture.md#big-worlds).
+
 ## Verification and scope
 
 [Spatial verification](SPATIAL_TESTING.md) includes real Jolt body/contact/query,
-collision-edit, character/navigation and pressure/recovery workloads. Fake adapters
+collision-edit and pressure/recovery workloads when their modules are enabled. Fake adapters
 remain useful for controlled failure injection but cannot establish physical behavior.
 Reuse shared test executables/host infrastructure and existing licensed assets where
 useful. No particular user-facing physics demo or menu scene is specified.
 
 ## Future advanced physics
 
-Vehicle physics, elaborate joints/articulations, destruction/fracture, soft bodies,
+Character motors, vehicle physics, elaborate joints/articulations, general destruction/fracture, soft bodies,
 cloth, fluid solvers, ragdoll systems, root-motion realization and cross-region
 physical coupling are **future**. Prediction/rollback and deterministic lockstep
 remain [future session work](NETWORKING.md#future-session-capabilities).
 Camera obstruction remains separately [future](../render/CAMERAS.md#future-camera-obstruction).
-Baseline rigid bodies, queries, collision preparation/activation and character
-movement are not part of these deferrals.
+Baseline rigid bodies, queries and collision preparation/activation are not part
+of these deferrals. Pre-separated fragment activation is a demo workload; fracture
+algorithms and material failure models belong to application experiments.
 
 Jolt references: [body lifecycle, callbacks and state restoration](https://github.com/jrouwe/JoltPhysics/blob/master/Docs/Architecture.md),
 [job dependencies/barriers](https://github.com/jrouwe/JoltPhysics/blob/master/Jolt/Core/JobSystem.h),

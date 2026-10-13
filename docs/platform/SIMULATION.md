@@ -1,6 +1,6 @@
 # Spatial simulation
 
-Simulation is an optional consumer and producer of [spatial data](SPATIAL_DATA.md).
+The optional regional simulation module is a consumer and producer of [spatial data](SPATIAL_DATA.md).
 The framework owns tick ordering, admitted working storage and publication;
 applications own rules and physical meaning. A voxel field need not simulate.
 Spatial kernels do not define a universal cellular automaton. Rigid-body execution
@@ -11,7 +11,7 @@ uses the separate [Jolt integration](PHYSICS.md), not a mutable voxel kernel.
 | Value/API | Shape and contract |
 |---|---|
 | `SimulationDefinition` | Kernel ID/version, input/output schemas, interpretations, fixed-step policy and reproduction capability |
-| `SimulationRegion` | Dataset/epoch, bounded index region, active channels, required halo and authority owner |
+| `SimulationRegion` | Dataset/epoch, bounded index region, active channels, required halo and publication owner |
 | `SimulationInputs` | Coherent source snapshot, dependency/coverage stamps, ordered commands, tick and explicit delta |
 | `SimulationLimits` | Active regions, jobs, visited samples, events, scratch, candidate bytes and publication limits |
 | `SimulationKernel::step` | Produce an owned SimulationCandidate from immutable inputs and PreparationContext |
@@ -44,7 +44,7 @@ exact ordered stepping.
 Local interactive apps may use the existing bounded/dropped-time clock only when
 their domain permits it. Ordered authoritative simulation uses an independent
 clock/backlog policy: bound admitted work, report lag, slow domain time or reject
-new work/terminate according to session policy. Never silently apply the interactive
+new work/terminate according to the domain policy. Never silently apply the interactive
 clock's dropped-step behavior. Services and shutdown remain responsive under load.
 
 ## World, physics and multimedia
@@ -52,13 +52,14 @@ clock's dropped-step behavior. Services and shutdown remain responsive under loa
 A world owner stages accepted dataset changes, movement/physics results and emitted
 domain events at a declared model boundary. Events enter the next bounded command
 batch; callbacks cannot recursively mutate solver bodies, datasets or scene nodes.
-Required collision/navigation products participate in the edit/readiness barrier.
+An app selecting collision/navigation adapters includes their required products
+in its edit/readiness barrier; neither adapter is mandatory for scalar simulation.
 Actual movement results remain authority; a prepared navigation route is not a
 collision-safe motion result. See [physics](PHYSICS.md) and [world bindings](WORLDS.md#dataset-bindings).
 
 Presentation-only kernels may use Latest work policy over explicit time samples.
-They do not accumulate mandatory fixed steps merely to animate a field. Music/audio
-analysis arrives through bounded control-side snapshots with clock identity; audio
+They do not accumulate mandatory fixed steps merely to animate a field. Future music/audio
+analysis adapters deliver samples through bounded control-side snapshots with clock identity; audio
 callbacks never generate meshes, acquire ledger tokens or await simulation work.
 Captured samples allow reproducible playback/testing without requiring a live input.
 
@@ -71,6 +72,21 @@ and publishes actual poses only for a Complete tick. Compromised faults require
 explicit region recovery. Dataset edits and collision activation cannot interleave
 with a running native step. Region generation, active geometry versions and world
 publication bind the two systems without merging their storage or schedulers.
+
+## Baseline kernel and domain bounds
+
+A small deterministic propagation or diffusion fixture establishes active-region
+scheduling, neighbor requests, sleeping/waking and saved state. No fluid, erosion,
+block tick or material-reaction algorithm is required. Apps can also own an ordered
+runner without implementing SimulationKernel; this API serves sampled regional work.
+
+An expanding active domain is bounded at admission by region, memory and work limits.
+If required coverage exceeds those limits, report WaitingForCoverage/Overloaded and
+apply declared domain policy. Unknown neighboring data is not a vacuum boundary.
+Coupled solvers may request larger regions; the interface does not promise that
+every physical algorithm decomposes into independent chunk updates. Persistent
+simulation continuation must include the domain's pending timers/active state and
+clock policy, not only the most recent samples.
 
 ## Verification
 

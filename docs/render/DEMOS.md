@@ -1,10 +1,15 @@
-# Rendering demos
+# Demo applications and fixtures
+
+`playground_demo` owns these entries, controls and study-game policies.
+`playground_voxel` is a separate experimental app for terrain generation and
+material behavior; neither executable defines core host contracts. Oasis and
+scalar-volume viewers exercise the optional spatial-data adapters.
 
 Physics integration does not prescribe a new user-facing demo or menu entry.
 Verification may reuse these assets/scenes or add focused test scenes/executables
 through the shared harness. User-facing multiplayer demonstrations are **future**
 and require a separate application/UX design; native multi-client integration tests
-are covered by [spatial verification](../platform/SPATIAL_TESTING.md).
+use the non-spatial reference domain in [networking verification](../platform/NETWORKING.md#verification).
 
 ## Launcher and ownership
 
@@ -153,3 +158,79 @@ correctness; they are not performance evidence on their own. Developer workloads
 exercise the same app/controllers and support repeatable automated launches.
 
 See [verification](TESTING.md) for resource and responsiveness invariants.
+
+
+## Minesweeper screen contract
+
+Minesweeper owns its difficulty draft, active board, and pending screen intent.
+The difficulty screen and game screen are alternative retained views inside one
+IApp, not entries in AppRegistry. Launcher navigation still uses AppContext.
+Callbacks record intent; the app applies it after routing/update, never while a
+tree is being traversed. Candidate model/view construction precedes replacement;
+the old model outlives destruction of every view that borrows it.
+
+Difficulty uses exact bomb counts. Presets and bounded custom rows/columns/bombs
+feed the same validated board props. New Game resets the selected board; changing
+difficulty constructs a new model. Returning to difficulty preserves the draft.
+Bomb placement does not yet guarantee a safe first click.
+
+Easy is 9 x 9 with 10 bombs; Hard is 16 x 16 with 40. Custom dimensions are
+2..30 per axis and bombs are 1..(cell count - 1); shrinking a draft clamps its
+bomb count. New Game rerolls the selected count, and Difficulty discards the old
+board only after its replacement menu is attached. Selection persists for the
+lifetime of this app instance, not across launcher reactivation or process exit.
+
+Tab/Shift+Tab navigate controls; Enter/Space activate ordinary buttons on release.
+Steppers also accept arrows. The game grid has one tab stop, arrows select adjacent
+cells, Enter/Space reveal and Shift+Enter/Space flag. Focus follows the selected
+cell and keyboard navigation scrolls only enough to reveal it. The Difficulty
+button returns from game to difficulty; the Launcher button leaves difficulty.
+Unhandled Escape opens shared settings; Ctrl/Cmd+Shift+M returns to the launcher.
+Mouse cells retain primary reveal/secondary flag on press. Focus is assigned after layout, not during
+construction, because root focus eligibility requires arranged nodes.
+
+The window fits natural content up to the display work area, including the host's
+decoration and density conversion. Scrolling is a fallback for actual overflow,
+not an arbitrary grid-size breakpoint. Footer width is independent of board width.
+
+
+## Manual Minesweeper acceptance
+
+Launch `playground_demo`, select
+Minesweeper, and try both presets and custom 2 x 2 / 30 x 30 boards. Verify the exact flag allowance, New Game reset,
+Difficulty return, Escape settings, and Ctrl/Cmd+Shift+M launcher navigation.
+Exercise mouse reveal/flag, Tab/Shift+Tab, arrow navigation and Shift+Enter flagging. At small sizes the footer
+may be wider than the board; at large sizes the window should fill only as much
+of the usable display as needed, then permit overflow scrolling. Keyboard focus
+must remain visible when traversing an overflowing board. Repeat across display
+scale/monitor changes when those environments are available.
+
+Focused module tests cover NumberStepper, Button focus painting and Content scroll
+measurement; they do not substitute for this desktop interaction review.
+
+
+## Benchmark activation
+
+The Bistro benchmark is one app identity with a launch duration (5 seconds,
+15 seconds or unbounded). Launcher buttons share its implementation and looping
+camera path. Launch configuration is activation-local, not a persisted graphics
+setting. Settings remain shared across apps; benchmark results record the actual
+settings and invalidate on changes during measurement.
+
+## Built-in application reconstruction
+
+Demo owns ViewProps and handles and constructs a candidate via makeDemo2DUI.
+MinesweeperApp owns MinesweeperModel; UI/Grid/Cell borrow it and display its
+revision. Board state lives in the model, independently of nodes and SDL input events.
+Rebuilding a view preserves the model; new game explicitly resets it. A board's
+dimensions remain immutable; different settings require a new matching model/UI.
+Minesweeper's app-local difficulty screen owns no board: it edits the app's draft,
+and Start stages a matching model/view before replacing the menu. See
+[Minesweeper screen contract](#minesweeper-screen-contract) for input and sizing contracts.
+
+The new-game button retains its view-owned connection. Cells invoke typed model
+actions; visual synchronization follows routing and runs during update. Clear
+operations stage a board copy and iterative flood queue before committing. This
+prioritizes consistent failure over optimizing a small study board. Visual sync
+can fail independently and retry while revisions differ. Tree reconstruction
+intentionally resets hover/capture/node IDs, not durable model state.
