@@ -191,3 +191,19 @@ The initial cleanup updates existing PR #4. Planning drafts may initially target
 `dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
 merge. A draft’s planning commit supplies reviewable scope, not completed work.
 Do not advance implementation while a preceding checkpoint is held at its review gate.
+
+## Queued draft scope: CP10
+
+**Planning only; implementation has not started.** This branch initially targets
+`dev` because CP00 is still under review. Before implementation, synchronize with
+main and completed prerequisites, reconcile this ledger and update the PR base.
+
+- Scope: Message transport and generic authority sessions.
+- Dependencies: CP09.
+- Acceptance: GNS adapter, nonspatial document/presence and sequenced-value fixtures; reconnect, deduplication, filtered baselines and pressure tests.
+- Owning contracts: `docs/platform/NETWORKING.md`, `docs/platform/DISTRIBUTED_APPS.md`, `docs/platform/SECURITY.md`.
+- Include necessary source refactoring, wiring, failure tests and documentation
+  reconciliation for this scope. Reuse verified existing implementations.
+- Exclude explicitly future contracts and unrelated application features.
+- Record actual revisions, commands, outcomes and provider/OS acceptance limits.
+- Follow the CLI and GitHub review gates above before merging.
