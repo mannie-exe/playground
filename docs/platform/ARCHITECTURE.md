@@ -10,7 +10,7 @@ behavior. An application can be a viewer, collaboration tool, game or launcher.
 |---|---|---|
 | Runtime core | IDs/epochs, scoped lifetime, work admission, completion, publication, accounting and diagnostics | Application rules, native solver/device objects, required scene graph |
 | Optional modules | UI, rendering/scenes, assets/storage, world coordinates, spatial datasets, physics, audio, networking | Automatic application construction or mandatory use by every consumer |
-| Native adapters | SDL presentation, Jolt, FMOD and GameNetworkingSockets | Public native handles in portable module APIs |
+| Native adapters | SDL presentation, Jolt, FMOD, Asio, libcurl and GameNetworkingSockets | Public native handles in portable module APIs |
 | Applications | Models, composition, controls, source/recipe implementations and policy | Ownership of shared host devices through accidental globals |
 
 Dependencies point from applications/adapters to reusable contracts. Dataset and
@@ -21,24 +21,29 @@ an ECS nor a universal behavior tree, material model or message bus is required.
 ```mermaid
 flowchart TD
     Demo[playground_demo] --> Host[Native application host]
-    Voxel[playground_voxel] --> Host
+    Voxel[playground_voxels] --> Host
+    Minecraft[playground_minecraft] --> Host
     Host --> Core[Runtime core and scoped services]
     Host --> Modules[Selected reusable modules]
     Modules --> Core
-    Adapters[SDL / Jolt / FMOD / GameNetworkingSockets] --> Modules
+    Adapters[SDL / Jolt / FMOD / network providers] --> Modules
 ```
 
 ## Build and composition targets
 
 | Target | Contents |
 |---|---|
-| `playground_lib` | Public CMake aggregate of reusable modules, preserving direct module linkage |
-| `playground_demo` | Launcher, existing UI/scene fixtures, physics and volume viewers |
-| `playground_voxel` | Separate application entrypoint for procedural terrain and material experiments |
+| `playground_lib` | Public CMake aggregate of selected reusable modules, preserving direct module linkage |
+| `playground_demo` | Launcher, existing UI/scene fixtures and physical-object tests |
+| `playground_voxels` | Medical/scalar-volume inspection and editing |
+| `playground_minecraft` | Native Java Edition spectator client with application-owned protocol and terrain interpretation |
 
 Retain internal targets such as playground_runtime, playground_world,
 playground_assets, playground_scene and playground_sdl. Introduce focused module
-and adapter targets for new services. The aggregate does not flatten ownership or
+and adapter targets for new services. The aggregate includes the configured module
+selection, not every optional native adapter. A headless consumer links the neutral runtime and required modules directly
+or configures a headless aggregate; enabling an unrelated executable must not change
+those modules' dependency closure. The aggregate does not flatten ownership or
 force headless consumers to link presentation. Native dependencies are PRIVATE
 unless a public adapter header requires them; neutral APIs contain no native types.
 
@@ -92,8 +97,10 @@ per sample. Small regional simulation provides ordering and activation; applicat
 supply kernels. It is not a prerequisite for loaded static data.
 
 Jolt realizes physical bodies and queries. FMOD realizes audio playback and authored
-Studio events. GameNetworkingSockets realizes message transport. An optional session
-module provides ordered authority, filtered baselines and replicas for collaborative
+Studio events. Asio realizes TCP/UDP sockets, libcurl realizes explicit HTTPS, and
+GameNetworkingSockets realizes reliable/unreliable messages. These are independent
+capabilities; raw TCP clients do not require the message/session module. An optional
+session module provides ordered authority, filtered baselines and replicas for collaborative
 and real-time domains. Enabling networking never forces world/voxel replication.
 
 ## Application and future scope
@@ -110,6 +117,12 @@ A retained replacement candidate is not a second active application. Downloaded
 logic, isolation, hot code replacement, storefronts and remote installation remain
 [future](DISTRIBUTED_APPS.md). Built-in startup selection is required now.
 
+Editor workspaces, transform tools, timelines, asset browsers and general viewport
+composition are [future UI facilities](../apps/WORKLOADS.md#future-reusable-editor-components).
+Minecraft spectator input is a required application controller, not a deferred
+physical character motor. Its packet schemas and resource interpretation remain
+app-owned even when they require new reusable rendering or I/O facilities.
+
 ## Completion evidence
 
 [Host verification](HOST_TESTING.md) defines composition and service-ordering evidence.
@@ -118,4 +131,5 @@ Native adapter tests prove actual solver/device/transport behavior separately fr
 fake-provider sequencing. Performance records identify build, hardware, input trace
 and budgets. A capability is supported only after its relevant checks pass; a
 skipped native test is untested coverage. Internal representations remain replaceable
-without altering these guarantees.
+without altering these guarantees. The [design-freeze boundary](DESIGN_FREEZE.md)
+separates stable semantics from native implementation and application conformance.

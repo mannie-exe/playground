@@ -5,6 +5,11 @@ packs carry documents as data without becoming executable apps. Combobox and
 Autocomplete remain future controls and cannot appear as supported loader types
 until their control contracts are implemented.
 
+[Reusable editor helpers](../apps/WORKLOADS.md#future-reusable-editor-components)
+are separately scoped future UI work. Workspaces, edit sessions and timelines can
+serve native applications without a UIDocument loader or downloadable app runtime.
+The initial volume viewer and Minecraft client do not require this authoring system.
+
 ## Definitions, instances and realized state
 
 A UIDocument describes authored node types, stable document IDs, props, layout

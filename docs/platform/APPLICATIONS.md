@@ -11,7 +11,7 @@ its model, behavior and presentation composition through explicit scoped service
 | AppHost | Native platform/session, service pump, shared resource policy and transitions |
 | App instance | Durable model, command validation, selected services and instance lifetime |
 | Presentation attachment | UI/scene views, input assignment and view-local transient state |
-| Optional modules | Typed content, worlds, datasets, physics, audio or sessions requested by the app |
+| Optional modules | Typed content, worlds, datasets, physics, audio, sockets/HTTP or sessions requested by the app |
 | Native adapters | Solver/device/transport state and completion/retirement guarantees |
 
 Models accept domain commands without depending on SDL events or UI nodes. Views
@@ -128,7 +128,9 @@ of presentation. See [ordering](RUNTIME.md#timing-and-ordering).
 ## Launcher and demo organization
 
 `playground_demo` registers existing demonstrations and focused verification views.
-`playground_voxel` registers experimental world behavior. Shared viewers may consume
+`playground_voxels` owns medical/scalar inspection. `playground_minecraft` owns the
+Java Edition spectator protocol, mouse look/player movement and world interpretation. [Application workloads](../apps/WORKLOADS.md)
+define their scope. Shared viewers may consume
 reusable volume/scene APIs but their controls and workflows are application code.
 See [demo scope](../render/DEMOS.md); named game screen contracts are not host rules.
 

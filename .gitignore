@@ -36,3 +36,7 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Python asset tooling
+__pycache__/
+*.pyc

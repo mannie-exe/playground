@@ -273,3 +273,37 @@ Explicit async resources publish immutable results by request generation. A
 notification never owns the only result copy. Views build nodes on the owner
 thread; loading correctness is independent of reveal animation. See
 [ASYNC.md](ASYNC.md). Playback follows the independent [audio service contract](../audio/README.md).
+
+## Future edit sessions and history
+
+These helpers are future optional UI facilities. Applications can implement the
+same transaction semantics directly without adopting a generic editor framework.
+Model selection uses application-owned stable IDs and revisions, never UI NodeIds
+or virtualized row indexes. The model remains authoritative during a gesture.
+
+| Value/API | Proposed shape and contract |
+|---|---|
+| `EditSession` | Session identity, owner lifetime, selected model IDs, base revision, typed preview and Active/Pending/Committed/Cancelled/Rejected status |
+| `beginEdit / updatePreview` | Capture a valid base and update a bounded local overlay; do not mutate the authoritative model |
+| `commitEdit` | Submit one typed application command with expected revision; retain a pending result until accepted or rejected |
+| `cancelEdit` | Drop an uncommitted preview; after command admission, request cancellation without pretending a committed change was undone |
+| `CommandHistory` | Application-supplied inverse/snapshot entries, byte/count bounds, grouping and saved revision; no universal model serialization |
+
+A pointer drag is one logical history entry. Keyboard repetition may merge under
+an explicit command identity and timeout. Rejected commits leave the authoritative
+model unchanged and explain the conflict; automatic rebase requires a domain policy.
+Focus loss, detach, selection deletion or incompatible external revision cancels
+preview and releases capture. Accepted commands survive view destruction through
+their model/service owner, not a callback to the old UI node.
+
+Undo/redo submits domain commands with current preconditions. It does not rewind
+another participant's changes or a native solver by restoring UI state. Pruning
+history invalidates unreachable clean markers; a new branch after undo discards
+its redo branch. Persistence completion marks the exact saved revision clean, not
+whatever model revision exists when an asynchronous save returns. Workspace layout
+and viewport preferences are separate from document changes.
+
+References: [Qt command history](https://doc.qt.io/qt-6/qundostack.html) for merging,
+grouping and clean state, and [PhotoCraft canvas gestures](https://github.com/storytold/photocraft/blob/99e1138877e6aa7e856c6883b415e708d042fc59/crates/ui-egui/src/canvas.rs)
+for explicit in-progress manipulation. Acceptance lives in
+[future editor verification](TESTING.md#future-editor-component-verification).

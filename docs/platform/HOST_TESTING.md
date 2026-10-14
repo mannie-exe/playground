@@ -44,10 +44,26 @@ Enabling one optional adapter must not require the others. Test each independent
 then combined contention with declared CPU/work budgets. No universal shared tick
 or transaction is implied by this fixture.
 
+## Target and dependency matrix
+
+Validate the four [target boundaries](ARCHITECTURE.md#build-and-composition-targets)
+with a neutral/headless module consumer and each executable independently. Demo
+uses UI/assets/rendering and selected physics/audio fixtures; the volume viewer adds
+datasets/products/edit storage; Minecraft adds sockets/HTTPS and its own codecs.
+Minecraft must not require the generic session module or Jolt character support.
+No executable registration leaks into playground_lib. Disabled native adapters
+must be absent from fetch, link, initialization and packaging, including indirect
+aggregate dependencies. Unsupported required capabilities fail before activation.
+
+Future editor helper tests do not gate these applications. Application acceptance
+for [volume data](../apps/VOLUMES.md) and [Minecraft](../apps/MINECRAFT.md) remains
+separate from host lifecycle and optional module acceptance.
+
 ## Native and performance checks
 
 Use real Jolt contacts/queries, FMOD playback/bank lifecycle when its SDK is enabled,
-and separate-process GameNetworkingSockets loopback. A silent audio adapter or an
+separate-process TCP/UDP and GameNetworkingSockets loopback, and controlled HTTPS
+fixtures including TLS failure. A silent audio adapter or an
 in-memory transport verifies ordering only. Report missing SDK/device coverage as
 skipped; it cannot satisfy native acceptance for that adapter.
 

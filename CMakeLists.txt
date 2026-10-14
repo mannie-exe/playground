@@ -74,51 +74,7 @@ if(CMAKE_EXPORT_COMPILE_COMMANDS)
     )
 endif()
 
-function(playground_register_install_target target_name)
-    set_property(GLOBAL APPEND PROPERTY playground_install_targets ${target_name})
-endfunction()
-
-function(playground_configure_cpp_target target_name)
-    target_compile_features(${target_name} PRIVATE cxx_std_23)
-    target_compile_options(${target_name} PRIVATE
-        "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-    target_include_directories(${target_name} PRIVATE
-        ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/include)
-    if(TARGET sync_compile_commands)
-        add_dependencies(${target_name} sync_compile_commands)
-    endif()
-endfunction()
-
-function(playground_add_console_target target_name)
-    cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
-
-    add_executable(${target_name} ${target_SOURCES})
-    playground_configure_cpp_target(${target_name})
-
-    if(target_INCLUDES)
-        target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
-    endif()
-
-    playground_register_install_target(${target_name})
-endfunction()
-
-function(playground_add_sdl_target target_name)
-    cmake_parse_arguments(PARSE_ARGV 1 target "" "" "SOURCES;INCLUDES")
-
-    add_executable(${target_name} ${target_SOURCES})
-    playground_configure_cpp_target(${target_name})
-
-    if(target_INCLUDES)
-        target_include_directories(${target_name} PRIVATE ${target_INCLUDES})
-    endif()
-
-    target_link_libraries(${target_name} PRIVATE
-        SDL3::SDL3
-        SDL3_image::SDL3_image
-        SDL3_ttf::SDL3_ttf)
-
-    playground_register_install_target(${target_name})
-endfunction()
+include(cmake/Targets.cmake)
 
 CPMAddPackage(
     URI "gh:libsdl-org/SDL#fa2c02bb6e21974a89ea9824bc53c9932abe5f9c@3.4.16"
@@ -294,24 +250,7 @@ install(FILES ${spirv_reflect_SOURCE_DIR}/LICENSE
 install(FILES docs/licenses/UNICODE.txt
     DESTINATION ${CMAKE_INSTALL_DATADIR}/playground/licenses)
 
-add_library(playground_app STATIC
-    src/app/AppHost.cpp
-    src/app/AppContext.cpp
-    src/app/UISession.cpp
-    src/demo2d/Demo2DUI.cpp
-    src/demo3d/Demo3DApp.cpp
-    src/menu/MenuApp.cpp
-    src/menu/MenuUI.cpp
-    src/minesweeper/MinesweeperCell.cpp
-    src/minesweeper/MinesweeperApp.cpp
-    src/minesweeper/DifficultyUI.cpp
-    src/minesweeper/MinesweeperModel.cpp
-    src/minesweeper/MinesweeperGrid.cpp
-    src/minesweeper/MinesweeperUI.cpp)
-playground_configure_cpp_target(playground_app)
-target_link_libraries(playground_app PUBLIC playground_sdl playground_constraints)
-playground_add_sdl_target(playground SOURCES src/main.cpp)
-target_link_libraries(playground PRIVATE playground_app)
+add_subdirectory(apps/demo)
 
 # Compile the guide's additive snippets without adding an example program.
 set(playground_guide_check ${CMAKE_CURRENT_BINARY_DIR}/generated/UIGuideCheck.cpp)

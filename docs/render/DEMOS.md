@@ -1,14 +1,16 @@
 # Demo applications and fixtures
 
 `playground_demo` owns these entries, controls and study-game policies.
-`playground_voxel` is a separate experimental app for terrain generation and
-material behavior; neither executable defines core host contracts. Oasis and
-scalar-volume viewers exercise the optional spatial-data adapters.
+`playground_voxels` owns medical/scalar-volume inspection; `playground_minecraft`
+owns a native spectator client. These [application workloads](../apps/WORKLOADS.md)
+exercise optional modules without defining core host rules. Oasis remains a useful
+authored-voxel fixture.
 
 Physics integration does not prescribe a new user-facing demo or menu entry.
 Verification may reuse these assets/scenes or add focused test scenes/executables
-through the shared harness. User-facing multiplayer demonstrations are **future**
-and require a separate application/UX design; native multi-client integration tests
+through the shared harness. Additional user-facing shared-session demonstrations
+are **future** and require application/UX design. The separate Minecraft spectator target is required in its
+[application contract](../apps/MINECRAFT.md). Native multi-client session tests
 use the non-spatial reference domain in [networking verification](../platform/NETWORKING.md#verification).
 
 ## Launcher and ownership

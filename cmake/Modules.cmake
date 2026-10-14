@@ -190,3 +190,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(playground_sdl PRIVATE src/platform/sdl/SystemAppearanceLinux.cpp)
     target_link_libraries(playground_sdl PRIVATE PkgConfig::DBUS)
 endif()
+
+# Reusable portable modules only. Applications select native presentation explicitly.
+# Direct module linkage remains available for consumers needing a smaller closure.
+add_library(playground_lib INTERFACE)
+target_link_libraries(playground_lib INTERFACE
+    playground_runtime playground_world playground_storage playground_assets
+    playground_scene playground_constraints)

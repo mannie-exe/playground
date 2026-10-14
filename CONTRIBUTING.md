@@ -9,7 +9,8 @@ future capabilities.
 
 [Runtime architecture](docs/platform/ARCHITECTURE.md) defines the target shape:
 `playground_lib` aggregates reusable modules, `playground_demo` owns the launcher
-and fixtures, and `playground_voxel` owns terrain/material experiments. Preserve
+and fixtures, `playground_voxels` owns medical-volume inspection, and
+`playground_minecraft` owns the native spectator client. See [workload scope](docs/apps/WORKLOADS.md). Preserve
 direct module linkage and isolate native dependency adapters. Core contracts must
 not depend on demo registrations, game protocols, voxel terrain rules or an ECS.
 Optional Jolt, FMOD and networking adapters have explicit build and runtime
@@ -57,11 +58,20 @@ Do not check in build products, compile_commands.json, downloaded dependencies,
 or editor-specific absolute paths. Do not change clangd/editor settings just to
 silence a source error.
 
+The desktop executable is `playground_demo`. `playground_lib` is a CMake interface
+aggregate of reusable portable modules; consumers can still link individual modules
+and select `playground_sdl` explicitly for native presentation. The aggregate contains
+no demo or AppHost implementation. Legacy AppHost/demo support is still separate in
+`playground_demo_support` pending host isolation. Voxel and Minecraft executables and
+optional native providers are implementation checkpoints, not available targets yet.
+Track progress and review evidence in the [implementation ledger](IMPLEMENTATION.md);
+the [freeze boundary](docs/platform/DESIGN_FREEZE.md) describes intended contracts.
+
 ### Focused build commands
 
 ```sh
 # Build only the application, or only the test executables.
-cmake --build --preset debug --target playground --parallel 4
+cmake --build --preset debug --target playground_demo --parallel 4
 cmake --build --preset debug --target playground_tests --parallel 4
 # Compile the UI documentation examples.
 cmake --build --preset debug --target playground_docs_check
@@ -138,7 +148,7 @@ cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug
 cmake --install build/debug
-./dist/debug/bin/playground
+./dist/debug/bin/playground_demo
 ```
 
 Demo 3D requires packaged SPIR-V shaders, a working Vulkan GPU device, and linear
@@ -244,7 +254,7 @@ Keep window metadata, sizing policy, and presentation requests separate. Content
 apps should expose their root's measurement, not duplicate layout arithmetic in
 window config. Use WindowMetrics at the session boundary and project color values
 outside native adapters; do not reintroduce compatibility-only size/color wrappers.
-The application includes SDL_main.h only in src/main.cpp for SDL's platform
+The application includes SDL_main.h only in apps/demo/main.cpp for SDL's platform
 entry-point setup. SDL.h does not include it implicitly; do not put this
 implementation-bearing header in shared public headers.
 Preserve explicit deferred requirements rather than
@@ -297,7 +307,7 @@ introduce it only if fixtures, parameterization or richer reporting justify it.
 Changing this option requires configure, not install.
 Automated testing covers UI and its constituents, plus rendering and scene
 contracts: math, layout, runtime, SDL adapters and resource support. Native host
-integration and UI workloads reuse playground_app and AppHostDirectories with
+integration and UI workloads reuse playground_demo_support and AppHostDirectories with
 isolated preferences. Settings and Demo 2D views are rendering workloads, not
 game-rule fixtures. Keep ordinary constituent checks independent of AppHost.
 Use an in-memory FileStore or a fresh test-owned directory; never real user

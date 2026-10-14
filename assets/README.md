@@ -28,3 +28,7 @@ Do not infer permissions from appearance, filenames or a generative tool's outpu
 Engine shaders are authored under `shaders/`; test shaders under `tests/shaders/`
 are not production assets. Compiled SPIR-V belongs in `build/<preset>/shaders`
 and the install tree, not here. No asset packing or filesystem watching is implied.
+
+Optional [medical-volume fixtures](volumes/README.md) have pinned acquisition and
+brick-generation recipes here. Their large source/generated files stay under
+`build/voxel-suite` and are not part of the ordinary install inventory.

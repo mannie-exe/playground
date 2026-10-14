@@ -155,6 +155,13 @@ same schema/version checks. Server-authoritative clients need not share a solver
 build merely to interpolate poses; deterministic prediction/rollback compatibility
 is not implied. Native transport build identity is separate from domain wire format.
 
+Raw socket and HTTP adapters do not negotiate a Playground session schema. Their
+consumer owns compatibility. The [Minecraft profile](../apps/MINECRAFT.md#compatibility-profile)
+pins protocol, packet/registry schema and resource definitions separately from
+transport builds. Fixture manifests record these identities without credentials.
+Medical fixtures retain source digest, scalar/axis metadata, import assumptions and
+product recipe version; they do not inherit Minecraft block-state semantics.
+
 ## Local authoring, build, install and CPack
 
 ```text
