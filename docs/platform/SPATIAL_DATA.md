@@ -247,8 +247,11 @@ Keep native fixtures aligned with the Python suite's narrower accepted profile.
 
 The initial VOX profile reads version 150 and validated static scene extensions:
 SIZE/XYZI, optional PACK/RGBA, nTRN/nGRP/nSHP and LAYR. Bound every chunk's content
-and children against its enclosing extent, node references against the model table,
-and transformed coordinates against dataset limits. Detect cycles and reject
+and children against its enclosing extent, nTRN/nGRP child references against the
+scene-node table, nSHP model references against the model table, and transformed
+coordinates against dataset limits. Node IDs and model indices are separate domains.
+Test multiple scene nodes instancing one model and dangling references in each
+domain independently. Detect cycles and reject
 ambiguous duplicate occupied records. Unsupported animated transforms require an
 explicit selected-frame import policy; no silent frame choice. Preserve material
 metadata without interpreting it as physical coefficients. Snapshot export refuses

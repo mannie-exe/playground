@@ -57,6 +57,13 @@ fixed bounded assembly/reorder waits precede resync, and viewer planes follow gr
 axes with a rotated-grid acceptance fixture. The follow-up also makes module
 selectors explicit, names reversible launch failure and specifies indexed ZIP reads.
 
+Review `7f2335ae-96cf-423b-abd5-8c1795e1a300` verified the previous fixes on
+`07fda181d1fd2d3ce853a3ddbed9cbd191a92e78`, comparing against `263c379`.
+It scored 5/5 but retained one actionable P2: VOX node references were incorrectly
+grouped with model references. The official extension format confirms nTRN/nGRP
+use node IDs while nSHP uses model indices. The corrected contract separates both
+tables and requires independent dangling-reference and shared-model fixtures.
+
 Design assessment: engine responsibilities and checkpoint boundaries are sufficiently
 specified to begin CP01 after the current local review gate passes. Exact Minecraft
 26.3 wire/capture evidence, FMOD SDK availability and native platform execution remain
