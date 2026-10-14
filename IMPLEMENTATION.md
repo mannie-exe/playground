@@ -65,7 +65,29 @@ Scope:
   - Editor database includes the moved entrypoint and explicit headers. Formatter
     dry-run, changed JSON parsing, 619 local doc links and whitespace checks passed.
   - Not run: GPU hardware suites, Windows/Linux builds or future native providers.
-- Next: commit/push, update PR #4, run Greptile and discuss the proposed checkpoint order.
+- Published `bbe9ee2116a6b87694cf9a8375aa7c742339bda2` to `origin/dev` and updated
+  PR #4 to describe contracts plus the initial build split. Greptile CLI review
+  `00a88ac9-464d-4572-a692-598fbf320ca0` compares that HEAD with main at
+  `dc6846a47001b1e2db1423b1ec9aaf35bde7086f`. It completed with four P2 findings:
+  Windows temporary-file cleanup, unchecked fixture interpretation, stale baseline
+  character-motor references and ambiguous grid origin. All four are addressed in
+  the follow-up; the new HEAD still requires its own review.
+- Review regression evidence: added failure cases before fixing the tool; the nine
+  test methods produced four failed and four errored subtests on the old code.
+  After fixes, all nine methods pass, including Windows-style open-file deletion
+  rules, checksum/size/timeout failures and malformed metadata. This models Windows
+  sharing semantics on macOS; native Windows execution remains untested.
+  Reverification of both source fixtures still reconstructs all 1,600 bricks.
+- GridMapping now explicitly uses cell-corner-zero origin, with separate Vertex and
+  CellCenter formulas and a signed/anisotropic NRRD conversion example. Character
+  motors remain future across locomotion, navigation and camera references.
+- Follow-up validation: nine Python tests, 620 local doc links and whitespace checks
+  pass. C++/CMake are unchanged from the Debug/Release-tested initial commit.
+- Refined proposal dependencies: shared products and the medical application are
+  separate checkpoints; simulation does not require Jolt; module-specific composition
+  attachments land with their providers rather than creating a dependency cycle.
+- Next: commit/push the review fixes, review that HEAD and agree feature order
+  before opening the checkpoint draft PRs. No later implementation has started.
 
 ## Proposed checkpoints for discussion
 
@@ -79,22 +101,25 @@ rebuilding them from scratch. Explicitly future topics are excluded.
 |---|---|---|---|
 | CP01 | Optional build/dependency graph and neutral library consumers | CP00 | Headless configuration avoids SDL/fonts/GPU fetch/link/init; selected modules and demo build independently; disabled providers absent from packaging |
 | CP02 | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
-| CP03 | Asset/storage and registered saved composition | CP02 | Typed content locks, bounded preparation, built-in attachments, restore/migration/error paths and durable checkpoint boundaries exercised; no executable serialization |
+| CP03 | Asset/storage and registered saved composition | CP02 | Typed content locks, bounded preparation, render/camera/compiled-behavior attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
 | CP04 | Sampled-data storage, import, edits and bounded discovery | CP03 | VOX/NRRD fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, edit/save/reopen and overload/cancellation tests |
-| CP05 | Spatial products and `playground_voxels` | CP04 | Bounded exposed-face/slice preparation, linked medical views and label edits; native samples match fixtures; cache churn/stale work/device retirement measured |
+| CP05a | Shared spatial products and streaming | CP04 | Bounded source/product demand, exposed-face and scalar-slice preparation, coherent revisions, cache churn/stale work and device retirement; no viewer UI dependency |
+| CP05b | `playground_voxels` medical viewer | CP03, CP05a | Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified |
 | CP06 | Optional Jolt adapter and physical-object fixtures | CP02, CP03 | Pinned dependency, scoped bodies/queries, static geometry and convex dynamics, real contacts plus failure/retirement evidence; physics-disabled build works |
-| CP07 | Physics/streaming/edit publication wiring | CP04, CP06 | Exact collision readiness, shape replacement between steps, origin/coverage handling and pre-separated fragment activation under bounded traversal |
-| CP08 | Small regional simulation service | CP04, CP07 | Deterministic propagation/diffusion fixture, coherent region steps, halo coverage, sleep/wake and expanding demand with finite budgets; persisted continuation |
+| CP07 | Physics/streaming/edit publication wiring | CP05a, CP06 | Exact collision readiness, shape replacement between steps, origin/coverage handling and pre-separated fragment activation under bounded traversal |
+| CP08 | Small regional simulation service | CP04, CP05a | Deterministic propagation/diffusion fixture, coherent region steps, halo coverage, sleep/wake and expanding demand with finite budgets; persisted continuation |
 | CP09 | TCP/UDP and HTTPS providers | CP02 | Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests |
 | CP10 | Message transport and generic authority sessions | CP09 | GNS adapter, nonspatial document/presence and sequenced-value fixtures; reconnect, deduplication, filtered baselines and pressure tests |
 | CP11 | Optional FMOD Core/Studio integration | CP02, CP03 | Supplied SDK version validation, clip/bank/event lifetime, spatial mapping, pause/device recovery; real native acceptance or explicit SDK blocker |
-| CP12 | Minecraft 26.3 compatibility profile and offline pipeline | CP04, CP05, CP09 | Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests |
+| CP12 | Minecraft 26.3 compatibility profile and offline pipeline | CP05a, CP09 | Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests |
 | CP13 | `playground_minecraft` online spectator and movement | CP12 | Real login/configuration, mouse look/WASD/vertical movement, corrections/acks, chunk feedback/unloads/dimensions and bounded fast traversal on controlled server |
 | CP14 | Minecraft visible-content coverage | CP13 | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
-| CP15 | Distribution and cross-module acceptance | CP05, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
+| CP15 | Distribution and cross-module acceptance | CP05b, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
 
-CP06 and CP09 can be prioritized ahead of CP04/CP05 after their dependencies are
-ready. CP10 is not required to implement Minecraft's wire protocol. The Minecraft
+CP06 and CP09 can be prioritized ahead of CP04/CP05a after their dependencies are
+ready. CP05b does not block Minecraft, and CP08 does not require Jolt. Dataset and
+physical-body composition attachments land in CP04 and CP06 respectively; audio
+attachments land with CP11. CP10 is not required to implement Minecraft's wire protocol. The Minecraft
 renderer may use app-owned rigid models and existing renderer primitives; general
 skinning/shadows/editor frameworks stay excluded where marked future. If a required
 visual class needs one, document the concrete conflict and discuss scope before

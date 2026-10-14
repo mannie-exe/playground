@@ -61,9 +61,12 @@ volume loader or medical viewer is added by this fixture tool.
 
 Source headers use LPS coordinates but omit explicit unit strings. The fixture
 records millimeters as an explicit import convention, preserving the original
-origin/direction values. Generated headers include those units. Source origin denotes
-sample index zero; brick origins add integer index offsets through the direction
-matrix. Do not add an extra half-voxel translation. A world adapter converts mm to
+origin/direction values. Generated headers include those units. The fixture reader
+accepts little-endian short/int samples in an orthogonal LPS frame with explicit
+millimetre units/provenance; other interpretations fail validation. Source origin
+denotes sample index zero; the native importer applies the explicit
+[GridMapping conversion](../../docs/platform/SPATIAL_DATA.md#grid-and-channel-definitions).
+Brick origins add integer index offsets through the direction matrix. Do not add an extra half-voxel translation. A world adapter converts mm to
 meters and LPS to its chosen world basis explicitly.
 
 The reference reader verifies a brick before caching it. Its byte-limited LRU

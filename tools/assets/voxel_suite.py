@@ -60,6 +60,8 @@ def fetch(spec, directory):
             output.close()
             temporary.replace(path)
         finally:
+            # Windows cannot unlink the file while this writer remains open.
+            output.close()
             temporary.unlink(missing_ok=True)
     return path
 
@@ -109,16 +111,49 @@ def read_nrrd(path, limit):
     vectors = re.findall(r'\(([^)]+)\)', fields['space directions'])
     directions = [[float(v) for v in vector.split(',')] for vector in vectors]
     origin = [float(v) for v in fields['space origin'].strip('()').split(',')]
-    if len(directions) != 3 or any(len(v) != 3 for v in directions) or len(origin) != 3:
+    metadata = {'sizes': sizes, 'type': fields['type'], 'endian': 'little',
+                'space': fields['space'], 'directions': directions, 'origin': origin}
+    validate_metadata(metadata)
+    return metadata, data
+
+
+def validate_metadata(metadata):
+    """Validate the fixture's little-endian, orthogonal LPS interpretation."""
+    sizes = metadata['sizes']
+    if (not isinstance(sizes, list) or len(sizes) != 3 or
+            any(type(v) != int or v <= 0 for v in sizes)):
+        raise ValueError('invalid volume dimensions')
+    if metadata['type'] not in TYPES or metadata['endian'] != 'little':
+        raise ValueError('unsupported fixture type/byte order')
+    if math.prod(sizes) * TYPES[metadata['type']][1] > 256*1024**2:
+        raise ValueError('volume exceeds fixture decoded-size limit')
+    if metadata['space'] != 'left-posterior-superior':
+        raise ValueError('unsupported fixture coordinate space')
+    directions, origin = metadata['directions'], metadata['origin']
+    if (not isinstance(directions, list) or len(directions) != 3 or
+            any(not isinstance(v, list) or len(v) != 3 for v in directions) or
+            not isinstance(origin, list) or len(origin) != 3):
         raise ValueError('invalid spatial mapping')
-    if not all(math.isfinite(v) for row in directions + [origin] for v in row):
+    if not all(type(v) in (int, float) and -sys.float_info.max <= v <= sys.float_info.max
+               and math.isfinite(v) for row in directions + [origin] for v in row):
         raise ValueError('nonfinite spatial mapping')
-    lengths = [math.sqrt(sum(x*x for x in row)) for row in directions]
-    if min(lengths) <= 0 or any(abs(sum(a*b for a,b in zip(directions[i],directions[j]))) > 1e-6*lengths[i]*lengths[j]
-                               for i in range(3) for j in range(i)):
-        raise ValueError('expected nonzero orthogonal spatial directions')
-    return {'sizes': sizes, 'type': fields['type'], 'endian': 'little',
-            'space': fields['space'], 'directions': directions, 'origin': origin}, data
+    lengths = [math.hypot(*row) for row in directions]
+    if any(not math.isfinite(v) or v <= 0 for v in lengths):
+        raise ValueError('expected finite nonzero spatial directions')
+    axes = [[v/length for v in row] for row, length in zip(directions, lengths)]
+    if any(abs(sum(a*b for a, b in zip(axes[i], axes[j]))) > 1e-6
+           for i in range(3) for j in range(i)):
+        raise ValueError('expected orthogonal spatial directions')
+    for index in itertools.product(*[(0, n-1) for n in sizes]):
+        if not all(math.isfinite(origin[axis] + sum(index[i]*directions[i][axis] for i in range(3)))
+                   for axis in range(3)):
+            raise ValueError('spatial mapping exceeds finite coordinates')
+
+
+def validate_units(record):
+    if (record['units'] != 'mm' or not isinstance(record['units_basis'], str) or
+            not record['units_basis'].strip() or len(record['units_basis']) > 1024):
+        raise ValueError('fixture requires explicit millimetre units and provenance')
 
 
 def extract(data, sizes, start, extent, width):
@@ -173,6 +208,7 @@ def preview(path, metadata, data, display_range):
 def pack(spec, source, output, edge):
     if output.exists():
         raise ValueError(f'{output} already exists; choose a new output or verify the existing fixture')
+    validate_units(spec)
     metadata, data = read_nrrd(source, spec['max_decoded_bytes'])
     if digest(source.read_bytes()) != spec['sha256']:
         raise ValueError('source SHA-256 mismatch')
@@ -219,6 +255,10 @@ def load_manifest(path):
     m = json.loads(path.read_text())
     if m['fixture_schema'] != 1 or not 0 < len(m['bricks']) <= 100000:
         raise ValueError('unsupported fixture schema/size')
+    validate_metadata(m['volume'])
+    validate_units(m)
+    if m['sample_layout'] != 'x-fastest; voxel centers':
+        raise ValueError('unsupported fixture sample layout')
     sizes=m['volume']['sizes'];edge=m['brick_edge']
     if len(sizes)!=3 or any(type(v)!=int or v<=0 for v in sizes) or type(edge)!=int or not 8<=edge<=128:
         raise ValueError('invalid fixture bounds')

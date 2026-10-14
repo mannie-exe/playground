@@ -139,10 +139,11 @@ instead of silently using stale geometry; providers can use frame-local graphs.
 
 Kinematic followers work without physics over declared navigable data. Local
 avoidance is a separate optional capability returning a bounded preferred velocity;
-unsupported avoidance is observable. Crowd avoidance and vehicle dynamics are future implementations. The baseline
-[CharacterMotor](LOCOMOTION.md#physics-movement-realization) realizes navigation
-intent through Jolt and reports actual progress/blockage. Neither a path nor an avoidance
-velocity guarantees collision safety.
+unsupported avoidance is observable. Crowd avoidance, vehicle dynamics and the
+[CharacterMotor](LOCOMOTION.md#physics-movement-realization) are future work. A future
+motor adapter realizes navigation intent through Jolt and reports actual progress
+and blockage; it does not gate baseline body/query acceptance. Neither a path nor
+an avoidance velocity guarantees collision safety.
 
 ## Changes and verification
 
