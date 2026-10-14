@@ -191,3 +191,19 @@ The initial cleanup updates existing PR #4. Planning drafts may initially target
 `dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
 merge. A draft’s planning commit supplies reviewable scope, not completed work.
 Do not advance implementation while a preceding checkpoint is held at its review gate.
+
+## Queued draft scope: CP05b
+
+**Planning only; implementation has not started.** This branch initially targets
+`dev` because CP00 is still under review. Before implementation, synchronize with
+main and completed prerequisites, reconcile this ledger and update the PR base.
+
+- Scope: `playground_voxels` medical viewer.
+- Dependencies: CP03, CP05a.
+- Acceptance: Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified.
+- Owning contracts: `docs/apps/VOLUMES.md`, `docs/render/SPATIAL.md`, `docs/platform/SPATIAL_TESTING.md`.
+- Include necessary source refactoring, wiring, failure tests and documentation
+  reconciliation for this scope. Reuse verified existing implementations.
+- Exclude explicitly future contracts and unrelated application features.
+- Record actual revisions, commands, outcomes and provider/OS acceptance limits.
+- Follow the CLI and GitHub review gates above before merging.
