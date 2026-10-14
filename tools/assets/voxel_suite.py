@@ -305,9 +305,13 @@ def verify(path):
     m=load_manifest(path);sizes=m['volume']['sizes'];width=TYPES[m['volume']['type']][1]
     result=bytearray(m['decoded_bytes'])
     for b in m['bricks']:
+        header_path = path.parent/b['header']
+        payload_path = path.parent/b['payload']
+        if (header_path.parent/payload_path.name).resolve() != payload_path.resolve():
+            raise ValueError('brick header data path differs from checked payload')
         raw=read_brick(path.parent,b);x,y,z=b['start'];ex,ey,ez=b['sizes'];offset=0
         expected=brick_header(m['volume'],b['start'],b['sizes'],Path(b['payload']).name)
-        if (path.parent/b['header']).read_text()!=expected:raise ValueError('brick spatial header differs')
+        if header_path.read_text()!=expected:raise ValueError('brick spatial header differs')
         for iz in range(z,z+ez):
             for iy in range(y,y+ey):
                 begin=((iz*sizes[1]+iy)*sizes[0]+x)*width;length=ex*width
