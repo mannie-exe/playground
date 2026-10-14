@@ -29,8 +29,8 @@ Scope:
 ### Evidence and current action
 
 - Existing PR #4 is open on `dev`; `origin/dev` and the checkout initially agree.
-- The current CMake graph already has separate runtime/world/storage/scene/UI modules;
-  `playground_app` still bundles AppHost with concrete demos. Native dependency
+- The starting CMake graph already had separate runtime/world/storage/scene/UI modules;
+  `playground_app` bundled AppHost with concrete demos. Native dependency
   fetching is unconditional and is addressed in CP01, not claimed solved by an alias.
 - Baseline build: `cmake --build --preset debug --target playground_tests --parallel 4`.
   First attempt failed because an SDL PCH was built with Apple Clang 2100.1.1.101,
@@ -71,7 +71,7 @@ Scope:
   `dc6846a47001b1e2db1423b1ec9aaf35bde7086f`. It completed with four P2 findings:
   Windows temporary-file cleanup, unchecked fixture interpretation, stale baseline
   character-motor references and ambiguous grid origin. All four are addressed in
-  the follow-up; the new HEAD still requires its own review.
+  the follow-up at `6055eac`.
 - Review regression evidence: added failure cases before fixing the tool; the nine
   test methods produced four failed and four errored subtests on the old code.
   After fixes, all nine methods pass, including Windows-style open-file deletion
@@ -96,14 +96,19 @@ Scope:
   Regression tests cover that complete profile and refusal without partial output.
   All 11 Python tests pass, including the complete 73,728-brick profile and writer/reader
   refusal checks. Local documentation links (620) and whitespace checks pass.
-  C++/CMake remain unchanged from `bbe9ee2`; the new-HEAD review is pending.
-- Next: finish validation, commit/push and review the current fixes; agree feature
-  order before opening checkpoint draft PRs. No later implementation has started.
+  Published as `d31b2dc63bc56f3eb76321a15e7b54c63bdef35a`. C++/CMake remain
+  unchanged from `bbe9ee2`. Exact-HEAD review receipts are maintained in PR #4
+  and ignored `build/runs/cp00/`, avoiding source commits solely for review status.
+- User selected Jolt → volumes → networking/Minecraft after the three foundational
+  checkpoints. Prepare the planning-only drafts in that order, then complete the
+  current-HEAD CLI and GitHub review gates before merging CP00. No later
+  implementation has started.
 
-## Proposed checkpoints for discussion
+## Implementation checkpoints
 
-These are bounded implementation proposals, not accepted PR scopes yet. Dependencies
-are explicit; numbering provides a default order. Each includes the relevant ideal
+The user selected the feature order below; IDs remain stable identifiers rather
+than execution order. Draft PRs make each bounded scope reviewable before its
+implementation. Dependencies are explicit. Each includes the relevant ideal
 state docs, source refactor/wiring, failure tests and contributor/API documentation
 updates. Reuse existing implementations after verifying their contracts rather than
 rebuilding them from scratch. Explicitly future topics are excluded.
@@ -127,8 +132,10 @@ rebuilding them from scratch. Explicitly future topics are excluded.
 | CP14 | Minecraft visible-content coverage | CP13 | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
 | CP15 | Distribution and cross-module acceptance | CP05b, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
 
-CP06 and CP09 can be prioritized ahead of CP04/CP05a after their dependencies are
-ready. CP05b does not block Minecraft, and CP08 does not require Jolt. Dataset and
+Selected execution order: **CP01 → CP02 → CP03 → CP06 → CP04 → CP05a → CP05b →
+CP07 → CP08 → CP09 → CP12 → CP13 → CP14 → CP10 → CP11 → CP15**. This puts the
+requested Jolt, volume and Minecraft milestones first within their prerequisites.
+CP05b does not block Minecraft, and CP08 does not require Jolt. Dataset and
 physical-body composition attachments land in CP04 and CP06 respectively; audio
 attachments land with CP11. CP10 is not required to implement Minecraft's wire protocol. The Minecraft
 renderer may use app-owned rigid models and existing renderer primitives; general
@@ -143,8 +150,7 @@ must be recorded separately from deterministic headless tests.
 
 ## PR and review workflow
 
-After checkpoint discussion, record accepted scopes and create draft PRs with their
-dependencies. GitHub requires a branch difference: a pending checkpoint may carry
+Create planning-only draft PRs with their dependencies for the selected order. GitHub requires a branch difference: a pending checkpoint may carry
 its own ledger scope/acceptance entry as a planning-only commit, clearly labelled
 as unimplemented. Keep implementation sequential, update later bases after merges,
 and never treat an empty planning PR as delivered code.
@@ -167,5 +173,7 @@ For each accepted checkpoint:
 
 Blocked review/auth/service runs remain blockers, not approval. Record evidence and
 continue independent authorized work; do not merge without the agreed review gate.
-The initial cleanup updates existing PR #4; its merge and later checkpoint creation
-follow the checkpoint discussion rather than silently starting the entire roadmap.
+The initial cleanup updates existing PR #4. Planning drafts may initially target
+`dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
+merge. A draft’s planning commit supplies reviewable scope, not completed work.
+Do not advance implementation while a preceding checkpoint is held at its review gate.
