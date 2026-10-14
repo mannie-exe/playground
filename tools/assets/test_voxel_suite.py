@@ -50,6 +50,22 @@ class VolumeSuiteTests(unittest.TestCase):
         for file in a.rglob('*'):
             if file.is_file():self.assertEqual(file.read_bytes(),(b/file.relative_to(a)).read_bytes())
 
+    def test_metadata_has_lf_bytes_with_windows_text_defaults(self):
+        original_write = Path.write_text
+
+        def windows_write(path, data, *args, **kwargs):
+            kwargs.setdefault('newline', '\r\n')
+            return original_write(path, data, *args, **kwargs)
+
+        with mock.patch.object(Path, 'write_text', new=windows_write):
+            path = self.packed()
+        metadata = [path, *path.parent.glob('bricks/*.nhdr')]
+        self.assertGreater(len(metadata), 1)
+        for item in metadata:
+            with self.subTest(file=item.name):
+                self.assertNotIn(b'\r', item.read_bytes())
+        self.assertEqual(suite.verify(path)['decoded_sha256'], suite.digest(self.raw))
+
     def test_cache_eviction_and_oversized_brick(self):
         path=self.packed();report=suite.exercise(path,2048)
         self.assertLessEqual(report['peak_resident_bytes'],2048)

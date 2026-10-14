@@ -233,7 +233,7 @@ def pack(spec, source, output, edge):
             name = f'{x}_{y}_{z}'
             (bricks/(name+'.raw.gz')).write_bytes(encoded)
             header = brick_header(metadata,start,extent,name+'.raw.gz')
-            (bricks/(name+'.nhdr')).write_text(header)
+            (bricks/(name+'.nhdr')).write_bytes(header.encode('utf-8'))
             records.append({'address':[x,y,z],'start':start,'sizes':extent,
                             'header':f'bricks/{name}.nhdr','payload':f'bricks/{name}.raw.gz',
                             'encoded_bytes':len(encoded),'decoded_bytes':len(raw),
