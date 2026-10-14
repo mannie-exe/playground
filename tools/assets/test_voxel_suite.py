@@ -151,6 +151,40 @@ class VolumeSuiteTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     suite.verify(path)
 
+    def test_manifest_limit_applies_before_publication_and_on_read(self):
+        path = self.packed()
+        with mock.patch.object(suite, 'MAX_MANIFEST_BYTES', path.stat().st_size-1):
+            with self.assertRaisesRegex(ValueError, 'manifest too large'):
+                suite.load_manifest(path)
+            target = self.root/'refused'
+            with self.assertRaisesRegex(ValueError, 'byte limit'):
+                suite.pack(self.spec, self.source, target, 8)
+            self.assertFalse(target.exists())
+            self.assertEqual(list(self.root.glob('refused.*')), [])
+        self.assertEqual(suite.verify(path)['decoded_sha256'], suite.digest(self.raw))
+
+    def test_ctchest_dimensions_at_smallest_supported_brick_edge(self):
+        # Exercise the public writer/reader with the real profile's dimensions,
+        # without downloading patient data. Small bricks stress descriptor size.
+        raw = bytes(512*512*139*4)
+        header = ('NRRD0005\ntype: int\ndimension: 3\nspace: left-posterior-superior\n'
+                  'sizes: 512 512 139\nspace directions: (1,0,0) (0,1,0) (0,0,2)\n'
+                  'space origin: (0,0,0)\nendian: little\nencoding: gzip\n\n')
+        source = self.root/'ct-profile.nrrd'
+        source.write_bytes(header.encode()+gzip.compress(raw, mtime=0))
+        spec = dict(self.spec, sha256=suite.digest(source.read_bytes()),
+                    max_decoded_bytes=len(raw), preview_range=[0, 1])
+        del raw
+        target = self.root/'ct-profile'
+        written = suite.pack(spec, source, target, 8)
+        path = target/'manifest.json'
+        self.assertGreater(path.stat().st_size, 32*1024**2)
+        self.assertLessEqual(path.stat().st_size, suite.MAX_MANIFEST_BYTES)
+        loaded = suite.load_manifest(path)
+        self.assertEqual(loaded['grid'], [64, 64, 18])
+        self.assertEqual(len(loaded['bricks']), 73728)
+        self.assertEqual(loaded, written)
+
     def test_bounded_brick_decompression(self):
         path=self.packed();m=suite.load_manifest(path);b=m['bricks'][0]
         encoded=gzip.compress(b'\0'*(b['decoded_bytes']+100000),mtime=0)

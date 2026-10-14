@@ -25,14 +25,18 @@ ROOT = Path(__file__).resolve().parents[2]
 LOCK = ROOT / 'assets/volumes/datasets.json'
 DEFAULT_OUTPUT = ROOT / 'build/voxel-suite'
 TYPES = {'short': ('h', 2), 'int': ('i', 4)}
+MAX_MANIFEST_BYTES = 64 * 1024**2
 
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def write_json(path, value):
-    path.write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
+def write_json(path, value, max_bytes=None):
+    encoded = (json.dumps(value, indent=2, allow_nan=False) + '\n').encode('utf-8')
+    if max_bytes is not None and len(encoded) > max_bytes:
+        raise ValueError('JSON document exceeds byte limit')
+    path.write_bytes(encoded)
 
 
 def fetch(spec, directory):
@@ -241,7 +245,7 @@ def pack(spec, source, output, edge):
                     'encoded_brick_bytes':sum(b['encoded_bytes'] for b in records),
                     'tool_version':1,'python':sys.version.split()[0], 'zlib':zlib.ZLIB_RUNTIME_VERSION,
                     'bricks':records}
-        write_json(staging/'manifest.json',manifest)
+        write_json(staging/'manifest.json', manifest, max_bytes=MAX_MANIFEST_BYTES)
         preview(staging/'preview.png',metadata,data,spec['preview_range'])
         shutil.copyfile(LOCK.parent/'SLICER-LICENSE.txt',staging/'SLICER-LICENSE.txt')
         staging.rename(output)
@@ -251,7 +255,7 @@ def pack(spec, source, output, edge):
 
 
 def load_manifest(path):
-    if path.stat().st_size > 32*1024**2:raise ValueError('manifest too large')
+    if path.stat().st_size > MAX_MANIFEST_BYTES:raise ValueError('manifest too large')
     m = json.loads(path.read_text())
     if m['fixture_schema'] != 1 or not 0 < len(m['bricks']) <= 100000:
         raise ValueError('unsupported fixture schema/size')
