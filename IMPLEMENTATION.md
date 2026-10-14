@@ -86,8 +86,19 @@ Scope:
 - Refined proposal dependencies: shared products and the medical application are
   separate checkpoints; simulation does not require Jolt; module-specific composition
   attachments land with their providers rather than creating a dependency cycle.
-- Next: commit/push the review fixes, review that HEAD and agree feature order
-  before opening the checkpoint draft PRs. No later implementation has started.
+- Published first review fixes at `6055eac9f7e41b5552d0097eb88dbd7d102ea5fb`.
+  Review `fdb53e65-aef0-43fc-8a6c-342d600b7455` confirmed all four fixes and found
+  a P1 mismatch: CTChest's supported 8-wide profile exceeds the old 32 MiB reader
+  cap. A synthetic fixture with CTChest dimensions reproduced `manifest too large`
+  after successful packing of 73,728 bricks; no external download was needed.
+- The follow-up shares a 64 MiB encoded manifest cap between writer and reader,
+  checks it before fixture publication and writes UTF-8/LF bytes consistently.
+  Regression tests cover that complete profile and refusal without partial output.
+  All 11 Python tests pass, including the complete 73,728-brick profile and writer/reader
+  refusal checks. Local documentation links (620) and whitespace checks pass.
+  C++/CMake remain unchanged from `bbe9ee2`; the new-HEAD review is pending.
+- Next: finish validation, commit/push and review the current fixes; agree feature
+  order before opening checkpoint draft PRs. No later implementation has started.
 
 ## Proposed checkpoints for discussion
 

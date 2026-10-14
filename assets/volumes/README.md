@@ -69,6 +69,11 @@ denotes sample index zero; the native importer applies the explicit
 Brick origins add integer index offsets through the direction matrix. Do not add an extra half-voxel translation. A world adapter converts mm to
 meters and LPS to its chosen world basis explicitly.
 
+Writer and reader share a 64 MiB manifest limit. The writer checks the encoded
+UTF-8 bytes before publishing a fixture, including for the 73,728-brick CTChest
+8-wide profile. Metadata uses LF line endings on every platform. The source/data
+limits are independent of manifest size.
+
 The reference reader verifies a brick before caching it. Its byte-limited LRU
 exercises axis-slab traversals, reverse traversal and far-end teleports. An 8 MiB CT
 cache is smaller than the volume and forces eviction. The cap covers decoded cache
