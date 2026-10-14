@@ -97,6 +97,26 @@ a lockfile. Unsupported target/SDK combinations fail explicitly. The existing vo
 packaging/reference reader establishes dataset provenance and reconstruction only;
 it cannot establish native viewer or GPU streaming behavior.
 
+### Checkpoint gates
+
+The [implementation ledger](../../IMPLEMENTATION.md#implementation-checkpoints)
+owns execution order and review receipts; specs own intended behavior. Before a
+checkpoint begins, reconcile its planning PR with the current owning specs. Its
+acceptance includes successful paths, refusal/cancellation, stale publication and
+retirement, plus actual native evidence for enabled providers. A fake provider is
+not a substitute for that checkpoint's native acceptance.
+
+CP01 freezes selection and installed dependency closure. CP02 freezes injected
+host transitions. CP03 freezes composition activation and durable root behavior.
+CP06 must validate the declared Jolt allocation/query limits against its pinned
+build. CP04 and CP10 lock their file/wire codecs with golden fixtures before
+persisting saves or claiming session compatibility. CP05a covers mesh/texture
+streaming as well as sampled products. CP12 first resolves exact protocol evidence;
+CP11 requires a supported FMOD SDK. These are implementation gates with specified
+outcomes, not unspecified runtime ownership. Native allocation, OS scheduling and
+third-party callback execution are not hard-preemptible merely because admission
+and result retention are bounded.
+
 The [Minecraft compatibility profile](../apps/MINECRAFT.md#compatibility-profile)
 records the concrete remaining protocol issue: the inspected reference dataset has
 a release number but no 26.3 packet schema. Local class signatures establish several

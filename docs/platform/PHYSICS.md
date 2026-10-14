@@ -105,9 +105,14 @@ between steps/replacements; caller-held handles cannot stall stepping indefinite
 Results are immutable copies with completeness, represented versions and hit IDs.
 Retaining a WorldSnapshot does not retain a historical solver query state.
 
-Raycasts, overlaps and shape sweeps bound visited/output work and filtering. Miss
-requires complete relevant coverage; unsupported shape/query, initial overlap,
-missing coverage, truncated output and exhausted work are explicit outcomes.
+Raycasts, overlaps and shape sweeps bound admitted requests, input geometry and
+retained output. Jolt collectors can stop after a hit/output policy is satisfied;
+they do not expose a hard internal-node traversal budget or preemptive deadline.
+Run native queries in the solver domain, measure elapsed work and advertise this
+limit in capabilities. A deadline before dispatch refuses work; expiration during
+execution suppresses delivery but retains native leases until return. Miss requires
+complete relevant coverage and a completed query; unsupported shape/query, initial
+overlap, missing coverage, truncated output and deadline expiry are explicit outcomes.
 Immutable dataset selection/navigation products remain separate query providers.
 
 Jolt callbacks may run on solver workers. Copy bounded contact/activation data into
@@ -190,6 +195,28 @@ Process-wide Jolt initialization/allocator hooks have one coordinated lifetime;
 per-world accounting cannot be implemented by replacing global hooks per host.
 Allocation failure after admission remains possible. Track pending retirement and
 keep native resources alive until execution-domain acknowledgement.
+
+The initial adapter profile is CPU rigid-body Jolt v5.6.0, with
+`DOUBLE_PRECISION=ON` and `JPH_USE_DX12`, `JPH_USE_VK`, `JPH_USE_MTL` and
+`JPH_USE_CPU_COMPUTE` OFF. CP06 locks the tag's exact commit using existing CMake
+dependency conventions. Compute/hair backends are outside baseline scope. Use one
+PhysicsSystem per independent region with a shared admitted job domain; no implied
+cross-system contacts. Precision/build changes invalidate cooked caches.
+[Build options](https://github.com/jrouwe/JoltPhysics/blob/v5.6.0/Build/CMakeLists.txt).
+
+Do not translate scratch exhaustion into a recoverable step result without a
+native guarantee. Jolt's fixed `TempAllocatorImpl` aborts when exhausted; its malloc
+fallback avoids that fixed-pool abort but does not impose a hard byte cap. Baseline
+uses an admitted scratch estimate and measured fallback allocator, reports overrun,
+and refuses subsequent steps pending policy adjustment. It cannot promise graceful
+recovery from process allocation failure. A hard solver-memory ceiling would require
+a separately validated solver/allocator design. Capacity-error recovery tests inject
+supported update errors, not an unsafe allocator exception through Jolt workers.
+[Allocator implementation](https://github.com/jrouwe/JoltPhysics/blob/v5.6.0/Jolt/Core/TempAllocator.h).
+
+Query acceptance includes dense meshes with output truncation, pre-dispatch timeout
+and late-result retirement. Do not claim a timed-out query was interrupted.
+[Narrow-phase API](https://github.com/jrouwe/JoltPhysics/blob/v5.6.0/Jolt/Physics/Collision/NarrowPhaseQuery.h).
 
 ## Shapes and asset preparation
 

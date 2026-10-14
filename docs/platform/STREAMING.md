@@ -97,6 +97,16 @@ World cells, dataset chunks, package entries, query regions and navigation tiles
 may have different extents. Their adapters declare overlap/dependencies explicitly.
 Moving the camera does not invalidate voxel content or rebuild local meshes.
 
+Baseline streaming acceptance also includes ordinary mesh cells and their texture
+resources. Use an authored finite mesh manifest and a deterministic paged directory
+fixture to exercise open-ended discovery; no terrain generator is required. Shared
+mesh/texture content has one allocation with multiple leases. Cell eviction releases
+its demand without destroying another cell's resource. Independently constrain source,
+CPU product and device caches; traverse far enough that a small resident budget
+forces each tier to evict and reacquire. Texture demand passes through existing
+render resource preparation; cell readiness cannot force synchronous upload in
+PreRender or treat a stale texture generation as exact readiness.
+
 ## Admission, publication and retirement
 
 Work status is Absent, Queued, Preparing, Ready, Failed or Cancelled; retirement

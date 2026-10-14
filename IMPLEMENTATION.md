@@ -6,7 +6,52 @@ commands/results, review IDs, blockers and the next action. Keep run logs, captu
 and temporary probes under ignored `build/runs/<checkpoint>/`, not project scripts.
 Promote a tool only when it has a repeatable supported workflow and validation.
 
-## Active checkpoint
+## Active work: specification readiness
+
+Stay on `main`, starting at `263c379e9fbd5556549c16e4641279e4168b3cf1`. Review
+checkpoint/PR coverage, current source and upstream APIs; refine boundary contracts
+without implementing checkpoints. Validate locally, commit locally and run Greptile
+against that starting revision until green before pushing. Later implementations
+remain queued. Logs and source probes: `build/runs/spec-readiness/`.
+
+Audit changes: repaired malformed checkpoint cells; specified build selection and
+neutral asset/storage boundaries, host/composition activation, allocation handoff,
+Jolt query/scratch limits, UDP truncation and active-write cancellation, HTTP pause
+replay, replica baselines, dataset durability/import profiles, regional tick barriers,
+volume controls and Minecraft compatibility/coverage gates. No runtime code changed.
+
+Evidence inspected: current AppHost/IApp/AppRegistry, Executor/ResourceLedger,
+CheckpointStorage/DirectoryCheckpointStore and CMake module/dependency graph;
+all 16 planning PRs (#5–#20) remain draft, based on main, with no implementation.
+Writing guidance: inherent.design docs README operational-writing section and
+spec-first/task-decomposition references (specify boundaries, leave internals flexible).
+Local references: Moxy `6c12a50092f00ab66966a0ad2f655e735d515d44` confirms 26.3
+and the existing input digest; Voxy `534d58ec8b4aa412ef314b884295552c69d480a6`
+section storage/dirty callbacks reinforce separate persistence/product invalidation.
+Neither repository was modified or made a dependency.
+
+Upstream source inspected into ignored `upstream/`: Jolt v5.6.0 build options,
+NarrowPhaseQuery and TempAllocator; Asio asio-1-36-0 datagram API;
+GameNetworkingSockets v1.6.1 message ownership. Official NRRD/VOX specifications,
+libcurl callback/pause and FMOD 2.03 memory/lifecycle docs were checked. API-family
+references are not claims of installed SDKs; implementation locks exact native builds.
+Jolt fixed scratch can abort and queries are not preemptible; the contracts now
+state measured/admitted limits without promising unsupported recovery.
+
+Validation of the audit working tree based on `263c379`:
+- `python3 build/runs/spec-readiness/check_docs.py`: 63 Markdown files,
+  621 local links, one changed JSON example and 16 checkpoint/dependency rows pass.
+- `cmake --build --preset debug --target playground_docs_check --parallel 4`:
+  passed, including existing C++ documentation examples. Existing cached native
+  dependencies reconfigured/relinked; this does not test proposed module selection.
+- `git diff --check`: passed. Only Markdown specs and this ledger changed.
+- No new native provider/application tests run: those implementations remain queued.
+
+Next: commit locally, review the complete diff against the starting revision,
+fix/review until no actionable findings, then push main and reconcile planning PR
+bodies. No checkpoint implementation starts.
+
+## Completed foundation record
 
 **CP00: repository and build foundation.** Branch `dev`, PR
 [#4](https://github.com/mannie-exe/playground/pull/4), base `main`. Starting revision
@@ -28,7 +73,10 @@ Scope:
 
 ### Evidence and current action
 
-- Existing PR #4 is open on `dev`; `origin/dev` and the checkout initially agree.
+- PR #4 was merged by rebase as `263c379`; local and remote `dev` were removed.
+  CLI review `17525234-1e98-4713-9e3d-e4f8cde95090` and GitHub review `31843487`
+  both passed at 5/5 with no actionable findings on `4633dc0`. The merged tree
+  matches that reviewed tree. Drafts #5–#20 were rebased onto main, scopes unchanged.
 - The starting CMake graph already had separate runtime/world/storage/scene/UI modules;
   `playground_app` bundled AppHost with concrete demos. Native dependency
   fetching is unconditional and is addressed in CP01, not claimed solved by an alias.
@@ -113,10 +161,8 @@ Scope:
   C++/CMake are unchanged; the earlier native validation remains applicable.
 - User selected Jolt → volumes → networking/Minecraft after the three foundational
   checkpoints. Planning drafts #5–#20 are open in that order; links are below.
-  The user subsequently requested **merge PR #4 once green, then stop**. Complete
-  only the review fixes and current-HEAD CLI/GitHub gates needed for that merge;
-  no further CP00 scope or later checkpoint development is authorized for now.
-  The later drafts stay queued; no later implementation has started.
+  The prior merge-only instruction was fulfilled. The current specification audit
+  authorizes documentation work on main; later implementation remains queued.
 
 ## Implementation checkpoints
 
@@ -129,21 +175,21 @@ rebuilding them from scratch. Explicitly future topics are excluded.
 
 | ID | Draft PR | Complete PR scope | Dependencies | Observable completion |
 |---|---|---|---|---|
-| CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Optional build/dependency graph and neutral library consumers | CP00 | Headless configuration avoids SDL/fonts/GPU fetch/link/init; selected modules and demo build independently; disabled providers absent from packaging |
-| CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
-| CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | Asset/storage and registered saved composition | CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Typed content locks, bounded preparation, render/camera/compiled-behavior attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
-| CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Sampled-data storage, import, edits and bounded discovery | CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | VOX/NRRD fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, edit/save/reopen and overload/cancellation tests |
-| CP05a | [#10](https://github.com/mannie-exe/playground/pull/10) | Shared spatial products and streaming | CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Bounded source/product demand, exposed-face and scalar-slice preparation, coherent revisions, cache churn/stale work and device retirement; no viewer UI dependency |
+| CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Optional build/dependency graph and neutral library consumers | CP00 | Explicit module/app/provider selection; headless and installed consumers avoid SDL/fonts/GPU fetch/link/init; disabled providers absent from packaging |
+| CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
+| CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | Asset/storage and registered saved composition | CP02 | Typed content locks, neutral namespaced checkpoint primitive, bounded preparation, staged attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
+| CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Sampled-data storage, import, edits and bounded discovery | CP03 | Declared VOX/NRRD profiles, versioned storage golden fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, durable edit/save/reopen and overload tests |
+| CP05a | [#10](https://github.com/mannie-exe/playground/pull/10) | Shared spatial products and streaming | CP04 | Mesh/texture and dataset demand, exposed-face and scalar-slice products, coherent revisions, independent source/CPU/device cache churn and retirement; no viewer UI dependency |
 | CP05b | [#11](https://github.com/mannie-exe/playground/pull/11) | `playground_voxels` medical viewer | CP03, CP05a | Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified |
-| CP06 | [#8](https://github.com/mannie-exe/playground/pull/8) | Optional Jolt adapter and physical-object fixtures | CP02, CP03 | Pinned dependency, scoped bodies/queries, static geometry and convex dynamics, real contacts plus failure/retirement evidence; physics-disabled build works |
+| CP06 | [#8](https://github.com/mannie-exe/playground/pull/8) | Optional Jolt adapter and physical-object fixtures | CP02, CP03 | Pinned CPU/double profile, scoped bodies/queries, static/convex dynamics, contacts, measured scratch/query limits and failure/retirement evidence; disabled build works |
 | CP07 | [#12](https://github.com/mannie-exe/playground/pull/12) | Physics/streaming/edit publication wiring | CP05a, CP06 | Exact collision readiness, shape replacement between steps, origin/coverage handling and pre-separated fragment activation under bounded traversal |
 | CP08 | [#13](https://github.com/mannie-exe/playground/pull/13) | Small regional simulation service | CP04, CP05a | Deterministic propagation/diffusion fixture, coherent region steps, halo coverage, sleep/wake and expanding demand with finite budgets; persisted continuation |
-| CP09 | [#14](https://github.com/mannie-exe/playground/pull/14) | TCP/UDP and HTTPS providers | CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests |
-| CP10 | [#18](https://github.com/mannie-exe/playground/pull/18) | Message transport and generic authority sessions | CP09 | [#14](https://github.com/mannie-exe/playground/pull/14) | GNS adapter, nonspatial document/presence and sequenced-value fixtures; reconnect, deduplication, filtered baselines and pressure tests |
+| CP09 | [#14](https://github.com/mannie-exe/playground/pull/14) | TCP/UDP and HTTPS providers | CP02 | Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests |
+| CP10 | [#18](https://github.com/mannie-exe/playground/pull/18) | Message transport and generic authority sessions | CP09 | GNS adapter, nonspatial document/presence and sequenced-value fixtures; versioned codec fixtures, reconnect/dedup, multipart baselines and pressure tests |
 | CP11 | [#19](https://github.com/mannie-exe/playground/pull/19) | Optional FMOD Core/Studio integration | CP02, CP03 | Supplied SDK version validation, clip/bank/event lifetime, spatial mapping, pause/device recovery; real native acceptance or explicit SDK blocker |
-| CP12 | [#15](https://github.com/mannie-exe/playground/pull/15) | Minecraft 26.3 compatibility profile and offline pipeline | CP05a, CP09 | Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests |
-| CP13 | [#16](https://github.com/mannie-exe/playground/pull/16) | `playground_minecraft` online spectator and movement | CP12 | [#15](https://github.com/mannie-exe/playground/pull/15) | Real login/configuration, mouse look/WASD/vertical movement, corrections/acks, chunk feedback/unloads/dimensions and bounded fast traversal on controlled server |
-| CP14 | [#17](https://github.com/mannie-exe/playground/pull/17) | Minecraft visible-content coverage | CP13 | [#16](https://github.com/mannie-exe/playground/pull/16) | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
+| CP12 | [#15](https://github.com/mannie-exe/playground/pull/15) | Minecraft 26.3 compatibility profile and offline pipeline | CP05a, CP09 | Compatibility gate first: pinned codecs/registries and server traces; offline replay, resource interpretation, chunk products and visible-class manifest; malformed-data/limit tests |
+| CP13 | [#16](https://github.com/mannie-exe/playground/pull/16) | `playground_minecraft` online spectator and movement | CP12 | Real login/configuration, mouse look/WASD/vertical movement, corrections/acks, chunk feedback/unloads/dimensions and bounded fast traversal on controlled server |
+| CP14 | [#17](https://github.com/mannie-exe/playground/pull/17) | Minecraft visible-content coverage | CP13 | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
 | CP15 | [#20](https://github.com/mannie-exe/playground/pull/20) | Distribution and cross-module acceptance | CP05b, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
 
 Selected execution order: **CP01 → CP02 → CP03 → CP06 → CP04 → CP05a → CP05b →
@@ -187,7 +233,8 @@ For each accepted checkpoint:
 
 Blocked review/auth/service runs remain blockers, not approval. Record evidence and
 continue independent authorized work; do not merge without the agreed review gate.
-The initial cleanup updates existing PR #4. Planning drafts may initially target
-`dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
-merge. A draft’s planning commit supplies reviewable scope, not completed work.
+PR #4 is merged and planning drafts target main. Reconcile each draft with the
+current ledger/specs before implementation. A planning commit supplies reviewable
+scope, not completed work. The current main-only spec audit uses local commit/review
+before any push, overriding steps 2–3 for this audit only.
 Do not advance implementation while a preceding checkpoint is held at its review gate.

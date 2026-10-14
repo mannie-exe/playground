@@ -32,6 +32,24 @@ has no 26.3 packet-schema entry. Implementation acceptance requires a complete
 pinned codec and controlled-server traces for this exact version. No packet IDs
 or binary field encodings are guessed here.
 
+CP12 begins with a compatibility gate before renderer integration: lock the exact
+reference input, enumerate required login/configuration/play packet IDs and codecs,
+and capture a controlled server login, configuration, initial chunks, teleport and
+disconnect. Derive offline golden frames from that evidence without credentials.
+Record reference/server builds and hashes, permitted fixture redistribution and
+the profile's resource versions. If this cannot be completed, CP12 is blocked;
+an older protocol or placeholder packet table is not an acceptable completion.
+This gate does not block CP01–CP09's protocol-independent implementation.
+
+Visible-content coverage is a versioned app manifest, with one row per required
+class: blocks/models, fluids, entities, block entities, lighting, sky/weather and
+resource features. Each row identifies decoder, geometry/material path, fixture,
+reference capture and supported limitations. CP12 establishes the manifest; CP14
+must close its required rows or obtain an explicit scope decision. App-owned rigid
+part transforms may serve entities; generic skeletal animation, shadow systems and
+editor frameworks remain future unless separately approved. Reuse Moxy inputs as
+reference evidence, not its renderer or JVM runtime as a hidden native dependency.
+
 ## App state and service wiring
 
 | Value | Shape and owner |

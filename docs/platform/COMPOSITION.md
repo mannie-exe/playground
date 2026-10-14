@@ -105,6 +105,17 @@ Replace whole instances initially. Automatic file watching, per-property live
 reconciliation and a general editor are future work. An app may implement a bounded
 explicit update using module edit APIs without changing document loading semantics.
 
+An attachment adapter registers `validate`, `prepare`, `stage`, `activate` and
+`retire` operations with explicit thread affinity. `prepare` consumes immutable
+input and returns owned candidates. `stage` creates inactive bindings incrementally;
+its result declares reversible exchange or native fault/recovery semantics.
+`activate` cannot parse, load files or allocate an unbounded object hierarchy. Before
+any activation, validate the entire required adapter set and reserve mapping/event
+storage. If a required activation compromises native state, suppress the complete
+instance publication and retire/quarantine affected bindings; a renderer must not
+observe a partially installed composition. Optional unknown records remain inert.
+Compiled behavior starts only after successful instance activation.
+
 ## Checkpoints and exports
 
 Export authored definitions without GPU/Jolt handles, runtime epochs, subscriptions,
@@ -113,6 +124,14 @@ records and exact dataset roots at one declared boundary. Reuse WorldStore where
 world state is present; standalone apps use the same versioned storage principles
 without manufacturing a World. Simulation continuation requires domain state and
 pending work specified by that domain, not merely transforms.
+
+CP03 extracts the bounded read/CAS/durable-flush primitive from world-specific
+checkpoint naming into the storage module. A `CheckpointKey` contains validated
+application namespace, save ID and record kind/ID; callers cannot supply arbitrary
+paths. The existing WorldId-based storage API remains a mapping adapter for
+WorldStore. Dataset/composition saves use their own keys without allocating fake
+worlds. Keep locking, expected-revision comparison and uncertain-acknowledgement
+behavior common to every adapter; test distinct namespaces with identical local IDs.
 
 Persist behavior provider identity and configuration separately from its state.
 Migration validates a candidate before replacing the active instance. Unknown

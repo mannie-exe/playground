@@ -76,6 +76,16 @@ paths through the current working directory. Compressed entries cannot claim che
 seeks without bounded indexed access or admitted decompression. Decode progress,
 source storage and native memory are reported separately.
 
+Prefer copy-mode loading or admitted staging for the baseline. A Core
+`FMOD_OPENMEMORY_POINT` path retains aligned writable backing memory until
+`Sound::release`; applicable PCM/raw modes require the documented padding on both
+ends, so an arbitrary immutable AssetReader span is not a valid direct alias.
+Studio memory-bank alignment and load modes follow its separate API. CP11 verifies
+these rules against the supplied SDK headers and runtime version before enabling
+point-mode capabilities; unsupported modes return Unsupported. Delayed load,
+failed load and scope closure must all retain backing storage through native release.
+[Core memory modes](https://www.fmod.com/docs/2.03/api/core-api-common.html).
+
 `BankLease` pins metadata and required sample dependencies while descriptions,
 events or native reads remain in use. Stop/release owned events before final bank
 unload. Unloading invalidates associated native descriptions/instances; a cache

@@ -59,6 +59,42 @@ and validate an exact supported version and target. FMOD packaging is conditiona
 on a supplied SDK and applicable redistribution terms. No SDK download credentials
 or vendor binaries belong in the source tree.
 
+### Configuration contract
+
+The following cache inputs define the intended CP01 interface. Existing presets
+select the desktop demo explicitly; a bare library configuration selects runtime
+only. Selection is resolved before any dependency fetch or platform initialization.
+
+| Input | Meaning |
+|---|---|
+| `PLAYGROUND_MODULES` | Semicolon-separated reusable module roots; default `runtime`; aggregate contains these roots and their neutral dependency closure |
+| `PLAYGROUND_APPLICATIONS` | Semicolon-separated `demo`, `voxels`, `minecraft`; default empty; each adds its own required closure without changing the aggregate's selected roots |
+| `PLAYGROUND_PROVIDERS` | Explicit native providers: `sdl`, `jolt`, `asio`, `curl`, `gns`, `fmod`; default empty |
+| `PLAYGROUND_BUILD_TESTS` | Tests for selected capabilities only; tests cannot enable a disabled provider |
+| `PLAYGROUND_GPU` | GPU implementation within selected rendering/presentation; OFF excludes shader compilation, GPU SDK fetches and hardware tests |
+| `PLAYGROUND_FMOD_ROOT` | Supplied SDK location, inspected only when `fmod` is selected |
+
+Neutral module roots include runtime/math, world, storage, assets, rendering, scene,
+layout, text, UI, spatial data/products, simulation, physics, sockets, HTTP, message
+transport, sessions and audio. CMake maps these names to focused targets; public
+target names retain the `playground_` prefix. Module contracts may build with fake
+providers. Executables requiring an absent provider fail configuration with the
+missing requirement; selection never silently fetches a disabled adapter. Unknown
+names and unavailable application targets fail rather than producing empty binaries.
+
+Asset identity/catalog/storage must not require scene import or rendering. Put
+model decoding and scene realization in their owning optional modules. Runtime,
+world, storage and sampled-data consumers exclude SDL, ICU, fonts, shader tools and
+GPU loaders. Text/UI explicitly select their text dependencies. Host policy and
+registries remain reusable; SDL presentation is an adapter, not a runtime dependency.
+
+Export/install only configured targets and their actual dependency closure. Generate
+editor commands from selected translation units without requiring a demo entrypoint.
+Verify runtime-only, world/storage, sampled-data, each enabled provider and each
+application configuration independently. Compile and link an external installed
+consumer as well as an in-tree test; absence from a link line alone does not prove
+absence from configure-time fetching or installed runtime artifacts.
+
 ## Stable boundaries
 
 Reuse ServicePump/ServiceScope, Executor, CompletionQueue, ActivationLifetime,

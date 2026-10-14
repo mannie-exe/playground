@@ -27,6 +27,17 @@ according to an explicit view policy. Every panel uses the same policy. Product
 keys include source/channel revisions, sampling plane and color-map parameters;
 reuse raw samples independently when only presentation changes.
 
+The first viewer uses axis-aligned planes in dataset physical coordinates. Select
+the nearest sample plane and nearest labels; scalar linear interpolation may be
+an explicitly selected product capability. Window width must be finite and positive;
+the initial linear map is `clamp((value - (level - width/2)) / width, 0, 1)`.
+Apply it after source-type decoding; NaN/missing coverage gets a diagnostic mask.
+This is an inspection transfer function, not a claim of DICOM presentation parity.
+Pan uses physical in-plane displacement; zoom preserves the physical point under
+the cursor. The overview shows dataset bounds and the three selected planes using
+existing scene primitives; it does not require volume ray marching. Golden samples
+cover signed intensity, reflected axes, anisotropic spacing and boundary pixels.
+
 ## Editing and storage
 
 A separate label channel supports application-owned brushes through DatasetStore

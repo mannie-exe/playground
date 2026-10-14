@@ -88,6 +88,17 @@ every physical algorithm decomposes into independent chunk updates. Persistent
 simulation continuation must include the domain's pending timers/active state and
 clock policy, not only the most recent samples.
 
+The baseline reference kernel uses integer propagation with a one-cell halo and
+double-buffered tick inputs/outputs. A fixture specifies finite initial values,
+boundary policy and active-region partition. Every region participating in tick T
+reads the same committed T root, including halos; merge candidates in canonical
+region order and publish T+1 once the admitted step is complete. Neighbor writes
+become next-tick intents, never writes into another worker's input. Region activity,
+pending intents and tick advance commit with the patches. Missing required coverage
+holds the tick; deadlines/overload do not substitute zeros. A saved continuation
+captures that committed tuple. Compare uninterrupted and save/reopen runs, including
+different worker counts, negative addresses and a sleeping region awakened by an edit.
+
 ## Verification
 
 Supply deterministic reference kernels in tests/workloads, not a terrain game rule

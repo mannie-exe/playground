@@ -236,6 +236,24 @@ resampling with recorded provenance or refusal. Do not silently discard transfor
 Labels use nearest sampling. Detached source paths follow AssetReader confinement.
 [NRRD format](https://teem.sourceforge.net/nrrd/format.html).
 
+The initial NRRD profile accepts dimension 3, one scalar per sample, raw/gzip,
+attached data or one detached relative file, signed/unsigned 8/16/32/64-bit integers
+and IEEE float32/float64. Axis zero is fastest. Multi-byte payloads require a
+validated endian declaration; byte and line skips are zero. Reject file lists,
+printf sequences, vector/time axes and non-spatial directions. Check products of
+dimensions and decoded bytes before allocation, and require exact decoded length.
+Preserve supported space basis and units; absence requires explicit import policy.
+Keep native fixtures aligned with the Python suite's narrower accepted profile.
+
+The initial VOX profile reads version 150 and validated static scene extensions:
+SIZE/XYZI, optional PACK/RGBA, nTRN/nGRP/nSHP and LAYR. Bound every chunk's content
+and children against its enclosing extent, node references against the model table,
+and transformed coordinates against dataset limits. Detect cycles and reject
+ambiguous duplicate occupied records. Unsupported animated transforms require an
+explicit selected-frame import policy; no silent frame choice. Preserve material
+metadata without interpreting it as physical coefficients. Snapshot export refuses
+data outside the exporter's declared model/palette/transform capabilities.
+
 Whole compressed volumes decode within declared limits or are cooked into indexed
 independently readable chunks before runtime traversal. `.vox` and NRRD are source
 interchange, not mandatory internal storage layouts. NIfTI, direct DICOM, PLY point

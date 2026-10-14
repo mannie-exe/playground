@@ -169,6 +169,25 @@ expected revision. Concurrent saves cannot let an older snapshot overwrite newer
 state. Cross-dataset/world saves flush referenced blobs/roots before publishing one
 world checkpoint that selects a coherent set; unselected newer roots do not alter it.
 
+The first local storage adapter reuses `CheckpointStorage`/`DirectoryCheckpointStore`
+for the small committed root and adds immutable content-addressed blob/index files.
+It does not rewrite the complete dataset through one WorldStore payload. Publish in
+this order: write and verify new blobs/pages; flush them and their directory entries;
+then compare-and-swap the small root using the existing durable checkpoint protocol.
+On root acknowledgement uncertainty, reread the commit identity before retrying.
+Do not report Durable for a root whose referenced pages were not durably installed.
+
+CP04 defines and locks a version-1 codec with round-trip golden fixtures before
+writing user saves. The root uses bounded UTF-8 JSON with explicit schema, source
+lock, grid/channel definitions, dataset/store revisions and index digest. Addresses
+and 64-bit identities use decimal strings. Pages have declared entry/byte bounds,
+canonical address order and exact child digests; leaf entries distinguish missing
+override from explicit empty override. Payload codecs declare scalar type, endian,
+sample order, extent and exact decoded size; no raw C++ struct serialization.
+Index layout/page size is adapter-private and versioned, not a core octree contract.
+Garbage collection is future; the initial adapter retains orphaned immutable files
+and reports disk usage/quota refusal rather than risking removal of live roots.
+
 A changed generator/schema/domain interpretation requires explicit migration or a
 retained compatible provider/baked baseline. A derived mesh cooker update only
 invalidates its cache. Restore creates a new runtime epoch and rejects old jobs.

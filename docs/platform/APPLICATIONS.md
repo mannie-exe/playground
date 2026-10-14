@@ -81,6 +81,40 @@ captured inputs until retirement; closing a scope does not unload executing code
 undo completed external effects. Host teardown joins remaining native work outside
 ordinary update/render callbacks. Actual dynamic code unload remains future.
 
+## Transition handoff
+
+Reuse the existing registry, IApp and ActivationLifetime machinery with these
+explicit owner-thread phases; these names describe API operations, not a guest ABI.
+
+| Operation/value | Required behavior |
+|---|---|
+| `prepareLaunch(props)` | Returns a retained request; validates registry/content/capabilities and prepares a dormant candidate under a bounded preparation scope |
+| `PreparedLaunch` | Single-use candidate with registry/content revisions, expected resident instance and prepared model/presentation resources |
+| `commitLaunch(candidate)` | Revalidates expectations at a host boundary; rejects stale candidates before revoking old input; returns Activated, Conflict or Faulted with a retained diagnostic |
+| `cancelLaunch(request)` | Invalidates candidate publication; retires captured resources without activating behavior |
+| `attachPresentation / detachPresentation` | Create/revoke a separate presentation lifetime and input assignment; preserve instance model and service scope |
+
+Admit at most one replacement candidate. Further requests return Busy or explicitly
+cancel the earlier request before taking its slot; retiring native resources remain
+charged. Registry factories construct inert instances. No fixed update, connection,
+audio playback or registered behavior starts during ordinary preparation.
+
+Before commit, build all fallible reversible state. On commit revoke old input,
+detach its presentation and exchange the resident mapping, then activate the new
+instance's behavior. Activation that cannot be made reversible has a declared
+fault path; do not resume an old instance after its irreversible disposal. Dispose
+the old instance only after a successful reversible exchange, or under that fault
+path. Completion delivery validates instance lifetime independently of presentation
+lifetime. Renderer replacement revokes only the latter and reconstructs views from
+the same model; instance network requests continue.
+
+CP02 preserves existing catalog/resources, directories/settings, worker admission,
+service pumping, gamepad/input routing and renderer notifications through injected
+facilities. Splitting ownership is not permission to remove their behavior. A test
+registry with two inert factories must exercise every transition without naming a
+demo; repeat renderer replacement with an outstanding instance completion and a
+stale view completion to prove the two lifetimes differ.
+
 ## Service access and state
 
 AppContext delegates to explicit instance services and the presentation attachment.

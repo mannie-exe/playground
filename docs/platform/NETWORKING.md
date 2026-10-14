@@ -68,8 +68,10 @@ TCP is an ordered byte stream. Reads may split or combine application messages;
 write completion means local transport progress, not peer receipt or model commit.
 A failed partial write cannot be retried as a whole message on the same stream.
 An incomplete writeAll after any transferred bytes closes that stream and fails
-queued writes; no later frame may follow a truncated frame. Before any progress,
-cancellation removes only that request. Higher-level protocols may still require
+queued writes; no later frame may follow a truncated frame. Canceling a queued,
+never-dispatched write removes only that request. Canceling an active native write
+closes the stream conservatively even if no transferred bytes have yet been reported;
+cancellation can race with progress. Higher-level protocols may still require
 closing when omitting an unsent operation would violate their ordering.
 The application frames and bounds messages. Graceful close has an explicit drain
 deadline followed by abort; it cannot indefinitely delay app replacement.
@@ -79,6 +81,14 @@ Receive truncation discards the entire datagram before protocol decoding. Payloa
 limits account for the selected path/MTU policy; IP fragmentation is not a delivery
 guarantee. A connected UDP socket filters peers but does not authenticate them.
 TCP fallback, reliable UDP, discovery and NAT traversal are separate policies.
+
+For a requested payload cap N, reserve a checked N+1 receive buffer and reject a
+completion longer than N or a native truncation indication. This detects oversized
+datagrams even on platforms that silently truncate to the supplied buffer length.
+Validate N against the supported UDP size and allocation limits before adding one.
+An empty datagram remains a successful zero-length message. Test N-1, N, N+1 and
+much larger payloads on each supported OS; an Asio error code alone is insufficient
+cross-platform truncation evidence.
 
 ## HTTP and credential boundary
 
@@ -105,6 +115,18 @@ Use [libcurl multi](https://curl.se/libcurl/c/libcurl-multi.html), its bounded
 The content-acquisition owner verifies digests before publishing immutable assets;
 AssetReader remains local and side-effect free. Minecraft online login is an app
 adapter over HTTPS plus its own versioned socket handshake, not a core account service.
+
+The libcurl write callback either consumes the whole callback span or consumes
+none and pauses/aborts. Paused data is delivered again: do not append a prefix and
+return pause. Reserve a consumer window sufficient for the supported callback size;
+unpause only on the I/O owner, with reentrant callback delivery accounted for.
+Header and decoded-body limits are independent and checked with overflow-safe sums.
+Automatic decompression must enforce the decoded limit. Native paused-transfer
+buffers are separately estimated; application queue limits do not bound them.
+The baseline bounded acquisition profile uses HTTP/1.1; enabling multiplexed HTTP
+requires additional paused-stream memory evidence. Expired/blocked consumers cancel
+instead of retaining a transfer indefinitely.
+[Pause and replay semantics](https://curl.se/libcurl/c/curl_easy_pause.html).
 
 ## Native I/O execution
 
@@ -198,6 +220,24 @@ than reapplying an old mutation. Domain receipts retain the exact terminal outco
 Baseline capture and subsequent deltas share a revision barrier; bounded staging
 publishes one replica root only when required parts/dependencies validate. Content
 waiting is visible independently from connected session/heartbeat progress.
+
+The initial replica protocol transfers `BaselineBegin(id, interest, revision,
+partCount, totalBytes)`, numbered bounded parts, and `BaselineEnd(digest)`. Parts
+are keyed by session epoch and baseline ID; duplicates must match exact bytes.
+Stage deltas after the captured revision in a separately bounded ordered queue.
+Publish the baseline only after all parts and its digest validate, then apply
+contiguous source/target revisions. Interest changes allocate a new baseline ID;
+late parts cannot populate its staging root. Missing parts, gaps, conflicting
+duplicates or expired history enter NeedsResync and discard incomplete staging.
+Admission/timeout bounds apply even while a reliable transport remains connected.
+
+CP10 owns a version-1 envelope codec with explicit widths, endian, string/collection
+limits and golden byte fixtures before native session acceptance. The domain codec
+is registered separately. The reference document has namespaced record IDs,
+expected revisions and authority-assigned commit sequences; presence expires and
+never changes the document revision. Tests deliver baseline parts and deltas across
+independent transport lanes to verify that wire delivery order is not the commit
+barrier. This protocol is not used by the Minecraft target.
 
 ## Delivery and protocol contracts
 
@@ -401,6 +441,15 @@ I/O/control service performs native dispatch and stages owned records for the mo
 owner. Native callback batches are not assumed preemptible by ServiceWorkBudget.
 Bound admitted connections/native buffering, keep callbacks short and measure their
 cost. [Native interface](https://github.com/ValveSoftware/GameNetworkingSockets/blob/master/include/steam/isteamnetworkingsockets.h).
+
+The initial message adapter targets the v1.6.1 API. One process coordinator owns
+library initialization/shutdown and native callback dispatch across hosts. Each
+received `SteamNetworkingMessage_t` is released exactly once after copying into
+admitted owned storage or completing a retained native lease, including rejection
+and scope-close paths. Set native send-buffer/connection limits before traffic;
+local service bounds alone do not constrain library queues. CP10 records the exact
+source commit, crypto backend, flags and target in its dependency lock and acceptance
+receipt. [Message ownership](https://github.com/ValveSoftware/GameNetworkingSockets/blob/v1.6.1/include/steam/steamnetworkingtypes.h).
 
 Transport send acceptance, remote receipt and model commit remain distinct. Configure
 reliable/unreliable delivery and per-lane priorities explicitly. Separate channels

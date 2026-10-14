@@ -56,6 +56,25 @@ without the desktop IApp/SDL window adapter.
 
 ## Spatial work and clocks
 
+Reuse `Executor::submit(job, reservedBytes)` as a work-admission estimate and
+`ResourceLedger::Token` as the shared allocation charge. Executor reserved bytes
+are not added to ledger usage as another physical allocation. Independently
+allocated input, scratch, output and old/new overlap each require their own charge;
+sharing one retained payload shares its token. Do not charge the same output once
+as prepared and again as published merely because its owner changes.
+
+Reserve output/scratch and a terminal result slot before submitting. Rejection
+releases those reservations immediately. An accepted worker retains scratch until
+it exits; a published payload retains its original token, changing Reserved to
+Owned. Cancellation releases demand, not executing captures. Retiring resources
+remain charged through native/frame completion. Executor retirement and result
+readiness are distinct observations. Native-private allocations remain identified
+estimates unless a provider supports measured/enforced accounting.
+
+Verify refusal, worker failure, publication, cancellation before/after execution
+and final retirement with ledger owner totals and executor counters. Zero live
+demand is not evidence of zero retained bytes.
+
 [DatasetService](SPATIAL_DATA.md#sources-and-preparation),
 [ProductService](SPATIAL_PRODUCTS.md) and edit/save services share Executor,
 ServiceScope, wake endpoints and ResourceLedger. Policy queues bound and coalesce
