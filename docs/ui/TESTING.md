@@ -239,7 +239,7 @@ cmake --build --preset release --target playground_ui_layout_workload playground
 ./build/release/bin/playground_ui_layout_workload --verify
 ./build/release/bin/playground_ui_layout_workload --verify --gpu
 ./build/release/bin/playground_ui_layout_workload --verify --full-layout
-./build/release/bin/playground_ui_layout_workload --screenshots build/review/demo2d
+./build/release/bin/playground_ui_layout_workload --screenshots build/runs/ui-layout
 ./build/release/bin/playground_ui_host_workload software
 ./build/release/bin/playground_ui_host_workload gpu
 ./build/release/bin/playground_ui_host_workload software --burst
@@ -294,3 +294,23 @@ Run `build/debug/bin/playground_ui_host_workload software --motion` or replace
 `software` with `gpu`; add `--burst` for prequeued input. The motion mode caps
 presentation at 30 FPS and requires intermediate/final animation frames as well
 as final-input painting. Workload timings are observations, not CTest thresholds.
+
+## Future editor component verification
+
+These checks become required when the corresponding future helpers are implemented;
+they are not evidence of existing controls or gates on initial application targets.
+Use deterministic model/provider fixtures before native rendering interaction checks.
+
+| Area | Required evidence |
+|---|---|
+| Edit sessions/history | One gesture yields one command; cancel leaves model unchanged; revision conflict, owner detach, external edit, history pruning and asynchronous save preserve correct dirty state |
+| Workspace panels | Split constraints, hidden/unavailable panel restore, reparent without duplicate ownership, focus/capture retirement and versioned preference fallback |
+| Transform tools/canvas | Inverse-mapped picking under pan/rotate/scale, cursor anchor preserved on zoom, singular rejection, snapping, DPI independence and capture cancellation |
+| Timeline/ruler | Rational-rate boundaries, negative/large ticks, overflow, snapping ties, bounded tick labels, stale seeks and independent requested/achieved time |
+| File/asset browser | Reordered pages, invalid cursors, root escape rejection at provider, empty versus failed enumeration, recycled rows and late/cancelled thumbnails |
+| Composed viewports | Correct nested input/clip mapping, no double input consumption, cycle rejection, resize while leased, aggregate budget pressure and producer-before-consumer ordering |
+
+Use a four-pane volume view, a nested scene preview, a paged fixture directory and
+a deterministic trace timeline as verification consumers. Their brush/document
+semantics stay application-owned. Native floating windows, video editing and
+multi-app hosting require separate future acceptance.

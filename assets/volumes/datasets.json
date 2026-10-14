@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "source_registry": "https://github.com/Slicer/Slicer/blob/69bdf326e7feca062442b37461e42d87e9c3e5cb/Modules/Scripted/SampleData/SampleData.py",
+  "license_file": "SLICER-LICENSE.txt",
+  "license_url": "https://github.com/Slicer/Slicer/blob/69bdf326e7feca062442b37461e42d87e9c3e5cb/License.txt",
+  "datasets": [
+    {
+      "id": "mrhead",
+      "filename": "MR-head.nrrd",
+      "url": "https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/cc211f0dfd9a05ca3841ce1141b292898b2dd2d3f08286affadf823a7e58df93",
+      "sha256": "cc211f0dfd9a05ca3841ce1141b292898b2dd2d3f08286affadf823a7e58df93",
+      "max_download_bytes": 134217728,
+      "max_decoded_bytes": 268435456,
+      "units": "mm",
+      "units_basis": "explicit fixture import convention; source headers omit space units",
+      "preview_range": [
+        0,
+        600
+      ]
+    },
+    {
+      "id": "ctchest",
+      "filename": "CT-chest.nrrd",
+      "url": "https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/4507b664690840abb6cb9af2d919377ffc4ef75b167cb6fd0f747befdb12e38e",
+      "sha256": "4507b664690840abb6cb9af2d919377ffc4ef75b167cb6fd0f747befdb12e38e",
+      "max_download_bytes": 134217728,
+      "max_decoded_bytes": 268435456,
+      "units": "mm",
+      "units_basis": "explicit fixture import convention; source headers omit space units",
+      "preview_range": [
+        -1000,
+        600
+      ]
+    }
+  ]
+}

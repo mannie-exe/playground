@@ -1,7 +1,8 @@
 # Networking and shared sessions
 
-Networking consists of optional transport and session modules. The runtime core
-supplies scopes, scheduling, bounded handoff and publication; it does not depend on
+Networking consists of optional sockets, HTTP, message transport and session
+modules. The runtime core supplies scopes, scheduling, bounded handoff and publication;
+it does not depend on
 sockets, a game protocol or replicated worlds. Collaborative tools and real-time
 applications use the same networking primitives.
 
@@ -9,7 +10,9 @@ applications use the same networking primitives.
 
 | Module | Required implementation when enabled | Does not require |
 |---|---|---|
-| Transport | GameNetworkingSockets adapter, bounded messages, lifecycle, capabilities, diagnostics and native loopback tests | Session authority, World, voxels, UI or physics |
+| Sockets | Standalone Asio adapter for TCP streams, UDP datagrams and bounded asynchronous address resolution | Message framing, reliability over UDP, session authority, World or UI |
+| HTTP | libcurl multi adapter for bounded HTTPS requests and explicit content acquisition | Hidden AssetReader downloads or an application login policy |
+| Message transport | GameNetworkingSockets adapter, bounded reliable/unreliable messages, capabilities and native loopback tests | Raw TCP compatibility, session authority, World or physics |
 | Sessions | Version negotiation, authority/replica lifecycle, ordered commands/receipts, filtered baselines/deltas and a small reference domain | Game rules, spatial interest, production identity/hosting services |
 | Domain adapters | App-defined codecs, validation, visibility and state transitions | A universal scene or ECS schema |
 
@@ -20,8 +23,114 @@ Spatial world/voxel/body replication sections below are future adapter designs;
 they do not gate baseline transport, sessions, storage or Jolt acceptance.
 
 The APIs below retain existing request, revision, snapshot and service conventions.
-Applications can use transport directly for another protocol. They may omit both
-modules without changing host, rendering or persistence semantics.
+Applications select modules without changing host, rendering or persistence
+semantics. The [Minecraft client](../apps/MINECRAFT.md) uses sockets and HTTP
+directly. Its protocol is not a generic authority-session adapter.
+
+## Socket values and operations
+
+These are intended public shapes, not claims of existing headers. Operations reuse
+runtime request identity, scoped lifetime, retained results and accounting. Calls
+enter through the owning service thread; other threads submit owned requests
+through bounded handoff. Native callbacks never call application code.
+
+| Value/API | Shape and contract |
+|---|---|
+| `NetworkScope` | Explicit ServiceScope (instance or headless owner) plus limits, capabilities and epoch; owns operations and handles |
+| `Endpoint` | IPv4/IPv6 address, IPv6 scope when needed, uint16 port; host names remain separate resolution inputs |
+| `ResolveRequest` | Host, port, permitted address families, deadline and maximum results; preserves original authority for identity checks |
+| `StreamHandle / DatagramHandle / ListenerHandle` | Distinct opaque IDs with scope epoch and generation; never native descriptors |
+| `NetworkCapabilities` | Independently available TCP, UDP, IPv4/IPv6, HTTPS and message-delivery modes; missing modes return Unsupported, never implicit substitution |
+| `SocketLimits` | Connections, pending accepts/operations, resolve results, receive/send bytes per handle and scope, datagram size, deadlines and owner drain budget |
+| `resolve(request)` | Bounded asynchronous name resolution; returns validated endpoints or terminal failure, without opening a connection |
+| `listen / accept / connect` | Explicit endpoint and policy; retained result yields a typed handle or failure; connect never implicitly listens |
+| `readSome(stream, maximumBytes, deadline)` | One outstanding read per stream; owned bytes plus terminal status; bytes precede EOF/error when both occur |
+| `writeAll(stream, ownedBytes, deadline)` | Serialized per stream; retained result includes bytes transferred and terminal status; failure/cancel may follow partial progress |
+| `shutdownWrite(stream, deadline) / close(handle, mode, deadline)` | Half-close inserts a write-queue barrier and rejects later writes; full close rejects all new operations, with Abort or DrainThenAbort policy |
+| `openDatagram(bindEndpoint, optionalPeer)` | Creates a bounded DatagramHandle; peer filtering is explicit and does not create reliable delivery |
+| `receiveDatagram(handle, maximumBytes, deadline)` | Owned payload, source endpoint and status; preserves empty datagrams and reports truncation as invalid data |
+| `sendDatagram(handle, endpoint, ownedBytes, deadline)` | One datagram within the configured limit; no implicit splitting, retry or reliability |
+| `poll(request) / forget(request) / cancel(request)` | Retained terminal result until forgotten or scope retirement; cancellation does not prove that no bytes were sent |
+
+Admission returns Accepted(request), Backpressured, Closed, InvalidArgument,
+TooLarge or Unsupported. Rejected operations take no work and retain no payload.
+Owned payload leases remain valid for the caller; acceptance retains a service
+lease through native completion.
+An accepted operation terminates exactly once as Complete, EndOfStream, Cancelled,
+TimedOut or Failed, with a typed diagnostic and actual progress. Poll observes
+without consuming; forget releases a terminal result, while early forget cancels
+observation and retains native
+leases until retirement. EndOfStream applies only to stream reads. Admission reserves
+result capacity; notification loss cannot lose the result. Closing the scope ends
+consumer access but retains native operation memory until callbacks retire.
+
+TCP is an ordered byte stream. Reads may split or combine application messages;
+write completion means local transport progress, not peer receipt or model commit.
+A failed partial write cannot be retried as a whole message on the same stream.
+An incomplete writeAll after any transferred bytes closes that stream and fails
+queued writes; no later frame may follow a truncated frame. Before any progress,
+cancellation removes only that request. Higher-level protocols may still require
+closing when omitting an unsent operation would violate their ordering.
+The application frames and bounds messages. Graceful close has an explicit drain
+deadline followed by abort; it cannot indefinitely delay app replacement.
+
+UDP preserves datagram boundaries but permits loss, duplication and reordering.
+Receive truncation discards the entire datagram before protocol decoding. Payload
+limits account for the selected path/MTU policy; IP fragmentation is not a delivery
+guarantee. A connected UDP socket filters peers but does not authenticate them.
+TCP fallback, reliable UDP, discovery and NAT traversal are separate policies.
+
+## HTTP and credential boundary
+
+`HttpService::request / poll / cancel / forget` uses the same admission, retained
+result and retirement rules as socket operations. `HttpLimits` caps concurrent
+requests, connections, header/body bytes, queued consumer bytes and redirect count.
+`HttpRequest` carries method, HTTPS URL, bounded headers, owned body or bounded
+producer, deadline, redirect policy and response byte limits. Its retained result
+separates transport/TLS failure from HTTP status and application validation.
+Responses use either a capped owned body or an explicit bounded consumer. A slow
+consumer pauses acquisition or cancels it; buffering cannot grow without bound.
+HTTP shares NetworkScope admission and retirement, not TCP framing APIs.
+
+Peer certificate and hostname verification are mandatory for HTTPS. Redirects are
+disabled unless explicitly allowed; every destination is revalidated and credentials
+are never forwarded across origins. Requests with effects are not automatically
+retried. Credentials are transient secret inputs, excluded from logs, manifests,
+command-line launch properties and trace captures. HTTP success does not authenticate
+a raw socket peer or authorize application commands.
+
+Use [libcurl multi](https://curl.se/libcurl/c/libcurl-multi.html), its bounded
+[response callback](https://curl.se/libcurl/c/CURLOPT_WRITEFUNCTION.html), and
+[hostname verification](https://curl.se/libcurl/c/CURLOPT_SSL_VERIFYHOST.html).
+The content-acquisition owner verifies digests before publishing immutable assets;
+AssetReader remains local and side-effect free. Minecraft online login is an app
+adapter over HTTPS plus its own versioned socket handshake, not a core account service.
+
+## Native I/O execution
+
+Standalone Asio owns an I/O execution domain shared by admitted sockets, with
+serialized operations per handle. It does not occupy independent-job Executor
+workers with blocking event loops. DNS, timers and completions run there; decoding
+may use workers after the protocol owner validates and orders complete frames.
+An OS resolver that cannot promptly cancel still owns memory until completion;
+logical cancellation suppresses publication and bounded resolver admission prevents
+replacement requests from accumulating unbounded native work.
+
+Asio [asynchronous operations](https://think-async.com/Asio/asio-1.36.0/doc/asio/overview/core/async.html)
+require explicit object/buffer lifetime. In particular,
+[partial writes](https://think-async.com/Asio/asio-1.36.0/doc/asio/reference/basic_stream_socket/async_write_some.html)
+require retaining the original buffer and tracking transferred prefixes.
+Handlers stage owned results, then wake ServicePump. Owner delivery checks scope,
+handle generation and request identity. ServiceWorkBudget bounds publication, not
+arbitrary native callback duration. Native buffers and in-flight work also have
+admission limits and ResourceLedger charges.
+
+Shutdown stops admission, invalidates publication, requests cancellation/closes
+handles, drains completions and releases their leases before destroying the I/O
+provider. A shutdown deadline may report failure and retain a retiring provider;
+it never frees memory still referenced by a native operation. The host owns shared
+provider lifetime across instance replacement. No detached callback can access an
+expired AppContext, model or UI tree.
 
 ## Meaning of multiplayer
 
@@ -42,7 +151,7 @@ models a shared camera or document. Do not replicate Node trees or pointers.
 
 | Layer | Values/operations | Ownership |
 |---|---|---|
-| Transport | ConnectionHandle, TransportCapabilities, send, receive, close, stats | I/O service owns sockets and bounded buffers |
+| Message transport | ConnectionHandle, TransportCapabilities, send, receive, close, stats | I/O service owns messages; separate from StreamHandle and DatagramHandle |
 | Protocol | ProtocolVersion, MessageType, bounded encode/decode, channel policy | No UI or renderer dependency |
 | Session | SessionId, ParticipantId, authenticate/join/leave/resume, SessionEpoch | Authority owns admission and participant visibility |
 | Domain | CommandId, expected revision/tick, validate/apply, public/private views | App model owns rules and durable state |
@@ -56,7 +165,7 @@ identity, authorization checks each operation, encryption protects transport;
 none substitutes for the others. A player host can inspect its authoritative
 model; player-hosted private information cannot be protected from that host.
 
-`send` reports Accepted, Backpressured, Closed, TooLarge or UnsupportedDelivery.
+`MessageTransport::send` reports Accepted, Backpressured, Closed, TooLarge or UnsupportedDelivery.
 Accepted means locally queued, not delivered or applied. Application command
 results acknowledge validation/application separately. Message payload ownership
 is explicit; callbacks cannot retain borrowed I/O memory past delivery.
@@ -144,8 +253,9 @@ An embedded player host uses the same runner and queued loopback messages, not
 synchronous privileged client calls. A managed deployment runs the dedicated
 artifact with external configuration, identity, monitoring and lifecycle services.
 LAN/direct addressing, discovery, internet signaling, NAT traversal and relays are
-independent capabilities. LAN is not automatically trusted; public internet use
-requires authenticated peer/server identity, not merely encrypted packets.
+independent capabilities. LAN is not automatically trusted; session deployments
+declare authenticated peer/server identity policy, not merely encrypted packets. External protocol clients declare their own server-trust model
+and cannot claim identities their protocol does not establish.
 
 ## Spatial authority and interest
 
@@ -249,17 +359,18 @@ server-authoritative interpolation.
 
 Spatial interest and voxel/body replication, client prediction/reconciliation,
 rollback, deterministic lockstep, distributed/peer authority, host migration and
-offline CRDT merging are future. Domain-specific multiplayer experiences, discovery,
+offline CRDT merging are future. General multiplayer frameworks, discovery,
 matchmaking, relay provisioning and managed hosting are future applications/services.
-Baseline sessions require reconnect, revision conflicts, receipt deduplication,
-filtered baselines and bounded replica publication for the reference domain.
+The Minecraft spectator client is required application scope and uses its own TCP
+protocol; this future label does not defer it. Baseline sessions require reconnect,
+revision conflicts, receipt deduplication, filtered baselines and bounded replica publication for the reference domain.
 
 A network connection does not define the application's collaboration model. The
 reference authority serializes accepted changes; it does not claim offline merge
 or exactly-once external side effects. Persistence of a committed command/result is
 an explicit domain/storage integration, independent of transport reliability.
 
-## Transport choice
+## Message transport choice
 
 The transport interface has a deterministic in-memory fault adapter and a native
 [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets)
@@ -268,7 +379,7 @@ identity, signaling and relay services are separate provider adapters, not impli
 by the public transport library. Do not implement custom cryptography or reliable
 UDP. Library-native handles and provider credentials remain behind the adapter.
 
-Delivery capabilities are explicit. An HTTP/browser adapter must report missing
+Delivery capabilities are explicit. A future browser message adapter reports missing
 modes instead of silently substituting reliable delivery for an unreliable
 real-time channel. Protocol schemas own bounded codec validation; UI JSON is not
 the network wire format. Codecs must support deterministic round-trip fixtures
@@ -276,8 +387,14 @@ and reject malformed or oversized input before domain publication.
 
 ## Bounded native integration
 
-Pin GameNetworkingSockets source/build options through the dependency module. Native
-handles remain private. The adapter maps connect/listen/accept/close and receive
+Pin Asio, libcurl and GameNetworkingSockets versions and build options independently
+in the dependency module. Report enabled capabilities separately. Minecraft's
+application adapter uses a pinned OpenSSL EVP provider for required protocol crypto,
+including [AES modes](https://docs.openssl.org/3.5/man7/EVP_CIPHER-AES/), instead of
+implementing cryptographic primitives. This is distinct from HTTPS TLS and does
+not impose OpenSSL on consumers that omit the application and relevant adapters.
+
+GameNetworkingSockets native handles remain private. The adapter maps connect/listen/accept/close and receive
 poll groups to generation-checked Playground connections. RunCallbacks dispatches
 connection events; receive messages have explicit Release ownership. A designated
 I/O/control service performs native dispatch and stages owned records for the model
@@ -298,11 +415,20 @@ retires callbacks/messages and then releases native runtime ownership.
 
 Inject ephemeral endpoints, timeouts and storage roots. Readiness handshakes replace
 sleep-based synchronization; tests terminate/reap owned child processes. Loopback
-identity is test-only. Public endpoints require an explicitly supplied authenticated
-identity policy; missing providers report unavailable. Native loopback establishes
+identity is test-only. Public message-session endpoints require an explicitly
+supplied authenticated identity policy; missing providers report unavailable. Native loopback establishes
 neither internet identity nor signaling/relay/deployment coverage.
 
 ## Verification
+
+Socket tests split and coalesce TCP frames, produce partial writes, EOF with final
+bytes, half-close, timeout, cancellation after a prefix, reconnect and stale callbacks.
+UDP tests cover empty datagrams, truncation, size limits, source addresses, loss,
+duplication and reordering. Exercise IPv4 and IPv6 with explicit unavailable-family
+results. Use deterministic fault adapters and separate-process native loopback;
+never infer native coverage from mocks. HTTP fixtures cover TLS/hostname rejection,
+redirect credential isolation, body limits, stalled consumers and cancellation.
+Shutdown under full queues must retain terminal results and native buffer leases.
 
 Transport tests cover reliable delivery, unreliable loss/reordering, queue pressure,
 connection failure, native message release, callback retirement and late generations.

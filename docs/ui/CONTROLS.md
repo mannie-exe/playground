@@ -229,3 +229,67 @@ focus indicators remain immediate and high-contrast colors snap directly.
 App UI roots reveal with `ThemeMotion::reveal`. Demo 2D includes a reversible
 Presence panel. Custom controls can own `MotionValue<T>` and playback handles;
 [the motion contract](MOTION.md) defines lifetime and reduced-motion behavior.
+
+## Future workspace panels
+
+Workspace helpers are future optional controls built on existing layout, focus
+and scope ownership. A `WorkspaceLayout` is a versioned tree of `Split(axis,
+ratio, children)` and `Tabs(panelIds, activePanelId)` nodes. A stable `PanelId`
+selects an application-owned content factory; it is neither a NodeId nor an app
+instance. Ratios and minimum extents are validated against the available logical
+size; constrained layouts preserve reachable tabs instead of negative rectangles.
+
+Moving a panel transfers its existing content owner or reconstructs through an
+explicit factory policy. It must not attach one UI node to two parents. Hiding a
+panel revokes capture and restores focus to a visible semantic target. Persist
+layout preferences separately from documents, with version validation and a safe
+default when panels are unavailable. In-window splits/tabs come first; native
+floating windows require the separate future multiwindow host contract.
+[Qt docking](https://doc.qt.io/qt-6/qdockwidget.html) illustrates the separation
+between panel content and placement without making Qt a dependency.
+
+## Future transform tools
+
+`TransformToolProps` carries selected model IDs/revisions, pivot, reference frame,
+allowed translation/rotation/scale axes, snapping policy and screen-sized handles.
+A gesture captures these values and emits a typed transform delta through an
+[edit session](CONTRACTS.md#future-edit-sessions-and-history). The domain decides
+which transforms its data accepts; a label brush and mesh transform are not the
+same command. Preview, commit and cancel use the same coordinate convention.
+
+Picking converts viewport input through the inverse content transform. Singular
+or nonfinite transforms refuse interaction. Gizmo hit extents remain in logical
+screen pixels despite model scale, output density or camera zoom. Constraints and
+snapping apply in the declared reference frame with explicit units. Capture follows
+the gesture across bounds; cancel, owner loss or selection replacement removes the
+preview and capture. These controls do not directly write scene nodes or physics
+bodies outside their owner's publication boundary.
+
+## Future timeline and ruler
+
+Timeline controls are future editor UI, separate from animation `TimelineSpec` and
+MotionBindings. They display exact domain time and emit intent; they do not own
+simulation, media or audio clocks. Slice index is a separate domain, not an implied
+number of seconds.
+
+| Value/API | Proposed shape and contract |
+|---|---|
+| `TimeDomain` | Stable domain ID and positive rational ticks-per-second numerator/denominator; integer-only domains may omit a seconds mapping |
+| `TimeRange` | Signed int64 half-open [begin, end) in one domain; checked conversions and overflow rejection |
+| `TimelineViewProps` | Model revision, visible range, track provider, selection, playhead, snapping policy and logical pixels per tick |
+| `TimelineIntent` | Select, pan, zoom, requestSeek or edit command with domain, revision and gesture identity |
+| `SeekResult` | Request generation, requested and achieved time, readiness and failure; obsolete completions never move the current playhead |
+
+Keep playhead, selection range, viewport range and playback clock distinct. Zoom anchored to
+the cursor preserves the time under the pointer. Ruler, clip body, edge and empty
+track have distinct hit targets and command policies. Snap in domain ticks with a
+defined tie rule; display timecode/frame labels through rational conversion rather
+than accumulating floating-point seconds. Bound track virtualization and tick-label
+density independently of total duration. Follow-playhead is an explicit view policy.
+
+Scrubbing requests a seek through the model owner. It does not reset a physics tick
+or audio clock directly. While a seek prepares, show requested and achieved positions
+separately. Application transport adapters decide pause/resume and synchronization.
+[FilmCraft's architecture](https://github.com/storytold/filmcraft/blob/cee1feb185e675a108f78067f71ad86a640ace3d/docs/architecture.md)
+and [timeline hit testing](https://github.com/storytold/filmcraft/blob/cee1feb185e675a108f78067f71ad86a640ace3d/crates/ui-egui/src/panels/timeline_hit.rs)
+are references for exact time, model snapshots and target distinctions.

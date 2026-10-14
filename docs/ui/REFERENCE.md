@@ -1165,6 +1165,8 @@ an implemented renderer, node or host policy.
 
 | Future family | Retained requirements |
 |---|---|
+| Editor helpers | Future [edit sessions/history](CONTRACTS.md#future-edit-sessions-and-history), [workspace/transform/timeline controls](CONTROLS.md#future-workspace-panels) and [file/asset browsing](ASYNC.md#future-file-and-asset-browser); app models retain command semantics. |
+| View composition | Future [canvas navigation](../render/2D.md#future-canvas-navigation) and [composed viewports](../render/3D.md#future-composed-viewports); input mapping, output leases and scene identity remain separate. |
 | More controls | Combobox and Autocomplete are planned in CONTROLS.md; tree view, calendar/date inputs, rich editing and spreadsheet interaction remain extensions. |
 | Partial damage rendering | Whole-frame idle/wake is implemented. Old/new damage bounds, overlap-correct regional repaint and persistent-target ownership remain extensions. |
 | Native accessibility | Desktop AccessKit adapters exist; screen-reader acceptance remains platform-specific verification. Mobile bridges and virtualized offscreen item realization are extensions. |

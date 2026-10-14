@@ -2,7 +2,8 @@
 
 This optional provider boundary supports application-owned generation. Terrain
 rules, infinite-world feature placement and concrete terrain algorithms are
-prototype work in playground_voxel. Bounded discovery/source interchange remains
+application/prototype work. The Minecraft spectator app consumes server data; it
+does not require a local terrain generator. Bounded discovery/source interchange remains
 a spatial module requirement.
 
 Procedural generation is one [spatial data source](SPATIAL_DATA.md), alongside

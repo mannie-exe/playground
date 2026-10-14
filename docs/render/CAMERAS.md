@@ -284,3 +284,12 @@ independent of whether geometry happens to be rendered in the current view.
 and [follow modes](https://phantom-camera.dev/follow-modes/overview) inform source
 selection and placement boundaries. [Godot's spring-arm guidance](https://docs.godotengine.org/en/stable/tutorials/3d/spring_arm.html)
 informs the deferred query boundary. These are design references, not dependencies.
+
+## Minecraft spectator adapter
+
+The [Minecraft application](../apps/MINECRAFT.md#mouse-look-and-player-movement)
+requires mouse look and player movement using these input/controller primitives.
+Its app-owned player pose, server corrections, eye offset and wire angle conversion
+remain separate from camera evaluation and render-origin conversion. Server-granted
+spectator movement needs no Jolt character motor. Presentation interruption revokes
+input while instance-owned protocol processing continues.

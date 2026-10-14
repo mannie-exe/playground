@@ -76,6 +76,23 @@ and physics activation await their declared model boundary. Standalone/headless
 dataset tools pump these services without AppHost or SDL. Real-time audio producers
 use bounded preallocated handoff, not these allocation/publication calls directly.
 
+## Network execution and app publication
+
+Socket/HTTP providers own bounded native I/O domains, distinct from the Executor
+for independent jobs and the solver domain. They stage retained owned results for their
+ServiceScope; UI update never waits on DNS, socket readiness or HTTP completion.
+The [network contracts](NETWORKING.md#native-io-execution) define partial progress,
+cancellation and retirement. Closing a registration finishes logical cleanup at the
+scope boundary; native operation leases may retire later under the shared provider.
+Provider teardown waits for retirement outside the interactive frame loop.
+
+For Minecraft, service advance applies ordered connection/configuration/correction
+records to its app owner, then local movement samples the current input and corrected
+pose. Movement serialization follows that owner boundary; immutable chunk revisions
+feed worker preparation and later validated scene publication. Local input/simulation
+pause does not stop acknowledgements or connection state. Generic sessions use their
+own AuthorityRunner and do not intercept Minecraft traffic.
+
 ## Physics execution domain
 
 PhysicsService participates in ServiceScope admission, wakes and publication but
@@ -279,7 +296,7 @@ new work according to domain policy. Required ticks are never silently discarded
 |---|---|---|
 | Content/spatial workers | Immutable versioned requests and retained dependencies | Owner validates candidate, exchanges binding and retires superseded leases |
 | Physics execution domain | One ordered step with commands and collision coverage | Completed valid poses/events publish at the model boundary; collision swaps occur between steps |
-| Network service | Owned received messages with connection/session generation | Domain validates/applies at its mutation boundary; receipt is not commit |
+| Network service | Owned I/O results or messages with scope/connection/session generation | Domain validates/applies at its mutation boundary; receipt is not commit |
 | Audio control service | Scoped playback/parameter commands and spatial values | Native loading/playback/release states observed independently of presentation |
 | Renderer | Published descriptions and resource leases | Submission is distinct from GPU completion; resources survive in-flight use |
 

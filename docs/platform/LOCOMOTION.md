@@ -1,7 +1,9 @@
 # Locomotion profiles and facing
 
 These are optional application-control utilities, not runtime-core requirements.
-Character motors and physical navigation integration are future work.
+Character motors and physical navigation integration are future work. Required
+[Minecraft spectator movement](../apps/MINECRAFT.md#mouse-look-and-player-movement)
+is an application controller over these primitives, not a deferred character motor.
 
 Locomotion consumes intent and produces requested movement and facing. Camera
 placement, device routing and movement realization are separate responsibilities.

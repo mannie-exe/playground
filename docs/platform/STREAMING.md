@@ -177,3 +177,18 @@ FPS alone cannot establish streaming correctness or responsiveness.
 [World verification](WORLD_TESTING.md) defines boundary, pressure and recovery
 workloads. [World Partition](https://dev.epicgames.com/documentation/en-us/unreal-engine/world-partition-in-unreal-engine)
 is a reference for source-driven cell residency, not a dependency or required grid.
+
+## Application source adapters
+
+The [volume viewer](../apps/VOLUMES.md) pages reproducible immutable source bricks
+and committed label revisions. The [Minecraft client](../apps/MINECRAFT.md) receives
+an authoritative server stream into an app-owned live directory. Both use bounded
+admission, product keys and leases; their source recovery rules differ. Protocol
+receipt is not a GPU upload or a requirement to keep all derived meshes resident.
+
+A pushed source that receives deltas must retain or persist its base until the
+protocol retires it. Product eviction never implies that an authoritative base can
+be discarded. Connection/chunk generations and ordered revisions reject stale
+publication; a required source set exceeding capacity invokes the application's
+flow-control/failure policy. Generic streaming neither invents missing Minecraft
+chunks nor assumes all data can be regenerated from a seed.

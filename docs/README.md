@@ -7,6 +7,8 @@ of implemented features. Acceptance requires the verification for each module.
 
 Start with [architecture and scope](platform/ARCHITECTURE.md), then
 [application lifetime](platform/APPLICATIONS.md) and [runtime ordering](platform/RUNTIME.md).
+The [design-freeze boundary](platform/DESIGN_FREEZE.md) records stable scope and the
+remaining implementation/conformance evidence.
 The [build guide](../CONTRIBUTING.md) describes development and validation.
 
 ## Contract map
@@ -23,7 +25,7 @@ The [build guide](../CONTRIBUTING.md) describes development and validation.
 | Rendering | [Architecture](render/ARCHITECTURE.md), [coordinates/values](render/CONTRACTS.md), [resources](render/RESOURCES.md), [materials](render/MATERIALS.md), [verification](render/TESTING.md) |
 | UI | [Guide](ui/GUIDE.md), [reference](ui/REFERENCE.md), [controls](ui/CONTROLS.md), [themes](ui/THEMING.md), [motion](ui/MOTION.md), [async](ui/ASYNC.md), [accessibility](ui/ACCESSIBILITY.md), [verification](ui/TESTING.md) |
 | Optional application utilities | [Cameras](render/CAMERAS.md), [locomotion](platform/LOCOMOTION.md), [navigation](platform/NAVIGATION.md) |
-| Applications and experiments | [Demo and voxel targets](render/DEMOS.md) |
+| Applications and experiments | [Demo fixtures](render/DEMOS.md), [target workloads](apps/WORKLOADS.md), [volume viewer](apps/VOLUMES.md), [Minecraft spectator](apps/MINECRAFT.md) |
 
 ## Scope labels
 
@@ -43,13 +45,14 @@ proof that an executable or passing result exists.
 - [Downloaded executable apps, background instances and dynamic loading](platform/DISTRIBUTED_APPS.md).
 - [Untrusted app permissions and isolation](platform/SECURITY.md).
 - [General UI documents and editor](ui/DOCUMENTS.md).
+- [Reusable editor components](apps/WORKLOADS.md#future-reusable-editor-components): workspaces, edit history, transform tools, timelines, browsers and viewport composition.
 - [Character motors, vehicles and advanced movement](platform/LOCOMOTION.md#physics-movement-realization).
 - [General fracture, advanced physics and cross-region coupling](platform/PHYSICS.md#future-advanced-physics).
 - [Prediction, rollback, peer authority and offline merging](platform/NETWORKING.md#future-session-capabilities).
 - [Planetary frames and seamless portals](platform/WORLDS.md#future-capabilities).
 - Partial texture-mip residency and automatic HLOD in [streaming](platform/STREAMING.md#content-and-missing-regions).
 - Smooth isosurfaces, volume ray marching, fluid solvers and multiresolution terrain.
-- Terrain generation rules, infinite-world game design and material simulations in `playground_voxel`.
+- Terrain generation rules, infinite-world game design and material simulations in application prototypes.
 - [Camera obstruction](render/CAMERAS.md#future-camera-obstruction), volume planners and crowd avoidance.
 - Combobox and Autocomplete in [controls](ui/CONTROLS.md).
 

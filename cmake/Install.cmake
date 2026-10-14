@@ -1,5 +1,12 @@
 # Portable application layout shared by all native desktop targets.
 get_property(playground_install_targets GLOBAL PROPERTY playground_install_targets)
+set(playground_install_executables)
+foreach(target IN LISTS playground_install_targets)
+    get_target_property(target_type ${target} TYPE)
+    if(target_type STREQUAL "EXECUTABLE")
+        list(APPEND playground_install_executables "$<TARGET_FILE_NAME:${target}>")
+    endif()
+endforeach()
 foreach(shared_target IN ITEMS SDL3-shared SDL3_image-shared SDL3_ttf-shared)
     if(TARGET ${shared_target})
         list(APPEND playground_install_targets ${shared_target})
@@ -66,6 +73,8 @@ install(FILES "${SDL_ttf_SOURCE_DIR}/external/plutovg/source/FTL.TXT"
 
 if(PLAYGROUND_PLATFORM STREQUAL "macos")
     configure_file(${CMAKE_CURRENT_LIST_DIR}/InstallMacRuntime.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/InstallMacRuntime.cmake @ONLY)
+        ${CMAKE_CURRENT_BINARY_DIR}/InstallMacRuntime.configured.cmake @ONLY)
+    file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/InstallMacRuntime.cmake
+        INPUT ${CMAKE_CURRENT_BINARY_DIR}/InstallMacRuntime.configured.cmake)
     install(SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/InstallMacRuntime.cmake)
 endif()
