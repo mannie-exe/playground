@@ -35,6 +35,9 @@ NarrowPhaseQuery and TempAllocator; Asio asio-1-36-0 datagram API;
 GameNetworkingSockets v1.6.1 message ownership. Official NRRD/VOX specifications,
 libcurl callback/pause and FMOD 2.03 memory/lifecycle docs were checked. API-family
 references are not claims of installed SDKs; implementation locks exact native builds.
+Indexed ZIP source was also inspected at minizip-ng
+`72d3b398c420f01f1351b1fc9ddb8fc53eb7faf4`; CP03 uses its entry-position API,
+with bounded readers and explicit codec/build selection.
 Jolt fixed scratch can abort and queries are not preemptible; the contracts now
 state measured/admitted limits without promising unsupported recovery.
 
@@ -47,9 +50,20 @@ Validation of the audit working tree based on `263c379`:
 - `git diff --check`: passed. Only Markdown specs and this ledger changed.
 - No new native provider/application tests run: those implementations remain queued.
 
-Next: commit locally, review the complete diff against the starting revision,
-fix/review until no actionable findings, then push main and reconcile planning PR
-bodies. No checkpoint implementation starts.
+Local review `33e2e076-f2c3-4c43-9a19-f3a3d561cdb5` of `ed6071a` completed
+at 4/5 with two P2 clarifications: distinguish delayed replica parts from expired
+history, and identify slice orientation for rotated grids. Both are addressed:
+fixed bounded assembly/reorder waits precede resync, and viewer planes follow grid
+axes with a rotated-grid acceptance fixture. The follow-up also makes module
+selectors explicit, names reversible launch failure and specifies indexed ZIP reads.
+
+Design assessment: engine responsibilities and checkpoint boundaries are sufficiently
+specified to begin CP01 after the current local review gate passes. Exact Minecraft
+26.3 wire/capture evidence, FMOD SDK availability and native platform execution remain
+explicit downstream acceptance gates; none is claimed verified by this docs audit.
+The final review receipt stays in `build/runs/spec-readiness/` and the delivery report.
+Push only a green reviewed HEAD, then reconcile planning PR bodies. All implementation
+remains queued; this audit contains no checkpoint implementation.
 
 ## Completed foundation record
 
@@ -177,7 +191,7 @@ rebuilding them from scratch. Explicitly future topics are excluded.
 |---|---|---|---|---|
 | CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Optional build/dependency graph and neutral library consumers | CP00 | Explicit module/app/provider selection; headless and installed consumers avoid SDL/fonts/GPU fetch/link/init; disabled providers absent from packaging |
 | CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
-| CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | Asset/storage and registered saved composition | CP02 | Typed content locks, neutral namespaced checkpoint primitive, bounded preparation, staged attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
+| CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | Asset/storage and registered saved composition | CP02 | Typed content locks and indexed packs, neutral namespaced checkpoint primitive, bounded preparation, staged attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
 | CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Sampled-data storage, import, edits and bounded discovery | CP03 | Declared VOX/NRRD profiles, versioned storage golden fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, durable edit/save/reopen and overload tests |
 | CP05a | [#10](https://github.com/mannie-exe/playground/pull/10) | Shared spatial products and streaming | CP04 | Mesh/texture and dataset demand, exposed-face and scalar-slice products, coherent revisions, independent source/CPU/device cache churn and retirement; no viewer UI dependency |
 | CP05b | [#11](https://github.com/mannie-exe/playground/pull/11) | `playground_voxels` medical viewer | CP03, CP05a | Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified |

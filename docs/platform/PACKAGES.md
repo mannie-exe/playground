@@ -53,10 +53,24 @@ and native resource using it has retired. See [audio loading](../audio/README.md
 ZIP64 is an explicit container capability with the same application limits, not
 permission for unbounded files. Reject encryption, multipart/self-extracting
 archives, links, devices, unsupported compression and implicit nested mounts.
-The archive adapter uses a maintained implementation with indexed entry access
-and tested decode limits; archive-library types do not cross the package API.
+The ZIP adapter uses minizip-ng with stored/deflate support and tested decode
+limits; archive-library types do not cross the package API. CP03 pins the exact
+source/build and disables unused codecs, encryption, character-conversion libraries
+and automatic transitive fetching. Reuse the selected zlib dependency explicitly.
 [ZIP specification](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT);
-[libarchive capabilities](https://libarchive.org/).
+[minizip entry-position API](https://github.com/zlib-ng/minizip-ng/blob/72d3b398c420f01f1351b1fc9ddb8fc53eb7faf4/mz_zip.h).
+
+Mount validates a bounded central directory once and records entry positions using
+`mz_zip_get_entry`; reads use `mz_zip_goto_entry` through a serialized handle or
+separately admitted reader handles. Each handle has mutable cursor/decode state and
+cannot serve concurrent reads unsynchronized. Stored-entry range access validates
+local-header/payload bounds against the mounted immutable file; deflated entries
+decode within an admitted output cap or use verified staging. Hash verification
+covers the entire entry before trusted publication, even for a partial-read consumer.
+Index entry/byte limits apply before constructing the retained lookup table. Native
+parser scratch remains separately measured; an index cap is not proof of a hard
+native allocation ceiling. Test random entry order, concurrent reads, corrupt
+central/local disagreement, truncated streams and decoded-size overrun.
 
 Entry paths use a portable, bounded relative-name profile. Reject absolute paths,
 `..`, backslashes, NUL, drive/UNC forms, duplicate or case-colliding names, reserved

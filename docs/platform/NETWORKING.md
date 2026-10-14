@@ -227,9 +227,18 @@ are keyed by session epoch and baseline ID; duplicates must match exact bytes.
 Stage deltas after the captured revision in a separately bounded ordered queue.
 Publish the baseline only after all parts and its digest validate, then apply
 contiguous source/target revisions. Interest changes allocate a new baseline ID;
-late parts cannot populate its staging root. Missing parts, gaps, conflicting
-duplicates or expired history enter NeedsResync and discard incomplete staging.
-Admission/timeout bounds apply even while a reliable transport remains connected.
+late parts cannot populate its staging root and are ignored with bounded diagnostics.
+An unfinished baseline or a gap caused by independent-lane delay remains staged
+while its assembly/reorder deadline and byte/part limits permit. BaselineEnd may
+arrive before a part; it records expected completion rather than proving loss.
+Publish only after every required part is present and the digest validates. Likewise,
+buffer later deltas until the next source revision is available, without applying
+them out of order. Deadline expiry, queue-limit exhaustion, an explicit unavailable
+history response, conflicting duplicates or a digest failure enter NeedsResync and
+discard incomplete staging. Deadlines are fixed when assembly/gap waiting begins;
+duplicate traffic cannot extend them indefinitely. These bounds apply even while
+a reliable transport remains connected. Cross-lane fixtures cover both delayed
+success within the deadline and missing-history/timeout refusal.
 
 CP10 owns a version-1 envelope codec with explicit widths, endian, string/collection
 limits and golden byte fixtures before native session acceptance. The domain codec

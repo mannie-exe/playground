@@ -27,8 +27,11 @@ according to an explicit view policy. Every panel uses the same policy. Product
 keys include source/channel revisions, sampling plane and color-map parameters;
 reuse raw samples independently when only presentation changes.
 
-The first viewer uses axis-aligned planes in dataset physical coordinates. Select
-the nearest sample plane and nearest labels; scalar linear interpolation may be
+The first viewer's planes follow the three orthogonal **grid axes** from GridMapping,
+including rotated/reflected grids; each plane fixes one index coordinate and spans
+the other two. They are not fixed world/anatomical-axis planes. Use the mapping to
+place those planes in physical space and label their orientation. Select the nearest
+sample plane and nearest labels; scalar linear interpolation may be
 an explicitly selected product capability. Window width must be finite and positive;
 the initial linear map is `clamp((value - (level - width/2)) / width, 0, 1)`.
 Apply it after source-type decoding; NaN/missing coverage gets a diagnostic mask.
@@ -36,7 +39,9 @@ This is an inspection transfer function, not a claim of DICOM presentation parit
 Pan uses physical in-plane displacement; zoom preserves the physical point under
 the cursor. The overview shows dataset bounds and the three selected planes using
 existing scene primitives; it does not require volume ray marching. Golden samples
-cover signed intensity, reflected axes, anisotropic spacing and boundary pixels.
+cover signed intensity, rotated/reflected grids, anisotropic spacing and boundary
+pixels. A rotated-grid fixture must select the same index samples before/after
+rigid placement; arbitrary oblique resampling remains future.
 
 ## Editing and storage
 

@@ -74,13 +74,19 @@ only. Selection is resolved before any dependency fetch or platform initializati
 | `PLAYGROUND_GPU` | GPU implementation within selected rendering/presentation; OFF excludes shader compilation, GPU SDK fetches and hardware tests |
 | `PLAYGROUND_FMOD_ROOT` | Supplied SDK location, inspected only when `fmod` is selected |
 
-Neutral module roots include runtime/math, world, storage, assets, rendering, scene,
-layout, text, UI, spatial data/products, simulation, physics, sockets, HTTP, message
-transport, sessions and audio. CMake maps these names to focused targets; public
+Module selectors are `runtime`, `math`, `world`, `storage`, `assets`, `packages`,
+`rendering`, `scene`, `layout`, `text`, `ui`, `constraints`, `host`, `spatial_data`,
+`spatial_products`, `simulation`, `physics`, `sockets`, `http`, `message_transport`,
+`sessions` and `audio`. CMake maps these names to focused targets; public
 target names retain the `playground_` prefix. Module contracts may build with fake
 providers. Executables requiring an absent provider fail configuration with the
 missing requirement; selection never silently fetches a disabled adapter. Unknown
 names and unavailable application targets fail rather than producing empty binaries.
+Selecting a provider builds its module prerequisites but does not add that adapter
+to `playground_lib`. Applications and external consumers link native adapters
+explicitly. Desktop presets select `sdl`; physics/audio fixtures are registered only
+when their providers are enabled. `host` selects desktop host policy and its UI
+contracts; headless module consumers do not select it.
 
 Asset identity/catalog/storage must not require scene import or rendering. Put
 model decoding and scene realization in their owning optional modules. Runtime,

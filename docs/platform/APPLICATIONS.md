@@ -90,7 +90,7 @@ explicit owner-thread phases; these names describe API operations, not a guest A
 |---|---|
 | `prepareLaunch(props)` | Returns a retained request; validates registry/content/capabilities and prepares a dormant candidate under a bounded preparation scope |
 | `PreparedLaunch` | Single-use candidate with registry/content revisions, expected resident instance and prepared model/presentation resources |
-| `commitLaunch(candidate)` | Revalidates expectations at a host boundary; rejects stale candidates before revoking old input; returns Activated, Conflict or Faulted with a retained diagnostic |
+| `commitLaunch(candidate)` | Revalidates expectations at a host boundary; rejects stale candidates before revoking old input; returns Activated, Conflict, FailedPreservingResident or Faulted with a retained diagnostic |
 | `cancelLaunch(request)` | Invalidates candidate publication; retires captured resources without activating behavior |
 | `attachPresentation / detachPresentation` | Create/revoke a separate presentation lifetime and input assignment; preserve instance model and service scope |
 
