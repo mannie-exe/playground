@@ -191,3 +191,19 @@ The initial cleanup updates existing PR #4. Planning drafts may initially target
 `dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
 merge. A draft’s planning commit supplies reviewable scope, not completed work.
 Do not advance implementation while a preceding checkpoint is held at its review gate.
+
+## Queued draft scope: CP09
+
+**Planning only; implementation has not started.** This branch initially targets
+`dev` because CP00 is still under review. Before implementation, synchronize with
+main and completed prerequisites, reconcile this ledger and update the PR base.
+
+- Scope: TCP/UDP and HTTPS providers.
+- Dependencies: CP02.
+- Acceptance: Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests.
+- Owning contracts: `docs/platform/NETWORKING.md`, `docs/platform/SECURITY.md`, `docs/platform/RUNTIME.md`.
+- Include necessary source refactoring, wiring, failure tests and documentation
+  reconciliation for this scope. Reuse verified existing implementations.
+- Exclude explicitly future contracts and unrelated application features.
+- Record actual revisions, commands, outcomes and provider/OS acceptance limits.
+- Follow the CLI and GitHub review gates above before merging.
