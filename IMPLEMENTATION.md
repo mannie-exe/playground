@@ -191,3 +191,19 @@ The initial cleanup updates existing PR #4. Planning drafts may initially target
 `dev` while CP00 is open; retarget/rebase them onto synchronized `main` after its
 merge. A draft’s planning commit supplies reviewable scope, not completed work.
 Do not advance implementation while a preceding checkpoint is held at its review gate.
+
+## Queued draft scope: CP12
+
+**Planning only; implementation has not started.** This branch initially targets
+`dev` because CP00 is still under review. Before implementation, synchronize with
+main and completed prerequisites, reconcile this ledger and update the PR base.
+
+- Scope: Minecraft 26.3 compatibility profile and offline pipeline.
+- Dependencies: CP05a, CP09.
+- Acceptance: Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests.
+- Owning contracts: `docs/apps/MINECRAFT.md`, `docs/platform/NETWORKING.md`, `docs/platform/SPATIAL_PRODUCTS.md`.
+- Include necessary source refactoring, wiring, failure tests and documentation
+  reconciliation for this scope. Reuse verified existing implementations.
+- Exclude explicitly future contracts and unrelated application features.
+- Record actual revisions, commands, outcomes and provider/OS acceptance limits.
+- Follow the CLI and GitHub review gates above before merging.
