@@ -81,6 +81,27 @@ class VolumeSuiteTests(unittest.TestCase):
         (path2.parent/m2['bricks'][0]['header']).write_text('wrong geometry')
         with self.assertRaisesRegex(ValueError,'spatial header'):suite.verify(path2)
 
+    def test_detached_header_must_reach_its_checked_payload(self):
+        path = self.packed()
+        manifest = suite.load_manifest(path)
+        brick = manifest['bricks'][0]
+        moved = path.parent/'moved'
+        moved.mkdir()
+        header = path.parent/brick['header']
+        destination = moved/header.name
+        header.rename(destination)
+        brick['header'] = destination.relative_to(path.parent).as_posix()
+        suite.write_json(path, manifest)
+        with self.assertRaisesRegex(ValueError, 'header data path'):
+            suite.verify(path)
+        # Relocating both files together preserves the detached NRRD reference.
+        payload = path.parent/brick['payload']
+        destination = moved/payload.name
+        payload.rename(destination)
+        brick['payload'] = destination.relative_to(path.parent).as_posix()
+        suite.write_json(path, manifest)
+        self.assertEqual(suite.verify(path)['decoded_sha256'], suite.digest(self.raw))
+
     def test_missing_duplicate_and_escaping_descriptors(self):
         path=self.packed();original=json.loads(path.read_text())
         for mutation in ('missing','duplicate','escape'):

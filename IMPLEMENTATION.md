@@ -104,10 +104,19 @@ Scope:
   A regression using Windows text defaults reproduces twelve CRLF header failures.
   Header publication now writes UTF-8 bytes, matching the manifest's LF contract.
   All 12 fixture tests pass; native Windows execution remains a separate check.
+- Review `ce4510c1-a75d-4345-9194-d48c4aa8fe1e` of `ab4bc15` confirms the six
+  prior fixes and identifies detached-header payload resolution (P2). Moving only
+  a header reproduced a false successful verification. Verification now requires
+  its relative data path to resolve to the checked payload; moving both together
+  remains valid. The regression covers both cases. All 13 fixture tests pass, and
+  `prepare` reverified all 1,600 existing MRHead/CTChest bricks and source hashes.
+  C++/CMake are unchanged; the earlier native validation remains applicable.
 - User selected Jolt → volumes → networking/Minecraft after the three foundational
   checkpoints. Planning drafts #5–#20 are open in that order; links are below.
-  Complete the current-HEAD CLI and GitHub review gates before merging CP00.
-  No later implementation has started.
+  The user subsequently requested **merge PR #4 once green, then stop**. Complete
+  only the review fixes and current-HEAD CLI/GitHub gates needed for that merge;
+  no further CP00 scope or later checkpoint development is authorized for now.
+  The later drafts stay queued; no later implementation has started.
 
 ## Implementation checkpoints
 
