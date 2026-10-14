@@ -40,7 +40,7 @@ is not equivalent. Coverage and revision are part of query results.
 | `IndexBounds` | Checked half-open int64 sample/cell bounds; finite addressable domain, including sparse datasets |
 | `Extent3` | Positive bounded integer extents; checked volume and byte multiplication |
 | `GridDefinition` | GridId, cell bounds, chunk extent, GridMapping and SchemaRef |
-| `GridMapping` | Local origin, orthonormal axis orientation, positive finite per-axis spacing and explicit units |
+| `GridMapping` | Local cell-corner-zero origin, three orthonormal axis vectors (reflection allowed), positive finite per-axis spacing and explicit units |
 | `ChannelDefinition` | ChannelId, ScalarFormat, bounded component count, SampleLocation, typed default, value constraints and optional SemanticRef |
 | `ChannelSchema` | Ordered unique channel definitions and canonical encoding rules |
 | `SampleLocation` | CellCenter or Vertex; defines sample support and boundary ownership |
@@ -54,6 +54,26 @@ Samples at cell centers are offset by half a cell from integer corners. Vertex
 samples at shared chunk boundaries have one canonical owner, the chunk on the
 positive side of the boundary; at the domain's upper edge, the last valid chunk
 owns the endpoint. Other chunks request those samples as dependencies.
+
+GridMapping origin `o` locates cell corner zero, independent of channel sample
+location. Let `d[k] = axis[k] * spacing[k]` be each index-step vector. For index `i`,
+Vertex samples map to `o + sum(i[k] * d[k])`; CellCenter samples map to
+`o + sum((i[k] + 0.5) * d[k])`. Index bounds do not relocate that origin. Chunk-local
+indexes first add their integer chunk start; never apply the half-cell offset twice.
+Reflected orthogonal axes are valid; shear requires an explicitly supported adapter.
+
+[NRRD space origin](https://teem.sourceforge.net/nrrd/format.html#spaceorigin) locates
+sample zero, not its enclosing cell corner. Importing sample-centered NRRD data as
+CellCenter uses `o = nrrdOrigin - 0.5 * sum(d[k])`; importing it as Vertex uses
+`o = nrrdOrigin`. Either choice maps sample zero back to the original NRRD position.
+The fixture tool preserves NRRD sample origins in its manifests/brick headers;
+conversion to GridMapping happens in the native importer, not during repackaging.
+Export reverses the conversion after applying the declared units/space mapping.
+
+For the fixture step vectors `(0,1,0), (0,0,-2), (-3,0,0)` and NRRD origin
+`(-12,30,5)`, CellCenter grid origin is `(-10.5,29.5,6)`. Sample `(16,8,8)` is
+`(-36,46,-11)` under either declared sample-location representation. Native importer
+acceptance checks sample zero, this signed/permuted anisotropic case and brick edges.
 
 GridMapping converts index coordinates to dataset-local coordinates with checked
 precision. A world binding then converts to its SpaceId/frame and obeys

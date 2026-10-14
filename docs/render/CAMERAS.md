@@ -268,7 +268,7 @@ foliage may not, and the observing subject is excluded. Query data is revisioned
 accounted and prepared once, not rebuilt with camera motion. A missing backend
 must not be substituted with bounds picking and described as collision safety.
 
-Character contacts and grounding belong to current [physics movement
+Character contacts and grounding belong to future [physics movement
 realization](../platform/LOCOMOTION.md#physics-movement-realization). Vehicle dynamics
 and root motion remain [future](../platform/LOCOMOTION.md#future-advanced-movement).
 Camera obstruction alone cannot prevent a subject moving through a wall.

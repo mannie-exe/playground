@@ -124,10 +124,10 @@ realization belongs to the app/model, never the renderer or camera director.
 
 `realizeMovement` validates subject/tick/discontinuity, step size and rate limits
 before returning actual state and an optional updated frame attachment. It does
-not publish World mutations. `MovementRealization::Physics` delegates to the
-configured CharacterMotor; absent capabilities return Unsupported with unchanged
-published state. `RootMotion` remains Unsupported until its adapter exists. A
-zero-duration kinematic step preserves actual pose and velocity.
+not publish World mutations. The future `MovementRealization::Physics` adapter
+delegates to a configured CharacterMotor; until available it returns Unsupported
+with unchanged published state. `RootMotion` remains Unsupported until its adapter
+exists. A zero-duration kinematic step preserves actual pose and velocity.
 
 Movement axes and up direction use the explicitly sampled frame, or space axes
 without a frame. The default frame policy includes sampled point/angular velocity

@@ -1,10 +1,12 @@
 """Offline contract checks: python3 -m unittest discover -s tools/assets -p 'test_voxel_suite.py'."""
 import gzip
+import io
 import json
 from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 import voxel_suite as suite
 
@@ -79,6 +81,75 @@ class VolumeSuiteTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'byte order'):suite.read_nrrd(self.source,10000)
         self.source.write_bytes(self.header.encode()+gzip.compress(self.raw+b'\0\0'))
         with self.assertRaisesRegex(ValueError,'decoded size'):suite.read_nrrd(self.source,10000)
+
+    def test_download_failures_preserve_error_and_remove_temporary_files(self):
+        # Model Windows file-sharing rules while using real temporary files.
+        original_temporary = tempfile.NamedTemporaryFile
+        original_unlink = Path.unlink
+        opened = []
+
+        def track_temporary(*args, **kwargs):
+            output = original_temporary(*args, **kwargs)
+            opened.append(output)
+            return output
+
+        def unlink_closed(path, *args, **kwargs):
+            if any(not output.closed and Path(output.name) == path for output in opened):
+                raise PermissionError('cannot delete an open file on Windows')
+            return original_unlink(path, *args, **kwargs)
+
+        cases = [('checksum', ValueError, 'SHA-256'),
+                 ('limit', ValueError, 'limit'),
+                 ('timeout', TimeoutError, 'download timeout')]
+        for case, error, message in cases:
+            with self.subTest(case=case):
+                directory = self.root/case
+                spec = dict(self.spec, filename='download.nrrd', max_download_bytes=4,
+                            sha256=suite.digest(b'data'))
+                if case == 'checksum':
+                    spec['sha256'] = '0'*64
+                elif case == 'limit':
+                    spec['max_download_bytes'] = 3
+                with mock.patch.object(suite.urllib.request, 'urlopen') as request, \
+                     mock.patch.object(suite.tempfile, 'NamedTemporaryFile', side_effect=track_temporary), \
+                     mock.patch.object(Path, 'unlink', autospec=True, side_effect=unlink_closed):
+                    if case == 'timeout':
+                        request.side_effect = TimeoutError('download timeout')
+                    else:
+                        request.return_value = io.BytesIO(b'data')
+                    with self.assertRaisesRegex(error, message):
+                        suite.fetch(spec, directory)
+                self.assertEqual(list(directory.iterdir()), [])
+                self.assertTrue(all(output.closed for output in opened))
+
+    def test_rejects_invalid_fixture_interpretation(self):
+        path = self.packed()
+        original = json.loads(path.read_text())
+        cases = [
+            (('volume', 'endian'), 'big'),
+            (('volume', 'space'), 'unknown-coordinate-system'),
+            (('volume', 'sizes'), [10**400, 10, 9]),
+            (('volume', 'origin'), [0, float('nan'), 0]),
+            (('volume', 'origin'), [0, 0]),
+            (('volume', 'directions'), [[0, 0, 0], [0, 1, 0], [0, 0, 1]]),
+            (('volume', 'directions'), [[1, 0, 0], [1, 1, 0], [0, 0, 1]]),
+            (('volume', 'directions'), [[float('inf'), 0, 0], [0, 1, 0], [0, 0, 1]]),
+            (('units',), 'm'),
+            (('units_basis',), ''),
+            (('sample_layout',), 'cell corners'),
+        ]
+        for keys, value in cases:
+            with self.subTest(field=keys, value=value):
+                manifest = json.loads(json.dumps(original))
+                target = manifest
+                for key in keys[:-1]:
+                    target = target[key]
+                target[keys[-1]] = value
+                path.write_text(json.dumps(manifest))
+                with self.assertRaises(ValueError):
+                    suite.load_manifest(path)
+                with self.assertRaises(ValueError):
+                    suite.verify(path)
 
     def test_bounded_brick_decompression(self):
         path=self.packed();m=suite.load_manifest(path);b=m['bricks'][0]
