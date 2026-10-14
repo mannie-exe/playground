@@ -99,10 +99,15 @@ Scope:
   Published as `d31b2dc63bc56f3eb76321a15e7b54c63bdef35a`. C++/CMake remain
   unchanged from `bbe9ee2`. Exact-HEAD review receipts are maintained in PR #4
   and ignored `build/runs/cp00/`, avoiding source commits solely for review status.
+- Review `b8e4e883-2f65-4e97-9b87-79853fae80c0` of `d31b2dc` confirms the five
+  prior fixes and identifies Windows newline translation in brick headers (P2).
+  A regression using Windows text defaults reproduces twelve CRLF header failures.
+  Header publication now writes UTF-8 bytes, matching the manifest's LF contract.
+  All 12 fixture tests pass; native Windows execution remains a separate check.
 - User selected Jolt → volumes → networking/Minecraft after the three foundational
-  checkpoints. Prepare the planning-only drafts in that order, then complete the
-  current-HEAD CLI and GitHub review gates before merging CP00. No later
-  implementation has started.
+  checkpoints. Planning drafts #5–#20 are open in that order; links are below.
+  Complete the current-HEAD CLI and GitHub review gates before merging CP00.
+  No later implementation has started.
 
 ## Implementation checkpoints
 
@@ -113,24 +118,24 @@ state docs, source refactor/wiring, failure tests and contributor/API documentat
 updates. Reuse existing implementations after verifying their contracts rather than
 rebuilding them from scratch. Explicitly future topics are excluded.
 
-| ID | Complete PR scope | Dependencies | Observable completion |
-|---|---|---|---|
-| CP01 | Optional build/dependency graph and neutral library consumers | CP00 | Headless configuration avoids SDL/fonts/GPU fetch/link/init; selected modules and demo build independently; disabled providers absent from packaging |
-| CP02 | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
-| CP03 | Asset/storage and registered saved composition | CP02 | Typed content locks, bounded preparation, render/camera/compiled-behavior attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
-| CP04 | Sampled-data storage, import, edits and bounded discovery | CP03 | VOX/NRRD fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, edit/save/reopen and overload/cancellation tests |
-| CP05a | Shared spatial products and streaming | CP04 | Bounded source/product demand, exposed-face and scalar-slice preparation, coherent revisions, cache churn/stale work and device retirement; no viewer UI dependency |
-| CP05b | `playground_voxels` medical viewer | CP03, CP05a | Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified |
-| CP06 | Optional Jolt adapter and physical-object fixtures | CP02, CP03 | Pinned dependency, scoped bodies/queries, static geometry and convex dynamics, real contacts plus failure/retirement evidence; physics-disabled build works |
-| CP07 | Physics/streaming/edit publication wiring | CP05a, CP06 | Exact collision readiness, shape replacement between steps, origin/coverage handling and pre-separated fragment activation under bounded traversal |
-| CP08 | Small regional simulation service | CP04, CP05a | Deterministic propagation/diffusion fixture, coherent region steps, halo coverage, sleep/wake and expanding demand with finite budgets; persisted continuation |
-| CP09 | TCP/UDP and HTTPS providers | CP02 | Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests |
-| CP10 | Message transport and generic authority sessions | CP09 | GNS adapter, nonspatial document/presence and sequenced-value fixtures; reconnect, deduplication, filtered baselines and pressure tests |
-| CP11 | Optional FMOD Core/Studio integration | CP02, CP03 | Supplied SDK version validation, clip/bank/event lifetime, spatial mapping, pause/device recovery; real native acceptance or explicit SDK blocker |
-| CP12 | Minecraft 26.3 compatibility profile and offline pipeline | CP05a, CP09 | Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests |
-| CP13 | `playground_minecraft` online spectator and movement | CP12 | Real login/configuration, mouse look/WASD/vertical movement, corrections/acks, chunk feedback/unloads/dimensions and bounded fast traversal on controlled server |
-| CP14 | Minecraft visible-content coverage | CP13 | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
-| CP15 | Distribution and cross-module acceptance | CP05b, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
+| ID | Draft PR | Complete PR scope | Dependencies | Observable completion |
+|---|---|---|---|---|
+| CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Optional build/dependency graph and neutral library consumers | CP00 | Headless configuration avoids SDL/fonts/GPU fetch/link/init; selected modules and demo build independently; disabled providers absent from packaging |
+| CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Injected AppHost bootstrap, registry and instance/presentation lifetimes | CP01 | [#5](https://github.com/mannie-exe/playground/pull/5) | Mono-app and launcher use supplied factories; replacement rollback, suspension, view rebuild and late completions tested; no demo names in reusable host |
+| CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | Asset/storage and registered saved composition | CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Typed content locks, bounded preparation, render/camera/compiled-behavior attachments, restore/migration/error paths and durable checkpoints; module-specific attachments land with their providers |
+| CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Sampled-data storage, import, edits and bounded discovery | CP03 | [#7](https://github.com/mannie-exe/playground/pull/7) | VOX/NRRD fixtures, exact scalar/spatial metadata, revisioned chunks, finite/paged sources, edit/save/reopen and overload/cancellation tests |
+| CP05a | [#10](https://github.com/mannie-exe/playground/pull/10) | Shared spatial products and streaming | CP04 | [#9](https://github.com/mannie-exe/playground/pull/9) | Bounded source/product demand, exposed-face and scalar-slice preparation, coherent revisions, cache churn/stale work and device retirement; no viewer UI dependency |
+| CP05b | [#11](https://github.com/mannie-exe/playground/pull/11) | `playground_voxels` medical viewer | CP03, CP05a | Linked orthogonal views, physical crosshair, window/level and label edits; native samples match fixtures; save/reopen and bounded traversal verified |
+| CP06 | [#8](https://github.com/mannie-exe/playground/pull/8) | Optional Jolt adapter and physical-object fixtures | CP02, CP03 | Pinned dependency, scoped bodies/queries, static geometry and convex dynamics, real contacts plus failure/retirement evidence; physics-disabled build works |
+| CP07 | [#12](https://github.com/mannie-exe/playground/pull/12) | Physics/streaming/edit publication wiring | CP05a, CP06 | Exact collision readiness, shape replacement between steps, origin/coverage handling and pre-separated fragment activation under bounded traversal |
+| CP08 | [#13](https://github.com/mannie-exe/playground/pull/13) | Small regional simulation service | CP04, CP05a | Deterministic propagation/diffusion fixture, coherent region steps, halo coverage, sleep/wake and expanding demand with finite budgets; persisted continuation |
+| CP09 | [#14](https://github.com/mannie-exe/playground/pull/14) | TCP/UDP and HTTPS providers | CP02 | [#6](https://github.com/mannie-exe/playground/pull/6) | Asio/libcurl selection, bounded DNS/I/O/results, partial writes, datagram truncation, TLS/redirect rules, shutdown and native loopback tests |
+| CP10 | [#18](https://github.com/mannie-exe/playground/pull/18) | Message transport and generic authority sessions | CP09 | [#14](https://github.com/mannie-exe/playground/pull/14) | GNS adapter, nonspatial document/presence and sequenced-value fixtures; reconnect, deduplication, filtered baselines and pressure tests |
+| CP11 | [#19](https://github.com/mannie-exe/playground/pull/19) | Optional FMOD Core/Studio integration | CP02, CP03 | Supplied SDK version validation, clip/bank/event lifetime, spatial mapping, pause/device recovery; real native acceptance or explicit SDK blocker |
+| CP12 | [#15](https://github.com/mannie-exe/playground/pull/15) | Minecraft 26.3 compatibility profile and offline pipeline | CP05a, CP09 | Complete pinned codecs/registries, safe fixture replay, local model/texture interpretation and chunk revision/product path; malformed-data/limit tests |
+| CP13 | [#16](https://github.com/mannie-exe/playground/pull/16) | `playground_minecraft` online spectator and movement | CP12 | [#15](https://github.com/mannie-exe/playground/pull/15) | Real login/configuration, mouse look/WASD/vertical movement, corrections/acks, chunk feedback/unloads/dimensions and bounded fast traversal on controlled server |
+| CP14 | [#17](https://github.com/mannie-exe/playground/pull/17) | Minecraft visible-content coverage | CP13 | [#16](https://github.com/mannie-exe/playground/pull/16) | Declared block/model/material/entity/block-entity/sky/weather coverage, resource compatibility and comparative captures; no claim of full rendering from terrain alone |
+| CP15 | [#20](https://github.com/mannie-exe/playground/pull/20) | Distribution and cross-module acceptance | CP05b, CP07, CP08, CP10, CP11, CP14 | Four target packaging, combined contention/pause/shutdown, isolated roots, enabled/disabled matrices and final source-to-contract reconciliation |
 
 Selected execution order: **CP01 → CP02 → CP03 → CP06 → CP04 → CP05a → CP05b →
 CP07 → CP08 → CP09 → CP12 → CP13 → CP14 → CP10 → CP11 → CP15**. This puts the
